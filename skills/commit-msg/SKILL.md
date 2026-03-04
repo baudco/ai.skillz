@@ -174,11 +174,16 @@ Common in piker commits (33.0% use colons):
 - `.accounting: description`
 
 ### Claude-code Footer
-When commits assisted by claude-code, include:
+When written patch was assisted by claude-code, include:
 
 ```
-(this patch was generated in some part by
-[`claude-code`][claude-code-gh])
+(this patch was generated in some part by [`claude-code`][claude-code-gh])
+[claude-code-gh]: https://github.com/anthropics/claude-code
+```
+
+when only the commit msg was written by claude-code, use:
+```
+(this commit msg was generated in some part by [`claude-code`][claude-code-gh])
 [claude-code-gh]: https://github.com/anthropics/claude-code
 ```
 
