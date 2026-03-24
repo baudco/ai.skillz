@@ -37,9 +37,23 @@ These rules apply globally to ALL python projects.
 - If ANY single line in a multi-line implicit string
   concat uses f-string syntax, ensure ALL following
   lines in the same literal are also prefixed with
-  `f'` to maintain left-alignment. For example:
+  `f'` to maintain left-alignment.
+- When a string literal contains a double newline
+  (`\n\n`), always split so the second `\n` starts
+  its own source line. This makes the code visually
+  mirror the rendered output — each blank line in the
+  output maps to a standalone `\n` in the source:
 
   ```python
+  # GOOD - double newline split across lines
+  log.warning(
+      f'Failed to resolve type via\n'
+      f'`mod.get_type()`:\n'
+      f'\n'
+      f'`{type_name}` is not registered!\n'
+  )
+
+  # BAD - \n\n jammed onto one line
   log.warning(
       f'Failed to resolve type via\n'
       f'`mod.get_type()`:\n\n'
