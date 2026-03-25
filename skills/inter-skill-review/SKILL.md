@@ -40,7 +40,44 @@ process:
 - Present this graph to the user before
   proceeding.
 
-## 1. Verify shared artifacts
+## 1. Check cross-scope skill availability
+
+Skills can live in multiple scopes:
+- Global: `~/.claude/skills/`
+- Repo-local: `<repo>/.claude/skills/`
+- Sibling repos: `~/repos/<other>/.claude/skills/`
+
+When the dependency graph (step 0) references a
+skill that doesn't exist in the current repo's
+`.claude/skills/`, scan for it in:
+
+1. The user's global `~/.claude/skills/`
+2. Sibling repos' `.claude/skills/` dirs
+   (glob `~/repos/*/.claude/skills/`)
+
+For each missing dependency found elsewhere:
+
+- Tell the user which skill is missing and where
+  it was found.
+- Prompt whether to symlink it into the current
+  repo's `.claude/skills/`:
+  ```
+  ln -s <source-path> \
+    .claude/skills/<skill-name>
+  ```
+- If the skill is repo-specific (e.g. contains
+  project-specific test mappings), note that the
+  symlink brings in another project's config and
+  the user may want to fork instead.
+- If the skill is generic / global, a symlink is
+  the right default.
+
+Also flag the reverse: skills in the current
+repo that reference other skills by name but
+those targets don't exist in ANY discoverable
+scope — these are dangling refs.
+
+## 2. Verify shared artifacts
 
 Skills often communicate via files (context
 files, output files, state markers). For each
@@ -61,7 +98,7 @@ consumer doesn't read, consumer expects fields
 the producer doesn't write, file lives in the
 wrong directory for the worktree case, etc.
 
-## 2. Check step ordering across skills
+## 3. Check step ordering across skills
 
 When skill A invokes skill B mid-workflow, verify:
 
@@ -82,7 +119,7 @@ explicit strategy documented (placeholder +
 update, deferred execution, follow-up
 invocation, etc.).
 
-## 3. Check human-in-the-loop boundaries
+## 4. Check human-in-the-loop boundaries
 
 Identify every point where control passes to the
 human (manual staging, committing, pushing,
@@ -96,7 +133,7 @@ reviewing). For each:
 - Are there instructions for what the human
   should do and what the skill expects back?
 
-## 4. Check for duplicated instructions
+## 5. Check for duplicated instructions
 
 When multiple skills cover the same ground (e.g.
 worktree venv setup appears in both
@@ -109,7 +146,7 @@ worktree venv setup appears in both
   vs. composed use), verify the instructions
   don't diverge.
 
-## 5. Verify error/regression accountability
+## 6. Verify error/regression accountability
 
 When a composed workflow can cause regressions
 (skill A's changes break something that skill B
@@ -124,7 +161,7 @@ detects):
 - Is the self-caused vs. pre-existing
   distinction documented?
 
-## 6. Present findings
+## 7. Present findings
 
 Organize findings as:
 
@@ -148,7 +185,7 @@ resolve it (via `AskUserQuestion`) before making
 changes. Present options where multiple valid
 approaches exist.
 
-## 7. Apply approved changes
+## 8. Apply approved changes
 
 After user sign-off:
 
@@ -173,10 +210,10 @@ After completing a skill change, immediately:
    `.claude/skills/`.
 2. Identify which skills reference or are
    referenced by the one that just changed.
-3. Run steps 0-5 on the affected subset.
+3. Run steps 0-6 on the affected subset.
 4. If no issues found, proceed silently.
 5. If issues found, present findings to the
-   user (step 6) before they move on.
+   user (step 7) before they move on.
 
 The user can also invoke `/inter-skill-review`
 explicitly for a full audit across all skills,
