@@ -27,6 +27,8 @@ and is symlinked into other repos.
 See also:
 - [backends.md](backends.md) — per-backend capabilities
 - [format.md](format.md) — markdown file conventions
+- [roadmap.md](roadmap.md) — cross-service review +
+  AI skill convergence plan
 
 ## Invocations
 
@@ -139,7 +141,16 @@ currently supports:
 - `gish comment <num>` — append/edit comments
 - `gish pr <num>` — PR-specific operations
 - `gish sync <num>` — explicit pull/push sync
+- `gish review <be> <num>` — fetch PR review
+  comments to local file (for AI skill consumption)
+- `gish reply <be> <num>` — post review replies
+  from local file to remote service
+- `gish ci <be> <sha>` — check CI status
 - sr.ht, GitLab, plain git backends
+- standalone CLI (factor out from xontrib)
+
+See [roadmap.md](roadmap.md) for the full phased
+plan covering AI skill integration.
 
 For operations beyond what `gish.xsh` supports,
 fall back to the `gh` CLI directly for GitHub, or
