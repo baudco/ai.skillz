@@ -134,20 +134,57 @@ Followed by a blank line, then the reply body.
 
 ### Reply content by action type
 
-- **fix**: briefly describe what was changed and
-  reference the commit short-hash.
-  Example:
-  > Good catch - switched to `forceput()` in
-  > `abc1234`. This handles the stale-entry case.
+- **fix**: briefly describe what was changed.
 - **ack**: note that this was already addressed
-  in a specific commit.
+  in a prior commit.
 - **style-preference**: explain the project's
   convention and why the current code is
   intentional.
 - **wontfix**: explain why the suggestion doesn't
   apply or is incorrect.
 
-Keep replies concise and technical.
+Keep replies concise and technical. Don't
+duplicate info that's already obvious from the
+commit footer (see below).
+
+### Commit-ref footer
+
+Every reply MUST end with a blockquote footer
+linking the relevant commit(s). Use a linked
+short-hash pointing at the hosting service's
+commit URL. The verb conveys the disposition:
+
+- **fix**:
+  ```
+  > 📎 fixed in [`<hash>`](<commit-url>)
+  ```
+- **ack** (already done in an earlier commit):
+  ```
+  > 📎 already addressed in [`<hash>`](<commit-url>)
+  ```
+- **wontfix** / **style-preference**: only include
+  a commit footer if there's a specific commit
+  that demonstrates *why* the suggestion doesn't
+  apply (e.g. the commit that introduced the
+  intentional pattern). If the reason is purely
+  conceptual, skip the footer - don't fabricate a
+  ref just for the sake of it.
+  ```
+  > 📎 see [`<hash>`](<commit-url>) for context
+  ```
+
+Determine the commit-URL base from `git remote`:
+- `github`/`origin` ->
+  `https://github.com/<owner>/<repo>/commit/`
+- `gitea` -> parse the remote URL
+- `srht` ->
+  `https://git.sr.ht/~<owner>/<repo>/commit/`
+
+When multiple commits address a single comment,
+chain them:
+```
+> 📎 fixed in [`abc1234`](<url>) [`def5678`](<url>)
+```
 
 ## 7. Summary
 
