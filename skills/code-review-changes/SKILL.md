@@ -117,13 +117,29 @@ the change-type -> test mapping in that skill).
 - Use the worktree's Python binary to run pytest
   (e.g. `py<MINOR>/bin/python -m pytest ...`).
 
+### Establish CI baseline
+
+Before attributing any failure to your changes,
+check the PR's HEAD commit CI status:
+
+```
+gh api \
+  repos/<owner>/<repo>/commits/<head-sha>/check-runs \
+  --jq '.check_runs[] |
+    "\(.name): \(.conclusion)"'
+```
+
+If all checks passed on the prior commit, any
+new failure is likely caused by your changes.
+
 ### If tests fail
 
 Determine whether the failure is:
 
-1. **Pre-existing** (fails on the PR's HEAD
-   commit *before* your changes too) - note it
-   and move on.
+1. **Pre-existing** (CI was already red on this
+   test, or it fails on the PR's HEAD commit
+   *before* your changes too) - note it and
+   move on.
 2. **Caused by your review fixes** - this is a
    regression YOU introduced. Own it explicitly:
    - Fix the regression in the worktree.
@@ -246,6 +262,30 @@ chain them:
 ```
 > 📎 fixed in [`abc1234`](<url>) [`def5678`](<url>)
 ```
+
+### Posting before commit exists
+
+Since the user commits manually (step 6), the
+final commit hash may not exist yet when posting
+replies. Post comments immediately with a
+placeholder footer:
+
+```
+> 📎 commit pending
+```
+
+After the user commits and provides the hash
+(or you detect it via `git log -1 --format=%h`),
+PATCH each comment to replace the placeholder
+with the real linked hash:
+
+```
+gh api \
+  repos/<owner>/<repo>/pulls/comments/<id> \
+  -X PATCH -f body="<updated-body>"
+```
+
+Track posted comment IDs so you can update them.
 
 ## 8. Summary
 
