@@ -132,12 +132,27 @@ Determine whether the failure is:
      review changes, not the original PR code.
    - In any subsequent GH reply comments or
      commit messages, acknowledge the regression
-     was self-inflicted, e.g.:
-     > This fix addresses a regression introduced
-     > by the review changes, not by the original
-     > PR.
+     was self-inflicted.
    - Re-run the affected tests to confirm the
      fix.
+   - **Write a regression context file** at
+     `.claude/review_regression.md` so that
+     `/commit-msg` can incorporate it. Format:
+     ```
+     guilty: <short-hash of your review commit>
+     test: <test_name(s) that failed>
+     cause: <1-line description of what broke>
+     ```
+     Example:
+     ```
+     guilty: 85457cb8
+     test: test_stale_entry_is_deleted
+     cause: `registry_addrs` change routes
+       `addr` through msgpack -> list, not tuple
+     ```
+     The `/commit-msg` skill reads this file and
+     folds its content into the commit message
+     body, then deletes it after use.
 
 ### Confirming green
 
