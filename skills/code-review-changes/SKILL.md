@@ -100,18 +100,64 @@ For each comment triaged as `fix`:
 - Follow all project code-style rules (see
   `py-codestyle` skill if applicable).
 
-## 5. Commit
+## 5. Verify: run tests (mandatory)
 
-- Stage only the files that were modified.
-- Write a single commit message summarizing all
-  review fixes (use the `/commit-msg` skill
-  format if available).
+**Before staging or committing**, run `/run-tests`
+targeting the modules touched by your fixes (see
+the change-type -> test mapping in that skill).
+
+- If the worktree doesn't have its own venv, set
+  one up first. For `uv`-managed projects:
+  ```
+  UV_PROJECT_ENVIRONMENT=py<MINOR> uv sync
+  ```
+  where `<MINOR>` matches the active cpython
+  minor version (e.g. `py313` for 3.13, `py314`
+  for 3.14). Detect via `python --version`.
+- Use the worktree's Python binary to run pytest
+  (e.g. `py<MINOR>/bin/python -m pytest ...`).
+
+### If tests fail
+
+Determine whether the failure is:
+
+1. **Pre-existing** (fails on the PR's HEAD
+   commit *before* your changes too) - note it
+   and move on.
+2. **Caused by your review fixes** - this is a
+   regression YOU introduced. Own it explicitly:
+   - Fix the regression in the worktree.
+   - When reporting to the user, clearly state
+     that the regression was caused by your
+     review changes, not the original PR code.
+   - In any subsequent GH reply comments or
+     commit messages, acknowledge the regression
+     was self-inflicted, e.g.:
+     > This fix addresses a regression introduced
+     > by the review changes, not by the original
+     > PR.
+   - Re-run the affected tests to confirm the
+     fix.
+
+### Confirming green
+
+Re-run the full targeted test subset to ensure
+all pass. Only proceed to step 6 once green.
+
+## 6. Present changes for user review
+
+**NEVER auto-commit.** After fixes pass tests:
+
+- Tell the user what files changed and why.
+- Show the diff summary.
+- Suggest they review the worktree state, stage
+  files manually, and use `/commit-msg` (inline
+  or in a separate session) to generate commit
+  content.
 - **Do NOT push** - the user must push manually
   (no SSH key access assumed).
-- Tell the user the commit hash and that they
-  need to push.
 
-## 6. Post inline reply comments
+## 7. Post inline reply comments
 
 For EVERY review comment (not just `fix` items),
 post an inline reply via `gh api`:
@@ -186,12 +232,15 @@ chain them:
 > 📎 fixed in [`abc1234`](<url>) [`def5678`](<url>)
 ```
 
-## 7. Summary
+## 8. Summary
 
 After all comments are addressed, present:
 
-- Commit hash + worktree path
-- Reminder to push
+- Worktree path + list of modified files
+- Reminder to review, stage, commit, and push
 - Count of comments addressed by type
   (fix/ack/style/wontfix)
+- Any regressions introduced (and fixed) by
+  review changes - be explicit about self-caused
+  breakage vs pre-existing issues
 - Any unresolved PR-description TODOs
