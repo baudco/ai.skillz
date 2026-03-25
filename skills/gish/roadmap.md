@@ -262,6 +262,74 @@ just an xontrib) that works in any shell.
   via CLI) instead of constructing raw API calls.
 - Ship as a `uv tool` / `pipx` installable.
 
+### Phase 6: `gish` repo as skill home
+
+**Goal**: whichever repo hosts the `gish`
+codebase (modden, standalone `gish`, etc.)
+becomes the **canonical home** for all
+cross-service AI skills.
+
+Today skills are scattered:
+- global (`~/.claude/skills/`): `code-review-changes`,
+  `inter-skill-review`, `py-codestyle`, `commit-msg`
+- tractor: `commit-msg`, `pr-msg`, `run-tests`
+- modden: `gish`
+- piker: `commit-msg` + domain skills
+
+The long-term direction: since `gish` is the
+transport/sync layer that all these skills
+depend on, it makes sense for the gish repo
+to own the skill definitions too. The current
+`~/.claude/skills/` → dotrc flow inverts to:
+
+```
+gish-repo/.claude/skills/
+  commit-msg/
+    SKILL.md           ← canonical generic
+  code-review-changes/
+    SKILL.md           ← canonical, uses gish
+  pr-msg/
+    SKILL.md           ← canonical, uses gish
+  inter-skill-review/
+    SKILL.md           ← canonical
+  run-tests/
+    SKILL.md           ← canonical (or per-repo)
+  skill-factoring/
+    SKILL.md           ← canonical
+  skills-deploy/
+    SKILL.md           ← canonical
+
+other-repos/.claude/skills/
+  commit-msg/
+    SKILL.md           → symlink to gish-repo
+    style-guide-reference.md  ← repo-specific
+    msgs/                     ← repo-specific
+  code-review-changes  → symlink to gish-repo
+  pr-msg               → symlink to gish-repo
+  ...
+```
+
+Symlink direction flips: instead of
+repo → `~/.claude/` (global), repos symlink
+to the gish repo. The global `~/.claude/skills/`
+also symlinks to gish-repo (or gish-repo's
+install step deploys there).
+
+This gives us:
+- Single source of truth for skill logic
+- Skill updates ship with `gish` releases
+- Repo-specific overrides (style guides, test
+  mappings) stay local
+- `gish` CLI + `gish` skills evolve together
+  (transport + content layers in one repo)
+
+**Open**: if `gish` stays in modden vs becomes
+its own package, the skill-hosting story stays
+the same — it's just a question of which repo
+the symlinks point at. Factor the skills out
+whenever the `gish` codebase itself is factored
+(Phase 5).
+
 ---
 
 ## How AI skills change
