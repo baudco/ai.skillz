@@ -188,6 +188,26 @@ all pass. Only proceed to step 6 once green.
 - **Do NOT push** - the user must push manually
   (no SSH key access assumed).
 
+### Write review context file
+
+Write `.claude/review_context.md` (relative to
+`git rev-parse --show-toplevel`) so `/commit-msg`
+can add a `Review:` trailer. Initial contents
+(before GH replies are posted):
+
+```
+pr: <N>
+repo: <owner>/<repo>
+review_url: <full-review-URL-or-PR-URL>
+reviewer: <reviewer-login>
+actions: fix=<n> ack=<n> wontfix=<n>
+```
+
+The `reply_ids` field is appended in step 7 after
+GH comments are posted. If the review was fetched
+by bare PR number (no specific `review_id`),
+use the PR URL as `review_url`.
+
 ## 7. Post inline reply comments
 
 For EVERY review comment (not just `fix` items),
@@ -286,6 +306,24 @@ gh api \
 ```
 
 Track posted comment IDs so you can update them.
+
+### Update review context with reply IDs
+
+After posting all GH reply comments, append the
+`reply_ids` field to `.claude/review_context.md`
+(written in step 6). List the IDs of replies whose
+footer still reads `> 📎 commit pending` so that
+`/commit-msg` (or a follow-up session) can tell
+the user which comments need PATCHing with the
+real commit hash:
+
+```
+reply_ids: <id1>,<id2>,...
+```
+
+If no replies were posted (all comments were
+`ack`/`style-preference` with no placeholder
+footer), omit `reply_ids` from the file.
 
 ## 8. Summary
 
