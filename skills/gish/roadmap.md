@@ -184,6 +184,185 @@ Check CI/check-run status for a commit.
 Full PR lifecycle: view, create, edit body.
 Currently a TODO stub in the xontrib.
 
+### `gish edit <backend> <num> [--ai-draft]`
+
+Edit an issue or PR description with optional
+AI-generated draft content. The workflow:
+
+1. **Fetch** current content from the service
+   via backend API (`gh api`, `py-gitea`, etc.)
+   into a local tempfile.
+2. **AI draft** (when `--ai-draft` is passed):
+   run the appropriate AI skill (`/pr-msg` for
+   PRs, `/commit-msg` patterns for issues) to
+   generate a fresh draft, writing it alongside
+   the fetched original.
+3. **Open `$EDITOR`**: launch the user's editor
+   (or `vimdiff old new` when a draft exists) so
+   they can review, merge, and finalize.
+4. **Sync back** on save: push the edited content
+   back to the service via the same backend API.
+
+This pattern ("AI-edits-then-editor") keeps the
+human in the loop while letting AI skills do the
+heavy drafting. It mirrors the existing
+`gish edit` flow but adds the `--ai-draft` flag
+as an opt-in AI assist step.
+
+**Integration with `/pr-msg`**:
+- `/pr-msg` generates to
+  `.claude/skills/pr-msg/pr_msg_LATEST.md`
+- `gish edit --ai-draft` would consume that file
+  as the "new" side of the vimdiff
+- The "old" side is whatever's currently live on
+  the service
+- After save, `gish` syncs the merged result back
+
+**Backend considerations**:
+- GitHub: `gh api` for fetch + update
+- Gitea: `py-gitea` API calls
+- sr.ht: `hg email` / API patches (body editing
+  is limited for patch series)
+
+### `gish watch <backend> <num> [--interval N]`
+
+Poll a PR/patch for review state changes and
+notify when a new review (human or bot) lands.
+Cross-service abstraction so the same workflow
+works regardless of where the PR was submitted.
+
+**Core loop**:
+
+1. **Snapshot** current review state on first run
+   — fetch all reviews, record IDs + states +
+   timestamps into a local state file.
+2. **Poll** at `--interval` (default 60s) — re-fetch
+   reviews, diff against snapshot.
+3. **Detect transitions**: new review submitted,
+   state change (pending → commented →
+   changes_requested → approved), new inline
+   comments on an existing review.
+4. **Notify** — configurable via `--on-review`:
+   - `bell` — terminal bell (default)
+   - `notify-send` — desktop notification (linux)
+   - `file` — write `.claude/review_ready.md`
+     for claude-code hook pickup
+   - `<cmd>` — arbitrary shell command
+     (e.g. `claude --skill /code-review-changes`)
+5. **Optionally exit** after first new review
+   (`--once`) or keep watching for follow-ups.
+
+**State file**: `<backend>/<num>_watch.json`
+
+```json
+{
+  "pr": 428,
+  "backend": "gh",
+  "last_poll": "2026-03-25T22:20:00Z",
+  "reviews": [
+    {
+      "id": 4010255289,
+      "state": "COMMENTED",
+      "author": "copilot-pull-request-reviewer[bot]",
+      "submitted_at": "2026-03-25T22:20:39Z",
+      "notified": true
+    }
+  ]
+}
+```
+
+The `notified` flag prevents duplicate alerts on
+restart. The `last_poll` timestamp enables
+incremental comment fetches (`--since` style).
+
+**Backend API mapping**:
+
+| Service | Endpoint                                      | Notes                       |
+|---------|-----------------------------------------------|-----------------------------|
+| GitHub  | `GET /repos/{o}/{r}/pulls/{n}/reviews`        | full review objects w/ state |
+| Gitea   | `GET /api/v1/repos/{o}/{r}/pulls/{n}/reviews` | similar shape to GH         |
+| GitLab  | `GET /projects/:id/merge_requests/:mr/notes`  | notes API, filter by system |
+| sr.ht   | `GET /api/patches/:id/events` (TBD)           | event-based, not review     |
+
+**Normalized review struct** (cross-service):
+
+```python
+@dataclass
+class Review:
+    id: str           # service-specific
+    state: str        # pending|commented|changes_requested|approved
+    author: str       # login or email
+    submitted_at: str # ISO 8601
+    n_comments: int   # inline comment count
+```
+
+Each backend maps its native response into this
+shape. The poll loop diffs on `(id, state)` tuples
+— a state change on an existing ID counts as a
+new event (e.g. reviewer initially comments, then
+later approves).
+
+**Integration w/ claude-code**:
+
+The "poll → detect → handoff" bridge to claude:
+
+1. `gish watch` writes `.claude/review_ready.md`
+   when a new review lands:
+   ```markdown
+   <!-- review-ready
+   pr: 428
+   backend: gh
+   review_id: 4010255289
+   author: copilot-pull-request-reviewer[bot]
+   state: COMMENTED
+   submitted_at: 2026-03-25T22:20:39Z
+   -->
+   ```
+2. A claude-code **hook** (or manual session
+   startup check) detects this file and prompts:
+   "PR #428 has a new review from copilot.
+   Run `/code-review-changes`?"
+3. After `/code-review-changes` completes (triage
+   → fix → reply PATCH), it deletes
+   `review_ready.md` — same single-use lifecycle
+   as `review_context.md`.
+
+**Multi-service watching**:
+
+When a PR is submitted to multiple services (per
+`pr-msg-meta` `submitted:` fields), `gish watch`
+can poll all backends in parallel:
+
+```
+gish watch --all 428
+# reads pr-msg-meta, finds gh=428 gitea=17
+# polls both, notifies on first review from either
+```
+
+This is the cross-service analog of the existing
+`gish review` fetch — same PR, multiple backends,
+unified notification.
+
+**Usage examples**:
+
+```bash
+# simple poll, terminal bell on review
+gish watch gh 428
+
+# desktop notify, check every 30s, exit on first
+gish watch gh 428 --interval 30 --on-review notify-send --once
+
+# write file for claude pickup
+gish watch gh 428 --on-review file
+
+# watch all backends where PR was submitted
+gish watch --all 428
+
+# fire-and-forget bg poll + auto-invoke claude
+gish watch gh 428 --on-review \
+  'claude -p "/code-review-changes 428"' &
+```
+
 ---
 
 ## Phased implementation plan
@@ -222,6 +401,24 @@ without breaking current functionality.
   posting, and `gish review --since` for the
   follow-up round prompt.
 - Add `gish ci gh <sha>` for CI baseline checks.
+
+### Phase 2.5: `gish watch` (review polling)
+
+**Goal**: close the gap between "review submitted"
+and "dev picks it up" — especially for bot reviews
+that land seconds after PR creation.
+
+- Implement the poll loop w/ state file persistence
+  (`<backend>/<num>_watch.json`).
+- GitHub backend first (`gh api` reviews endpoint).
+- Notification hooks: terminal bell, `notify-send`,
+  file-based (`.claude/review_ready.md`).
+- `--once` flag for CI/scripting use.
+- Wire up `gish watch --all` to read `pr-msg-meta`
+  `submitted:` fields for multi-backend polling.
+- Add claude-code hook that checks for
+  `review_ready.md` on session startup (or as a
+  `user-prompt-submit-hook`).
 
 ### Phase 3: Gitea review backend
 
@@ -623,3 +820,20 @@ This means the factoring boundary is:
   directly (and let dotrc's install mechanism
   sync to `~/`), or write to `~/.claude/` and
   let the user sync back to dotrc?
+- **Watch polling interval**: what's the right
+  default? 60s is polite to APIs but bot reviews
+  (copilot) land in <30s — should `gish watch`
+  start w/ a fast initial burst (5s for first
+  2min) then back off to the configured interval?
+- **sr.ht review detection**: sr.ht patches don't
+  have a "review" concept — reviews happen via
+  email replies to the patch thread. Can we poll
+  the mailing list archive API, or do we need a
+  local mail integration (`notmuch` / `mbsync`)?
+- **Watch daemon vs one-shot**: should `gish watch`
+  be a long-running daemon (systemd user unit?)
+  or purely interactive? A daemon could watch
+  all open PRs across all repos, but that's a
+  lot of API calls. Maybe a hybrid: interactive
+  by default, `--daemon` flag for persistent bg
+  mode w/ rate limiting.
