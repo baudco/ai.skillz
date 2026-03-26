@@ -363,6 +363,69 @@ gish watch gh 428 --on-review \
   'claude -p "/code-review-changes 428"' &
 ```
 
+### `gish watch` push detection
+
+The review poll covers *inbound* events, but
+claude also can't detect when the human pushes
+after a commit (no SSH access → no `git push` →
+no way to know when the branch is actually live).
+This matters bc downstream actions depend on
+the push having landed:
+
+- **Review re-trigger**: bot reviewers (copilot)
+  re-run on new pushes — `gish watch` needs to
+  know "new commits were pushed, expect a fresh
+  review soon" vs "still waiting on the same
+  review".
+- **CI status**: `gish ci` results are
+  meaningless until the push lands — polling CI
+  before push is wasted API calls.
+- **PR description updates**: `gish edit --sync`
+  could auto-update the PR body after push (e.g.
+  re-run `/pr-msg` if new commits were added).
+- **Cross-service sync**: if the PR is mirrored
+  to multiple services, push to one should
+  trigger sync checks on the others.
+
+**Detection strategies**:
+
+1. **Poll remote ref**: `git ls-remote <remote>
+   <branch>` and compare HEAD SHA — cheapest,
+   no API needed, works for any git remote.
+2. **Webhook** (ambitious): GitHub/Gitea push
+   webhooks → local listener → event file.
+   Overkill for single-dev but natural for team
+   workflows.
+3. **Post-push hook**: a local `post-push` git
+   hook (or xonsh alias wrapping `git push`)
+   writes `.claude/push_event.md` with the
+   pushed ref + SHA. Claude picks it up on next
+   session, same pattern as `review_ready.md`.
+4. **Prompt the human**: simplest — after
+   `/commit-msg`, remind "push when ready, then
+   I'll start watching for reviews". No
+   automation, just workflow guidance.
+
+Strategy 1 (poll remote ref) composes naturally
+w/ the existing `gish watch` loop — just add a
+ref-check alongside the review poll. If HEAD
+on remote advances, emit a `push` event before
+switching to review-watch mode.
+
+**Composite watch flow**:
+
+```
+gish watch gh 428 --await-push
+```
+
+1. Poll `git ls-remote` for branch HEAD change
+2. On push detected → notify, then switch to
+   review-watch mode
+3. Poll reviews as normal from here
+
+This gives a single command that covers the full
+"commit → push → review → triage" lifecycle.
+
 ---
 
 ## Phased implementation plan
@@ -820,6 +883,12 @@ This means the factoring boundary is:
   directly (and let dotrc's install mechanism
   sync to `~/`), or write to `~/.claude/` and
   let the user sync back to dotrc?
+- **Push detection vs push automation**: should
+  `gish` ever *do* the push itself (if given
+  credentials/agent-forwarding), or should it
+  always stay read-only and just detect? The
+  current stance is "claude never pushes" but
+  `gish` as a standalone CLI could be different.
 - **Watch polling interval**: what's the right
   default? 60s is polite to APIs but bot reviews
   (copilot) land in <30s — should `gish watch`
