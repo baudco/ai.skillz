@@ -3,6 +3,11 @@ name: py-codestyle
 description: >
   Python coding style conventions. Auto-applied when
   writing or editing Python code.
+compatibility: >
+  Language-agnostic agent. No external tools needed.
+metadata:
+  author: goodboy
+  version: "0.1"
 disable-model-invocation: true
 ---
 

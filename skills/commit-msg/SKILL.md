@@ -1,8 +1,15 @@
 ---
 name: commit-msg
 description: >
-  Generate git commit messages following project style. Use when user
-  wants to create a commit or asks for a commit message.
+  Generate git commit messages following project style.
+  Use when user wants to create a commit or asks for a
+  commit message.
+compatibility: >
+  Requires git CLI. Optional: gh CLI for review
+  context integration.
+metadata:
+  author: goodboy
+  version: "0.1"
 argument-hint: "[optional-scope-or-description]"
 disable-model-invocation: true
 allowed-tools:

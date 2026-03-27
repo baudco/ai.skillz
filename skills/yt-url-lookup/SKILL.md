@@ -1,9 +1,16 @@
 ---
 name: yt-url-lookup
 description: >
-  Reverse-lookup local audio files to their YouTube source
-  URLs via filename parsing, existing URL databases, and
-  yt-dlp search. Generate an INDEX.md mapping.
+  Reverse-lookup local audio files to their YouTube
+  source URLs via filename parsing, existing URL
+  databases, and yt-dlp search. Generate an
+  INDEX.md mapping.
+compatibility: >
+  Requires yt-dlp CLI. Optional: python3 for
+  confidence scoring.
+metadata:
+  author: goodboy
+  version: "0.1"
 argument-hint: "[DIR] [--rescan]"
 disable-model-invocation: true
 allowed-tools:

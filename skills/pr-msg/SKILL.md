@@ -5,6 +5,12 @@ description: >
   cross-service git hosting (GitHub, Gitea,
   SourceHut, GitLab, etc.). Use when user wants
   to create or draft a PR/MR/patch description.
+compatibility: >
+  Requires git CLI. Optional: gh CLI for PR
+  submission.
+metadata:
+  author: goodboy
+  version: "0.1"
 argument-hint: "[base-branch (default: main)]"
 disable-model-invocation: true
 allowed-tools:

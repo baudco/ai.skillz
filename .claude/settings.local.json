@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(pip show:*)",
+      "Bash(mkdir:*)"
     ]
   }
 }

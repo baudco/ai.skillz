@@ -6,6 +6,12 @@ description: >
   shared artifacts, step ordering, and coverage
   gaps. Use after building or refining skills that
   call each other.
+compatibility: >
+  Designed for Claude Code (or similar agentic
+  coding tools with file-access capabilities).
+metadata:
+  author: goodboy
+  version: "0.1"
 argument-hint: "[skill-names or skill-paths]"
 disable-model-invocation: true
 allowed-tools:

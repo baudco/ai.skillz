@@ -6,6 +6,12 @@ description: >
   inline reply comments via `gh`. Use when the user
   provides a GH review URL or asks to address PR
   review feedback.
+compatibility: >
+  Requires gh CLI (or gish when available).
+  Requires git CLI.
+metadata:
+  author: goodboy
+  version: "0.1"
 argument-hint: "<PR-review-URL-or-PR#>"
 disable-model-invocation: true
 allowed-tools:

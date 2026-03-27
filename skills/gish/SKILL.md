@@ -4,6 +4,12 @@ description: >
   Read, create, edit, and sync issues/PRs across
   git service backends (GitHub, Gitea, etc.) using
   local markdown files.
+compatibility: >
+  Requires git CLI. Optional: gh CLI for GitHub,
+  xonsh + py-gitea for Gitea.
+metadata:
+  author: goodboy
+  version: "0.1"
 argument-hint: "[action] [backend] [number]"
 disable-model-invocation: true
 allowed-tools:
@@ -21,13 +27,14 @@ user-invocable: true
 
 Manage issues and PRs locally as markdown files with
 optional sync to remote git services. The canonical
-source for this skill lives in `modden/.claude/skills/gish/`
-and is symlinked into other repos.
+source for this skill lives in `ai.skillz/skills/gish/`.
 
 See also:
-- [backends.md](backends.md) — per-backend capabilities
-- [format.md](format.md) — markdown file conventions
-- [roadmap.md](roadmap.md) — cross-service review +
+- [references/backends.md](references/backends.md) —
+  per-backend capabilities
+- [references/format.md](references/format.md) —
+  markdown file conventions
+- [ROADMAP.md](ROADMAP.md) — cross-service review +
   AI skill convergence plan
 
 ## Invocations
@@ -119,12 +126,8 @@ To use this skill from other repos, symlink the
 skill directory:
 
 ```bash
-# from tractor repo root:
-ln -s /home/goodboy/repos/modden/.claude/skills/gish \
-      .claude/skills/gish
-
-# from piker repo root:
-ln -s /home/goodboy/repos/modden/.claude/skills/gish \
+# from any repo root:
+ln -s /home/goodboy/repos/ai.skillz/skills/gish \
       .claude/skills/gish
 ```
 
@@ -149,7 +152,7 @@ currently supports:
 - sr.ht, GitLab, plain git backends
 - standalone CLI (factor out from xontrib)
 
-See [roadmap.md](roadmap.md) for the full phased
+See [ROADMAP.md](ROADMAP.md) for the full phased
 plan covering AI skill integration.
 
 For operations beyond what `gish.xsh` supports,

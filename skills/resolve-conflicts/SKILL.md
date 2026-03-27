@@ -4,6 +4,11 @@ description: >
   Resolve git merge/rebase conflicts by analyzing all
   sides and reconciling changes. Use when git reports
   unmerged paths during rebase, merge, or cherry-pick.
+compatibility: >
+  Requires git CLI.
+metadata:
+  author: goodboy
+  version: "0.1"
 argument-hint: "[optional-file-path]"
 disable-model-invocation: true
 allowed-tools:
