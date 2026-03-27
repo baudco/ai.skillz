@@ -4,7 +4,9 @@
       "Bash(ls:*)",
       "Bash(git:*)",
       "Bash(pip show:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(bash:*)",
+      "Bash(ln:*)"
     ]
   }
 }

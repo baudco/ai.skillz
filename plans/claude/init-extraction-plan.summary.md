@@ -25,9 +25,15 @@ Extract and generalize AI skills into `ai.skillz`
 - Create `scripts/deploy-skill.sh` and
   `scripts/validate-skills.sh`
 
+## Completed (post-plan)
+
+- Global `~/.claude/skills/` symlink repointed from
+  `dotrc/dotrc/claude/skills/` to `ai.skillz/skills/`
+- `/plan-io` skill created for plan file I/O conventions
+
 ## Deferred
 
-- Symlink restructure (point repos at `ai.skillz`)
+- Per-repo symlink migration (tractor, piker, modden)
 - `scripts/generate-style-guide.py` (needs `jinja2`)
 - `flake.nix` (user-managed)
 
