@@ -1,0 +1,120 @@
+---
+name: run-tests
+description: >
+  Run {{ project_name }} test suite (or subsets). Use
+  when the user wants to run tests, verify changes,
+  or check for regressions.
+compatibility: >
+  Requires {{ test_runner }}. Designed for Claude Code
+  (or similar agentic coding tools).
+metadata:
+  author: goodboy
+  version: "0.1"
+argument-hint: "[test-path-or-pattern] [--opts]"
+allowed-tools:
+  - Bash({{ test_command }} *)
+  - Bash({{ import_check_command }})
+  - Bash(ls *)
+  - Read
+  - Grep
+  - Glob
+  - Task
+---
+
+Run the `{{ project_name }}` test suite using
+`{{ test_runner }}`. Follow this process:
+
+## 1. Parse user intent
+
+From the user's message and any arguments, determine:
+
+- **scope**: full suite, specific file(s), specific
+  test(s), or a keyword pattern (`-k`).
+{%- if extra_scope_options %}
+{{ extra_scope_options }}
+{%- endif %}
+- **options**: any extra flags the user wants.
+
+If the user provides a bare path or pattern as argument,
+treat it as the test target. Examples:
+
+- `/run-tests` -> full suite
+- `/run-tests test_foo.py` -> single file
+- `/run-tests -k cancel` -> keyword filter
+
+## 2. Construct the test command
+
+Base command:
+```
+{{ test_command }}
+```
+
+### Default flags (always include unless user overrides):
+{{ default_flags }}
+
+### Path resolution:
+- If the user gives a bare filename, resolve it under
+  `{{ test_dir }}/`.
+- Glob if needed: `{{ test_dir }}/**/test_*<pattern>*.py`
+
+### Key options for this project:
+
+{{ custom_flags }}
+
+## 3. Pre-flight checks
+
+Always run these first, especially after refactors:
+
+```sh
+{{ import_check }}
+```
+
+If this fails, fix the import error before running
+any actual tests.
+
+## 4. Run and report
+
+- Run the constructed command.
+- Use a timeout of **600000ms** (10min) for full suite
+  runs, **120000ms** (2min) for single-file runs.
+- Use `--lf` (last-failed) to re-run only previously
+  failing tests when iterating on a fix.
+
+### On failure:
+- Show the failing test name(s) and short traceback.
+- If the failure looks related to recent changes, point
+  out the likely cause and suggest a fix.
+- **Check the known-flaky list** (section 8) before
+  investigating.
+
+### On success:
+- Report the pass/fail/skip counts concisely.
+
+## 5. Test directory layout
+
+```
+{{ test_layout }}
+```
+
+## 6. Change-type -> test mapping
+
+After modifying specific modules, run the corresponding
+test subset first for fast feedback:
+
+{{ change_test_mapping }}
+
+## 7. Quick-check shortcuts
+
+### After refactors (fastest first-pass):
+```sh
+{{ quick_check_commands }}
+```
+
+### Re-run last failures only:
+```sh
+{{ test_command }} --lf -x --tb=short --no-header
+```
+
+## 8. Known flaky tests
+
+{{ known_flaky }}
