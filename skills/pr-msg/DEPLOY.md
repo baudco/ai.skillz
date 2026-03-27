@@ -1,6 +1,6 @@
 # Deploying `/pr-msg`
 
-## Quick setup
+## Method A: Absolute symlinks (single machine)
 
 ```bash
 mkdir -p .claude/skills/pr-msg/msgs
@@ -9,6 +9,38 @@ ln -s /path/to/ai.skillz/skills/pr-msg/SKILL.md \
 ln -s /path/to/ai.skillz/skills/pr-msg/references \
       .claude/skills/pr-msg/references
 ```
+
+Or use the deploy script:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy-skill.sh pr-msg <your-repo>
+```
+
+## Method B: Git submodule (portable, version-pinned)
+
+### One-time setup
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy-skill.sh init <your-repo>
+```
+
+### Deploy this skill
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy-skill.sh pr-msg <your-repo>
+```
+
+### What gets committed
+
+- `.gitmodules`, `.claude/ai.skillz` (gitlink)
+- `.claude/skills/pr-msg/SKILL.md` → relative symlink
+  to `../../ai.skillz/skills/pr-msg/SKILL.md`
+- `.claude/skills/pr-msg/references` → relative symlink
+  to `../../ai.skillz/skills/pr-msg/references`
+
+### What gets gitignored
+
+- `msgs/`, `pr_msg_LATEST.md`
 
 ## What stays local (per-repo)
 

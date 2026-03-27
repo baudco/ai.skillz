@@ -1,6 +1,6 @@
 # Deploying `/commit-msg`
 
-## Quick setup
+## Method A: Absolute symlinks (single machine)
 
 ### 1. Create skill directory in your repo
 
@@ -15,7 +15,40 @@ ln -s /path/to/ai.skillz/skills/commit-msg/SKILL.md \
       .claude/skills/commit-msg/SKILL.md
 ```
 
-### 3. Generate a project-specific style guide
+Or use the deploy script:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy-skill.sh commit-msg <your-repo>
+```
+
+## Method B: Git submodule (portable, version-pinned)
+
+### One-time setup
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy-skill.sh init <your-repo>
+```
+
+### Deploy this skill
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy-skill.sh commit-msg <your-repo>
+```
+
+### What gets committed
+
+- `.gitmodules`, `.claude/ai.skillz` (gitlink)
+- `.claude/skills/commit-msg/SKILL.md` → relative symlink
+  to `../../ai.skillz/skills/commit-msg/SKILL.md`
+- per-repo files (`style-guide-reference.md`, etc.)
+
+### What gets gitignored
+
+- `msgs/`, `conf.toml`, `*_LATEST.md`
+
+## Post-deploy setup
+
+### Generate a project-specific style guide
 
 Option A: use the `generate-style-guide.py` script
 (requires `jinja2`):
@@ -30,7 +63,7 @@ Option B: have `claude` analyze your commit history
 and write the style guide manually, using the examples
 in `ai.skillz/skills/commit-msg/references/` as models.
 
-### 4. (Optional) Create session tracking config
+### (Optional) Create session tracking config
 
 ```bash
 cp /path/to/ai.skillz/templates/commit-msg/conf.toml.j2 \

@@ -1,85 +1,307 @@
-#!/bin/bash
-# Deploy an ai.skillz skill into a target repo.
+#!/usr/bin/env bash
+# Deploy ai.skillz skills into a target repo via
+# absolute symlinks or git-submodule-relative symlinks.
 #
 # Usage:
-#   deploy-skill.sh <skill-name> <target-repo-path>
+#   bash scripts/deploy-skill.sh init <target-repo> [--url URL] [--ref REF]
+#   bash scripts/deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
+#   bash scripts/deploy-skill.sh update <target-repo> [--ref REF]
+#   bash scripts/deploy-skill.sh status <target-repo>
 #
-# Example:
-#   deploy-skill.sh commit-msg ~/repos/myproject
-#   deploy-skill.sh py-codestyle ~/repos/myproject
+# When --method is omitted the script auto-detects:
+#   .claude/ai.skillz/ exists as submodule → submodule (relative links)
+#   otherwise                              → symlink   (absolute links)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLZ_ROOT="$(dirname "$SCRIPT_DIR")"
+DEFAULT_URL="file://${SKILLZ_ROOT}"
 
-if [ $# -lt 2 ]; then
-    echo "Usage: $0 <skill-name> <target-repo-path>"
-    echo ""
-    echo "Available skills:"
+# -------------------------------------------------------------------
+# helpers
+# -------------------------------------------------------------------
+die() { echo "Error: $*" >&2; exit 1; }
+
+usage() {
+    cat <<'EOF'
+Usage:
+  deploy-skill.sh init   <target-repo> [--url URL] [--ref REF]
+  deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
+  deploy-skill.sh update <target-repo> [--ref REF]
+  deploy-skill.sh status <target-repo>
+
+Subcommands:
+  init    Add ai.skillz as a git submodule at .claude/ai.skillz/.
+  update  Update the submodule to latest (or --ref REF).
+  status  Show deployed skills and their link method.
+
+Available skills:
+EOF
     ls "$SKILLZ_ROOT/skills/"
     exit 1
-fi
+}
 
-SKILL_NAME="$1"
-TARGET_REPO="$2"
-SKILL_SRC="$SKILLZ_ROOT/skills/$SKILL_NAME"
-SKILL_DST="$TARGET_REPO/.claude/skills/$SKILL_NAME"
+# Detect whether the target repo has a submodule checkout.
+detect_method() {
+    local repo="$1"
+    if [ -d "$repo/.claude/ai.skillz/.git" ] \
+        || [ -f "$repo/.claude/ai.skillz/.git" ]; then
+        echo "submodule"
+    else
+        echo "symlink"
+    fi
+}
 
-if [ ! -d "$SKILL_SRC" ]; then
-    echo "Error: skill '$SKILL_NAME' not found at $SKILL_SRC"
-    exit 1
-fi
+# -------------------------------------------------------------------
+# init — add ai.skillz as a git submodule
+# -------------------------------------------------------------------
+cmd_init() {
+    local target="" url="$DEFAULT_URL" ref=""
 
-if [ ! -d "$TARGET_REPO" ]; then
-    echo "Error: target repo '$TARGET_REPO' not found"
-    exit 1
-fi
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --url) url="$2"; shift 2 ;;
+            --ref) ref="$2"; shift 2 ;;
+            *)
+                [ -z "$target" ] && { target="$1"; shift; continue; }
+                die "unexpected argument: $1"
+                ;;
+        esac
+    done
+    [ -z "$target" ] && die "missing <target-repo>"
+    target="$(cd "$target" && pwd)"
 
-# Check if DEPLOY.md exists for instructions
-DEPLOY_MD="$SKILL_SRC/DEPLOY.md"
-if [ ! -f "$DEPLOY_MD" ]; then
-    echo "Warning: no DEPLOY.md found for $SKILL_NAME"
-fi
+    if [ -d "$target/.claude/ai.skillz" ]; then
+        echo "Submodule already present at .claude/ai.skillz/"
+    else
+        echo "Adding ai.skillz submodule..."
+        git -C "$target" submodule add "$url" .claude/ai.skillz
+    fi
 
-# Check if skill has a SKILL.md (run-tests is template-only)
-if [ ! -f "$SKILL_SRC/SKILL.md" ]; then
-    echo "Note: $SKILL_NAME has no SKILL.md (template-only skill)."
-    echo "See $DEPLOY_MD for instructions."
-    exit 0
-fi
+    if [ -n "$ref" ]; then
+        echo "Checking out ref: $ref"
+        git -C "$target/.claude/ai.skillz" checkout "$ref"
+        git -C "$target" add .claude/ai.skillz
+    fi
 
-mkdir -p "$SKILL_DST"
+    mkdir -p "$target/.claude/skills"
+    echo ""
+    echo "Submodule ready at $target/.claude/ai.skillz/"
+    echo "Deploy skills with:  deploy-skill.sh <skill> $target"
+}
 
-# Skills that need per-repo customization get
-# selective symlinks; fully generic skills get a
-# directory symlink.
-case "$SKILL_NAME" in
-    commit-msg)
-        ln -sfn "$SKILL_SRC/SKILL.md" "$SKILL_DST/SKILL.md"
-        mkdir -p "$SKILL_DST/msgs"
-        echo "Symlinked SKILL.md, created msgs/"
-        echo ""
-        echo "Next steps:"
-        echo "  1. Generate a style guide:"
-        echo "     Have claude analyze your commit history"
-        echo "     and write .claude/skills/commit-msg/style-guide-reference.md"
-        echo "  2. Optionally create conf.toml for session tracking"
-        ;;
-    pr-msg)
-        ln -sfn "$SKILL_SRC/SKILL.md" "$SKILL_DST/SKILL.md"
-        ln -sfn "$SKILL_SRC/references" "$SKILL_DST/references"
-        mkdir -p "$SKILL_DST/msgs"
-        echo "Symlinked SKILL.md + references/, created msgs/"
-        ;;
-    *)
-        # Fully generic skill: symlink the whole directory
-        rm -rf "$SKILL_DST"
-        ln -sfn "$SKILL_SRC" "$SKILL_DST"
-        echo "Symlinked $SKILL_NAME/ directory"
-        ;;
+# -------------------------------------------------------------------
+# update — pull latest (or checkout ref) for the submodule
+# -------------------------------------------------------------------
+cmd_update() {
+    local target="" ref=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --ref) ref="$2"; shift 2 ;;
+            *)
+                [ -z "$target" ] && { target="$1"; shift; continue; }
+                die "unexpected argument: $1"
+                ;;
+        esac
+    done
+    [ -z "$target" ] && die "missing <target-repo>"
+    target="$(cd "$target" && pwd)"
+
+    [ -d "$target/.claude/ai.skillz" ] \
+        || die "no submodule at .claude/ai.skillz/ — run init first"
+
+    if [ -n "$ref" ]; then
+        echo "Checking out ref: $ref"
+        git -C "$target/.claude/ai.skillz" checkout "$ref"
+    else
+        echo "Updating submodule to latest..."
+        git -C "$target/.claude/ai.skillz" fetch origin
+        git -C "$target/.claude/ai.skillz" pull origin HEAD
+    fi
+    git -C "$target" add .claude/ai.skillz
+    echo "Submodule updated."
+}
+
+# -------------------------------------------------------------------
+# status — show deployed skills and their link method
+# -------------------------------------------------------------------
+cmd_status() {
+    local target="$1"
+    [ -z "$target" ] && die "missing <target-repo>"
+    target="$(cd "$target" && pwd)"
+
+    local skills_dir="$target/.claude/skills"
+    local has_submodule="no"
+    if [ -d "$target/.claude/ai.skillz/.git" ] \
+        || [ -f "$target/.claude/ai.skillz/.git" ]; then
+        has_submodule="yes"
+    fi
+
+    echo "Target:    $target"
+    echo "Submodule: $has_submodule"
+    echo ""
+
+    if [ ! -d "$skills_dir" ]; then
+        echo "No .claude/skills/ directory found."
+        return
+    fi
+
+    for entry in "$skills_dir"/*/; do
+        [ -d "$entry" ] || continue
+        local name
+        name="$(basename "$entry")"
+        local status_str=""
+
+        if [ -L "$entry" ]; then
+            # It's a directory symlink (remove trailing /)
+            entry="${entry%/}"
+        fi
+
+        if [ -L "$entry" ]; then
+            local link_target
+            link_target="$(readlink "$entry")"
+            if [[ "$link_target" == /* ]]; then
+                status_str="symlink (absolute)"
+            else
+                status_str="symlink (relative)"
+            fi
+            if [ ! -e "$entry" ]; then
+                status_str="$status_str [BROKEN]"
+            fi
+        elif [ -L "$entry/SKILL.md" ]; then
+            local link_target
+            link_target="$(readlink "$entry/SKILL.md")"
+            if [[ "$link_target" == /* ]]; then
+                status_str="hybrid — SKILL.md symlink (absolute)"
+            else
+                status_str="hybrid — SKILL.md symlink (relative)"
+            fi
+            if [ ! -e "$entry/SKILL.md" ]; then
+                status_str="$status_str [BROKEN]"
+            fi
+        elif [ -f "$entry/SKILL.md" ]; then
+            status_str="local (template-generated)"
+        else
+            status_str="directory (no SKILL.md)"
+        fi
+
+        printf "  %-25s %s\n" "$name" "$status_str"
+    done
+}
+
+# -------------------------------------------------------------------
+# deploy — create symlinks for a single skill
+# -------------------------------------------------------------------
+cmd_deploy() {
+    local skill_name="$1"; shift
+    local target="" method=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --method) method="$2"; shift 2 ;;
+            *)
+                [ -z "$target" ] && { target="$1"; shift; continue; }
+                die "unexpected argument: $1"
+                ;;
+        esac
+    done
+    [ -z "$target" ] && die "missing <target-repo>"
+    target="$(cd "$target" && pwd)"
+
+    local skill_src="$SKILLZ_ROOT/skills/$skill_name"
+    [ -d "$skill_src" ] || die "skill '$skill_name' not found at $skill_src"
+
+    # Auto-detect method when not specified
+    [ -z "$method" ] && method="$(detect_method "$target")"
+
+    local skill_dst="$target/.claude/skills/$skill_name"
+    local deploy_md="$skill_src/DEPLOY.md"
+
+    echo "Deploying '$skill_name' via $method method..."
+
+    case "$skill_name" in
+        # -------------------------------------------------------
+        # hybrid: SKILL.md symlink + local per-repo dirs/files
+        # -------------------------------------------------------
+        commit-msg)
+            mkdir -p "$skill_dst/msgs"
+            if [ "$method" = "submodule" ]; then
+                ln -sfn "../../ai.skillz/skills/commit-msg/SKILL.md" \
+                    "$skill_dst/SKILL.md"
+            else
+                ln -sfn "$skill_src/SKILL.md" "$skill_dst/SKILL.md"
+            fi
+            echo "  Linked SKILL.md, created msgs/"
+            echo ""
+            echo "Next steps:"
+            echo "  1. Generate a style guide:"
+            echo "     Have claude analyze your commit history"
+            echo "     and write .claude/skills/commit-msg/style-guide-reference.md"
+            echo "  2. Optionally create conf.toml for session tracking"
+            ;;
+
+        pr-msg)
+            mkdir -p "$skill_dst/msgs"
+            if [ "$method" = "submodule" ]; then
+                ln -sfn "../../ai.skillz/skills/pr-msg/SKILL.md" \
+                    "$skill_dst/SKILL.md"
+                ln -sfn "../../ai.skillz/skills/pr-msg/references" \
+                    "$skill_dst/references"
+            else
+                ln -sfn "$skill_src/SKILL.md" "$skill_dst/SKILL.md"
+                ln -sfn "$skill_src/references" "$skill_dst/references"
+            fi
+            echo "  Linked SKILL.md + references/, created msgs/"
+            ;;
+
+        # -------------------------------------------------------
+        # template-only: no symlinks, just instructions
+        # -------------------------------------------------------
+        run-tests)
+            echo "Note: $skill_name is template-only (no generic SKILL.md)."
+            echo "See $deploy_md for setup instructions."
+            return 0
+            ;;
+
+        # -------------------------------------------------------
+        # generic: whole-directory symlink
+        # -------------------------------------------------------
+        *)
+            # Check if skill has a SKILL.md
+            if [ ! -f "$skill_src/SKILL.md" ]; then
+                echo "Note: $skill_name has no SKILL.md (template-only skill)."
+                echo "See $deploy_md for instructions."
+                return 0
+            fi
+
+            # Remove existing target so ln can create fresh
+            rm -rf "$skill_dst"
+
+            if [ "$method" = "submodule" ]; then
+                ln -sfn "../ai.skillz/skills/$skill_name" "$skill_dst"
+            else
+                ln -sfn "$skill_src" "$skill_dst"
+            fi
+            echo "  Linked $skill_name/ directory"
+            ;;
+    esac
+
+    echo ""
+    echo "Deployed $skill_name → $target/.claude/skills/$skill_name"
+    [ -f "$deploy_md" ] && echo "See $deploy_md for full details."
+}
+
+# -------------------------------------------------------------------
+# main dispatch
+# -------------------------------------------------------------------
+[ $# -lt 1 ] && usage
+
+case "$1" in
+    -h|--help|help) usage ;;
+    init)   shift; cmd_init "$@" ;;
+    update) shift; cmd_update "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    *)      cmd_deploy "$@" ;;
 esac
-
-echo ""
-echo "Deployed $SKILL_NAME to $TARGET_REPO"
-echo "See $DEPLOY_MD for full details."

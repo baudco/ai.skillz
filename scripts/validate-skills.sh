@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Validate all skills in ai.skillz conform to
 # agentskills.io spec requirements.
 #

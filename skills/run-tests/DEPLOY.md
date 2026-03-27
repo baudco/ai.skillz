@@ -3,6 +3,9 @@
 This skill requires per-project customization —
 there is no generic SKILL.md to symlink.
 
+> Neither symlink nor submodule deployment apply here.
+> The SKILL.md is always generated locally from a template.
+
 ## Quick setup
 
 ### 1. Create skill directory
