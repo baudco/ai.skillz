@@ -6,7 +6,11 @@
       "Bash(pip show:*)",
       "Bash(mkdir:*)",
       "Bash(bash:*)",
-      "Bash(ln:*)"
+      "Bash(ln:*)",
+      "Bash(do:)",
+      "Bash(then echo:*)",
+      "Bash(chmod +x:*)",
+      "Bash(echo EXIT:$?:*)"
     ]
   }
 }
