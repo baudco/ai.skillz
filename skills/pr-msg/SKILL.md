@@ -88,6 +88,8 @@ may exceed this.
 
 **Body Sections (in order):**
 
+Separate major sections with `---` horizontal rules.
+
 ### Metadata comment
 - Always include an HTML-comment metadata block at
   the very top of the generated file (before the
@@ -104,17 +106,8 @@ may exceed this.
   -->
   ```
 
-### Summary
-- Bulleted list of changes, one per logical unit.
-- Each bullet prefixed with a commit-hash reference
-  link: `[<short-hash>][<short-hash>]` using md
-  reference-style.
-- End each bullet with a period for prose-y feel.
-- Use backticks for all code elements.
-- **67 char line limit** — wrap long bullets.
-- When a single bullet covers multiple commits,
-  chain the hash refs:
-  `[abc1234][abc1234] [def5678][def5678]`.
+### Title (h2)
+- Use `## <Title>` as the first visible heading.
 
 ### Motivation
 - 1-2 paragraphs explaining *why* the change exists.
@@ -123,17 +116,62 @@ may exceed this.
 - **67 char line limit** — hard-wrap paragraphs.
 - Casual yet technically precise tone (match the
   project's commit-msg style).
+- Comes FIRST — the reader needs to know *why*
+  before seeing *what* changed.
+
+### Src of research (optional)
+- Include when the change is motivated by external
+  specs, RFCs, upstream projects, or design docs.
+- Brief intro sentence, then bulleted links.
+- Use `*` sub-bullets for specific pages/sections
+  within a link group.
+- Example:
+  ```
+  ### Src of research
+
+  The following provide info on why/how this
+  impl makes sense,
+
+  - https://github.com/project/repo
+    * https://github.com/project/repo/blob/.../file
+  - https://datatracker.ietf.org/doc/html/rfc1234
+  ```
+
+### Summary of changes
+- Use heading `### Summary of changes` (not just
+  "Summary").
+- Optional subtitle like "By chronological commit"
+  when organizing by commit order.
+- Bulleted list of changes, one per logical unit.
+- Each bullet prefixed with a parenthesized
+  commit-hash reference link:
+  `([<short-hash>][<short-hash>])` using md
+  reference-style.
+- End each bullet with a period for prose-y feel.
+- Use backticks for all code elements.
+- **67 char line limit** — wrap long bullets.
+- When a single bullet covers multiple commits,
+  chain the hash refs:
+  `([abc1234][abc1234]) ([def5678][def5678])`.
+- Use `*` sub-bullets for secondary details within
+  a change.
 
 ### Scopes changed
-- Use Python namespace-resolution syntax for scope
-  paths: `tractor._exceptions.reg_err_types()` not
-  `tractor/_exceptions.py`.
-- Each scope bullet prefixed with relevant
-  commit-hash reference link(s).
-- Sub-bullets (`*`) for secondary changes within
-  the same module/namespace.
+- Organized by file/module path, NOT by commit.
+- Use `- \`<scope>\`` prefix with `*` sub-bullets
+  for what changed within each scope.
+- Use namespace-resolution syntax for scope paths:
+  `tractor.discovery._multiaddr` not
+  `tractor/discovery/_multiaddr.py`.
 - For test modules use `tests.<module_name>` style.
 - **67 char line limit** on each bullet line.
+
+### Future follow up (optional)
+- Include when there are planned next steps, known
+  limitations, or follow-up work that builds on
+  this PR.
+- Use prose paragraphs and/or code examples to
+  illustrate the vision.
 
 ### Cross-references (commented out)
 - Always include a commented-out cross-references

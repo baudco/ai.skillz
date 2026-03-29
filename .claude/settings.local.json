@@ -10,7 +10,8 @@
       "Bash(do:)",
       "Bash(then echo:*)",
       "Bash(chmod +x:*)",
-      "Bash(echo EXIT:$?:*)"
+      "Bash(echo EXIT:$?:*)",
+      "Bash(gh api:*)"
     ]
   }
 }

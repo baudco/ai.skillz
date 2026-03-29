@@ -24,25 +24,59 @@ submitted:
 
 ## <Title: present-tense verb + backticked code>
 
-### Summary
-- [<hash>][<hash>] Description of change ending
-  with period.
-- [<hash>][<hash>] Another change description
-  ending with period.
-- [<hash>][<hash>] [<hash>][<hash>] Multi-commit
-  change description.
-
 ### Motivation
 <1-2 paragraphs: problem/limitation first,
 then solution. Hard-wrap at 67 chars.>
 
+---
+
+### Src of research
+
+<optional — include when motivated by external
+specs, RFCs, upstream projects, or design docs>
+
+The following provide info on why/how this impl
+makes sense,
+
+- https://github.com/project/repo
+  * https://github.com/project/repo/blob/.../file
+- https://some-rfc-or-spec-url
+
+---
+
+### Summary of changes
+
+By chronological commit
+
+- ([<hash>][<hash>]) Description of change ending
+  with period.
+
+- ([<hash>][<hash>]) Another change description
+  ending with period.
+  * Sub-detail about this change.
+
+- ([<hash>][<hash>]) ([<hash>][<hash>]) Multi-commit
+  change description.
+
+---
+
 ### Scopes changed
-- [<hash>][<hash>] `pkg.mod.func()` — what
-  changed.
-  * [<hash>][<hash>] Also adjusts
-    `.related_thing()` in same module.
-- [<hash>][<hash>] `tests.test_mod` — new/changed
-  test coverage.
+- `pkg.mod`
+  * description of what changed.
+
+- `pkg.mod.submod`
+  * full rewrite; drop old impl, replace with new.
+  * re-export `Thing` from upstream lib.
+
+- `tests.test_mod`
+  * add test coverage for new feature.
+
+---
+
+### Future follow up
+
+<optional — planned next steps, known limitations,
+or follow-up work that builds on this PR>
 
 <!--
 ### Cross-references
@@ -54,10 +88,12 @@ Also submitted as
 - [design-doc-or-screenshot](url)
 -->
 
+---
+
 (this pr content was generated in some part by
 [`claude-code`][claude-code-gh])
 
-[<hash>]: https://<service>/<owner>/<repo>/commit/<hash>
+[<hash>]: https://<service>/<owner>/<repo>/commit/<full-hash>
 [claude-code-gh]: https://github.com/anthropics/claude-code
 
 <!-- cross-service pr refs (fill after submit):
@@ -195,16 +231,33 @@ This mirrors the `gish` skill's
 ## Scope Naming Convention
 
 Use Python namespace-resolution syntax for
-referencing changed code scopes:
+referencing changed code scopes. Organize by
+file/module path, NOT by commit.
 
 | File path                 | Scope reference               |
 |---------------------------|-------------------------------|
 | `tractor/_exceptions.py`  | `tractor._exceptions`         |
 | `tractor/_state.py`       | `tractor._state`              |
+| `pyproject.toml`          | `pyproject.toml`              |
 | `tests/test_foo.py`       | `tests.test_foo`              |
 | Function in module        | `tractor._exceptions.func()`  |
 | Method on class           | `.RemoteActorError.src_type`  |
 | Class                     | `tractor._exceptions.RAE`     |
+
+Each scope gets a top-level `-` bullet with the
+backticked path, then `*` sub-bullets describing
+what changed within that scope:
+
+```markdown
+- `tractor.discovery._multiaddr`
+  * full rewrite; drop `bidict`-based protocol
+    tables, custom parser fns.
+  * re-export `Multiaddr` from upstream lib.
+
+- `tractor.ipc._tcp`
+  * `.maddr` now returns `Multiaddr` via
+    `mk_maddr(self.raddr)`, auto-detects ip4/ip6.
+```
 
 Prefix with the package path for top-level refs;
 use leading-dot shorthand (`.ClassName.method()`)
