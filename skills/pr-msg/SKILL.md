@@ -27,6 +27,21 @@ allowed-tools:
 When generating a patch-request (PR/MR) description,
 always follow this process:
 
+**Narrative flow** — the description should read as
+a justification-driven story:
+
+  Motivation (why) → Research (background) →
+  Summary (what) → Scopes (where) →
+  TODOs before landing (blockers) →
+  Follow up (future)
+
+Provide prose only where necessary — typically at
+the beginning/end of sections and *around* bullet
+segments. Use bullet style wherever there is logical
+separation of items that can be tersely expressed as
+hierarchical groupings (this is best for piece-wise
+technical notes).
+
 0. **Check for branch divergence**: if
    `git log main..HEAD` (or the user-specified base
    branch) is empty, STOP and tell the user "no
@@ -68,7 +83,15 @@ always follow this process:
    etc.
 
 4. **Write the PR description** following these
-   rules:
+   rules (includes interactive sub-steps 4a/4b
+   that run *before* final text assembly):
+
+   4a. **Suggest related issues/PRs** — see the
+       "Related issues & PRs" section below;
+       prompt the user with candidates.
+   4b. **Suggest reviewers** — see the "Reviewer
+       suggestions" section below; prompt the
+       user with contributor names.
 
 **Line length: 69 char max** (same as `set tw=69`
 in nvim) for ALL prose content (Summary bullets,
@@ -157,6 +180,10 @@ Separate major sections with `---` horizontal rules.
   a change.
 
 ### Scopes changed
+- **Optional for small PRs** — when the diff is ≤3
+  files and "Summary of changes" already covers the
+  per-file detail, this section may be omitted to
+  reduce noise.
 - Organized by file/module path, NOT by commit.
 - Use `- \`<scope>\`` prefix with `*` sub-bullets
   for what changed within each scope.
@@ -166,10 +193,21 @@ Separate major sections with `---` horizontal rules.
 - For test modules use `tests.<module_name>` style.
 - **69 char line limit** on each bullet line.
 
+### TODOs before landing (optional)
+- Include when there are outstanding items that
+  should be resolved before the PR merges (missing
+  tests, incomplete docs, known edge-case gaps).
+- Use a checklist (`- [ ] item`) so reviewers can
+  track completion.
+- If nothing is blocking, omit entirely.
+
 ### Future follow up (optional)
 - Include when there are planned next steps, known
   limitations, or follow-up work that builds on
   this PR.
+- Actively scan the diff for `# TODO`, `XXX`,
+  `FIXME`, and `NOTE` comments — surface any that
+  are relevant to follow-up work.
 - Use prose paragraphs and/or code examples to
   illustrate the vision.
 
@@ -188,6 +226,24 @@ Separate major sections with `---` horizontal rules.
   - [design-doc-or-screenshot](url)
   -->
   ```
+
+### Related issues & PRs
+- Scan commit messages, branch name, and diff for
+  issue/PR references (`#123`, `fixes #N`, URLs).
+- Search the repo's open issues for keywords from
+  the PR title/motivation.
+- **Prompt the user**: present any candidate links
+  and ask which (if any) to include. Add confirmed
+  links to the `### Links` block inside the
+  cross-references comment.
+
+### Reviewer suggestions
+- Run `git log --format='%aN' -- <changed-files>`
+  and `git blame` on heavily modified files to
+  identify past contributors.
+- **Prompt the user**: suggest tagging those
+  collaborators as reviewers, listing each with
+  their most-relevant file scope.
 
 ### Reference-style link definitions
 - Collect ALL commit-hash links at the bottom of

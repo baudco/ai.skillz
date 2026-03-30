@@ -74,10 +74,20 @@ By chronological commit
 
 ---
 
+### TODOs before landing
+
+<optional — include when there are pre-merge blockers>
+
+- [ ] Outstanding item one.
+- [ ] Outstanding item two.
+
+---
+
 ### Future follow up
 
 <optional — planned next steps, known limitations,
-or follow-up work that builds on this PR>
+or follow-up work. Scan diff for # TODO / XXX /
+FIXME / NOTE comments and surface relevant items.>
 
 <!--
 ### Cross-references
@@ -85,7 +95,7 @@ Also submitted as
 [github-pr][] | [gitea-pr][] | [srht-patch][].
 
 ### Links
-- [relevant-issue-or-discussion](url)
+- [<repo>#NNN](url) — related issue/PR
 - [design-doc-or-screenshot](url)
 -->
 
@@ -287,6 +297,16 @@ project's commit-msg style. Terse but every bullet
 carries signal. Use project abbreviations freely
 (msg, bg, ctx, impl, mod, obvi, fn, bc, var,
 prolly, ep, etc.).
+
+## Style principles
+
+- **Justification-driven flow** — sections progress
+  from *why* → *what* → *where* → *next*.
+- Prose only at section openings/closings and around
+  bullet segments.
+- Bullets for any logical separation expressible as
+  terse hierarchical groupings.
+- Every bullet carries signal — no filler.
 
 ---
 
