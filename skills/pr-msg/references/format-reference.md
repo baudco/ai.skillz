@@ -4,11 +4,12 @@ Canonical structure for `tractor` patch-request
 descriptions, designed to work across GitHub,
 Gitea, SourceHut, and GitLab markdown renderers.
 
-**Line length: 67 char max** for all prose content
-(Summary bullets, Motivation paragraphs, Scopes
-bullets, etc.). Same limit as commit-msg body and
-project code style. Only raw URLs in reference-link
-definitions may exceed this.
+**Line length: 69 char max** (same as `set tw=69`
+in nvim) for all prose content (Summary bullets,
+Motivation paragraphs, Scopes bullets, etc.). Same
+limit as commit-msg body and project code style.
+Only raw URLs in reference-link definitions may
+exceed this.
 
 ## Template
 
@@ -26,7 +27,7 @@ submitted:
 
 ### Motivation
 <1-2 paragraphs: problem/limitation first,
-then solution. Hard-wrap at 67 chars.>
+then solution. Hard-wrap at 69 chars.>
 
 ---
 

@@ -6,7 +6,7 @@ Learned from analyzing 500 commits from the piker repository.
 
 ### Length
 - Target: ~50 characters (avg: 50.5 chars)
-- Maximum: 67 chars (hard limit, though historical max: 146)
+- Maximum: 69 chars (hard limit, though historical max: 146)
 - Keep concise and descriptive
 
 ### Structure
@@ -93,7 +93,7 @@ Use these to organize complex commit bodies:
    - Special annotations when needed
 
 ### Line Length
-- Body lines: 67 character maximum
+- Body lines: 69 character maximum
 - Break longer lines appropriately
 
 ## Language Patterns

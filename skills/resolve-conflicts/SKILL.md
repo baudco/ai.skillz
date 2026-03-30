@@ -138,5 +138,5 @@ Summarize for the user:
 - When in doubt about intent, show both versions
   and ask the user which to keep.
 - Follow the project's `py-codestyle` conventions
-  when touching code (67 char lines, single quotes,
+  when touching code (69 char lines, single quotes,
   etc.).

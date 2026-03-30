@@ -17,19 +17,19 @@ These rules apply globally to ALL python projects.
 
 ## Line length
 
-- **67 char max per source line** including
+- **69 char max per source line** including
   indentation, quotes, and all syntax.
 - This applies to code, comments, docstrings, and
   string literals alike.
 - For multiline string literals (log msgs, error
   msgs, `print()` calls), pack each source line
-  close to 67 chars. Don't break too early just
+  close to 69 chars. Don't break too early just
   because of `\n` boundaries in rendered output —
   use the full width available after indent + quoting.
 - When a string line has an f-string interpolation
   that makes length variable, it's fine to split at
   that boundary but keep the continuation packed too.
-- Where the 67 char limit would be violated, convert
+- Where the 69 char limit would be violated, convert
   to a multiline style matching surrounding similar
   syntax uses in the current code base.
 
@@ -107,7 +107,7 @@ These rules apply globally to ALL python projects.
 
 - No whitespace in union-style type annotations:
   `str|None` not `str | None`.
-- When a union expression exceeds 67 chars, use
+- When a union expression exceeds 69 chars, use
   multiline style:
 
   ```python

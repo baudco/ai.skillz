@@ -61,7 +61,7 @@ purpose in a few sentences or short paragraph.
   convention (e.g. `### Impl deats,`).
 - Casual yet technically precise — match the
   tone of existing issue files and commits.
-- Max line length ~67 chars where practical.
+- Max line length ~69 chars where practical.
 - No YAML frontmatter — just plain markdown.
 - Links use inline style:
   `[text](https://...)` or bare URLs.

@@ -70,11 +70,11 @@ always follow this process:
 4. **Write the PR description** following these
    rules:
 
-**Line length: 67 char max** for ALL prose content
-(Summary bullets, Motivation paragraphs, Scopes
-bullets). Same rule as commit-msg body and project
-code style. Only raw URLs in reference-link defs
-may exceed this.
+**Line length: 69 char max** (same as `set tw=69`
+in nvim) for ALL prose content (Summary bullets,
+Motivation paragraphs, Scopes bullets). Same rule
+as commit-msg body and project code style. Only
+raw URLs in reference-link defs may exceed this.
 
 **Title:**
 - Present tense verb (Add, Fix, Drop, Use, etc.)
@@ -113,7 +113,7 @@ Separate major sections with `---` horizontal rules.
 - 1-2 paragraphs explaining *why* the change exists.
 - Describe the problem/limitation before the
   solution.
-- **67 char line limit** — hard-wrap paragraphs.
+- **69 char line limit** — hard-wrap paragraphs.
 - Casual yet technically precise tone (match the
   project's commit-msg style).
 - Comes FIRST — the reader needs to know *why*
@@ -149,7 +149,7 @@ Separate major sections with `---` horizontal rules.
   reference-style.
 - End each bullet with a period for prose-y feel.
 - Use backticks for all code elements.
-- **67 char line limit** — wrap long bullets.
+- **69 char line limit** — wrap long bullets.
 - When a single bullet covers multiple commits,
   chain the hash refs:
   `([abc1234][abc1234]) ([def5678][def5678])`.
@@ -164,7 +164,7 @@ Separate major sections with `---` horizontal rules.
   `tractor.discovery._multiaddr` not
   `tractor/discovery/_multiaddr.py`.
 - For test modules use `tests.<module_name>` style.
-- **67 char line limit** on each bullet line.
+- **69 char line limit** on each bullet line.
 
 ### Future follow up (optional)
 - Include when there are planned next steps, known

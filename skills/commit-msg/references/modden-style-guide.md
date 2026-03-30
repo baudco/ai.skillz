@@ -21,7 +21,7 @@ changed and why.
   * 51-60 chars: 18.5%
   * 61-72 chars: 3.5%
   * >72 chars: 5.0%  (avoid; these are outliers)
-- Hard-max: 67 chars (same rule as `tractor`).
+- Hard-max: 69 chars (same rule as `tractor`).
 - Use backticks around code elements (66% of subjects contain
   at least one backtick pair).
 - Colons are rare in subjects (~5.5%), used mainly for
@@ -129,7 +129,7 @@ Mv remaining `i3WmCtl` ev-meths to `.handlers`
 
 - 84% of recent commits (42/50 sampled) include a body.
 - Use blank line after subject.
-- Max line length: 67 chars (match `tractor` convention).
+- Max line length: 69 chars (match `tractor` convention).
 - Use `-` as primary bullet (170 occurrences in 50 commits).
 - Use `*` as nested sub-bullet under `-` items (103 occurrences).
 - Rarely use `*` at top level (4 occurrences).
@@ -337,9 +337,9 @@ increased `claude-code` usage over time).
 
 Before committing, verify:
 - [ ] Subject line uses present tense verb
-- [ ] Subject line ~50 chars (hard max 67)
+- [ ] Subject line ~50 chars (hard max 69)
 - [ ] Code elements wrapped in backticks
-- [ ] Body lines <=67 chars
+- [ ] Body lines <=69 chars
 - [ ] Abbreviations used where natural (`wks`, `bigd`,
       `ev`, `conf`, `impl`, `obvi`, `rn`, etc.)
 - [ ] Casual yet precise tone
