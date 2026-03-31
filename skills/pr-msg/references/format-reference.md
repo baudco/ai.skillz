@@ -4,12 +4,23 @@ Canonical structure for `tractor` patch-request
 descriptions, designed to work across GitHub,
 Gitea, SourceHut, and GitLab markdown renderers.
 
-**Line length: 69 char max** (same as `set tw=69`
-in nvim) for all prose content (Summary bullets,
-Motivation paragraphs, Scopes bullets, etc.). Same
-limit as commit-msg body and project code style.
-Only raw URLs in reference-link definitions may
-exceed this.
+**Line length: 69 display-columns max** (same as
+`set tw=69` in nvim) for all prose content —
+Motivation paragraphs, Summary bullets, Scopes
+bullets, etc. This is a **fill width**: pack each
+line as close to 69 columns as possible without
+exceeding it (like `gq` in vim). The column count
+includes any leading indentation (2-space bullet
+continuation, 4-space sub-bullet continuation).
+Same limit as commit-msg body and project code
+style. Only raw URLs in reference-link definitions
+may exceed this.
+
+**Measure rendered width, not raw markdown** — when
+a line contains reference-link syntax like
+`[display text][ref-id]`, count only the display
+text for wrapping (what a human reads), NOT the
+full raw syntax.
 
 ## Template
 
@@ -101,8 +112,7 @@ Also submitted as
 
 ---
 
-(this pr content was generated in some part by
-[`claude-code`][claude-code-gh])
+(this pr content was generated in some part by [`claude-code`][claude-code-gh])
 
 [<hash>]: https://<service>/<owner>/<repo>/commit/<full-hash>
 [claude-code-gh]: https://github.com/anthropics/claude-code

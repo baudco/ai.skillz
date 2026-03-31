@@ -93,11 +93,27 @@ technical notes).
        suggestions" section below; prompt the
        user with contributor names.
 
-**Line length: 69 char max** (same as `set tw=69`
-in nvim) for ALL prose content (Summary bullets,
-Motivation paragraphs, Scopes bullets). Same rule
-as commit-msg body and project code style. Only
-raw URLs in reference-link defs may exceed this.
+**Line length: 69 display-columns max** (same as
+`set tw=69` in nvim) for ALL prose content —
+Motivation paragraphs, Summary bullets, Scopes
+bullets, etc. This is a **fill width**: pack each
+line as close to 69 columns as possible without
+exceeding it (like `gq` in vim). The column count
+includes any leading indentation (2-space bullet
+continuation, 4-space sub-bullet continuation,
+etc.). Same rule as commit-msg body and project
+code style. Only raw URLs in reference-link defs
+may exceed this.
+
+**Measure rendered width, not raw markdown** — when
+a line contains reference-link syntax like
+`[display text][ref-id]`, count only the display
+text width for wrapping purposes (what a human
+reads in rendered output), NOT the full raw syntax.
+This means a line with `[`claude-code`][cc-gh]`
+counts the display text `` `claude-code` `` (~14
+cols), not the full `[`claude-code`][cc-gh]` raw
+form (~26 cols).
 
 **Title:**
 - Present tense verb (Add, Fix, Drop, Use, etc.)
@@ -271,7 +287,9 @@ Separate major sections with `---` horizontal rules.
 - Only include stubs for remotes actually detected
   via `git remote -v`.
 
-**Footer:**
+**Footer** (note: the link ref syntax does NOT count
+toward the 69-col limit — only the rendered display
+text does, so this fits on one line):
 ```
 (this pr content was generated in some part by [`claude-code`][claude-code-gh])
 [claude-code-gh]: https://github.com/anthropics/claude-code

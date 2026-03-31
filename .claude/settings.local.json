@@ -11,7 +11,9 @@
       "Bash(then echo:*)",
       "Bash(chmod +x:*)",
       "Bash(echo EXIT:$?:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(gh pr:*)",
+      "Bash(wc:*)"
     ]
   }
 }
