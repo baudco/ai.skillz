@@ -78,7 +78,7 @@ Always use `tuple`-cast for singleton parent addrs
 ### General Structure
 - 43.2% of commits have no body (simple changes)
 - Use blank line after subject
-- Max line length: 69 chars
+- Max line length: 67 display-columns (fill width)
 - Use `-` bullets for lists (28.0% of commits)
 - Rarely use `*` bullets (2.4%)
 
@@ -200,9 +200,9 @@ by `claude`, instead add:
 
 Before committing, verify:
 - [ ] Subject line uses present tense verb
-- [ ] Subject line ~50 chars (hard max 69)
+- [ ] Subject line ~50 chars (hard max 67)
 - [ ] Code elements wrapped in backticks
-- [ ] Body lines ≤69 chars
+- [ ] Body lines ≤67 display-cols (fill width)
 - [ ] Abbreviations used where natural
 - [ ] Casual yet precise tone
 - [ ] Section markers if body >3 paragraphs

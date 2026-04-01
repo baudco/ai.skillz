@@ -121,16 +121,27 @@ domain terms). If absent, fall back to the defaults
 below and the global `py-codestyle` conventions.
 
 **Subject Line Format:**
-- Present tense verbs: Add, Drop, Fix, Use, Move, Adjust, etc.
-- Target 50 chars (hard max: 69)
-- Backticks around ALL code elements (classes, functions, modules, vars)
+- Present tense verbs: Add, Drop, Fix, Use, Move,
+  Adjust, etc.
+- Target 50 chars (hard max: 67)
+- Backticks around ALL code elements (classes,
+  functions, modules, vars)
 - Specific about what changed
 
+**Body line length: 67 display-columns max** — this
+is a **fill width**: pack each line as close to 67
+columns as possible without exceeding it (like `gq`
+in vim). The column count includes any leading
+indentation (2-space bullet continuation, 4-space
+sub-bullet continuation, etc.). Only raw URLs (e.g.
+review links) may exceed this.
+
 **Body Format (optional - keep simple if warranted):**
-- Max 69 char line length
 - Use `-` bullets for lists
-- Section markers: `Also,` `Deats,` `Other,` `Further,`
-- Abbreviations: msg, bg, ctx, impl, mod, obvi, tn, fn, bc, var, prolly
+- Section markers: `Also,` `Deats,` `Other,`
+  `Further,`
+- Abbreviations: msg, bg, ctx, impl, mod, obvi, tn,
+  fn, bc, var, prolly
 - Casual yet technically precise tone
 - Never write lines with only whitespace
 
@@ -192,7 +203,7 @@ https://github.com/goodboy/tractor/pull/366#pullrequestreview-4004156812
 
 The `Review:` line is terse — PR number +
 reviewer login. The URL goes on the next line
-for click-through. Keeps the 69-char line limit.
+for click-through. Keeps the 67-col line limit.
 
 If the context file contains `reply_ids`, hold
 off on deleting it — step 6 will PATCH those

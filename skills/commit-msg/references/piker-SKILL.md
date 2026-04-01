@@ -34,7 +34,7 @@ and examples, see
 - **Subject**: ~50 chars, present tense verb, use
   backticks for code refs
 - **Body**: only for complex/multi-file changes,
-  69 char line max
+  67 display-col fill width
 - **Section markers**: Also, / Deats, / Other,
 - **Bullets**: use `-` style
 - **Tone**: technical but casual (piker style)
