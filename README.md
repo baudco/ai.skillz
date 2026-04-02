@@ -24,6 +24,7 @@ generalized for cross-repo deployment.
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
 | `plan-io` | Plan file conventions |
+| `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
 | `gish` | Git-over-SSH transport |
 | `yt-url-lookup` | YouTube URL resolution |
