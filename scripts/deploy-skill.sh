@@ -5,6 +5,7 @@
 # Usage:
 #   bash scripts/deploy-skill.sh init <target-repo> [--url URL] [--ref REF]
 #   bash scripts/deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
+#   bash scripts/deploy-skill.sh all <target-repo> [--method symlink|submodule]
 #   bash scripts/deploy-skill.sh update <target-repo> [--ref REF]
 #   bash scripts/deploy-skill.sh status <target-repo>
 #
@@ -28,11 +29,13 @@ usage() {
 Usage:
   deploy-skill.sh init   <target-repo> [--url URL] [--ref REF]
   deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
+  deploy-skill.sh all    <target-repo> [--method symlink|submodule]
   deploy-skill.sh update <target-repo> [--ref REF]
   deploy-skill.sh status <target-repo>
 
 Subcommands:
   init    Add ai.skillz as a git submodule at .claude/ai.skillz/.
+  all     Deploy every skill that has a SKILL.md.
   update  Update the submodule to latest (or --ref REF).
   status  Show deployed skills and their link method.
 
@@ -294,6 +297,40 @@ cmd_deploy() {
 }
 
 # -------------------------------------------------------------------
+# all — deploy every skill that has a SKILL.md
+# -------------------------------------------------------------------
+cmd_all() {
+    local target=""
+    local method=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --method) method="$2"; shift 2 ;;
+            *)
+                [ -z "$target" ] && { target="$1"; shift; continue; }
+                die "unexpected argument: $1"
+                ;;
+        esac
+    done
+    [ -z "$target" ] && die "missing <target-repo>"
+    target="$(cd "$target" && pwd)"
+
+    local method_args=()
+    [ -n "$method" ] && method_args=(--method "$method")
+
+    local count=0
+    for skill_dir in "$SKILLZ_ROOT"/skills/*/; do
+        local name
+        name="$(basename "$skill_dir")"
+        echo "--- $name ---"
+        cmd_deploy "$name" "$target" "${method_args[@]}"
+        echo ""
+        count=$((count + 1))
+    done
+    echo "Deployed $count skills to $target"
+}
+
+# -------------------------------------------------------------------
 # main dispatch
 # -------------------------------------------------------------------
 [ $# -lt 1 ] && usage
@@ -303,5 +340,6 @@ case "$1" in
     init)   shift; cmd_init "$@" ;;
     update) shift; cmd_update "$@" ;;
     status) shift; cmd_status "$@" ;;
+    all)    shift; cmd_all "$@" ;;
     *)      cmd_deploy "$@" ;;
 esac
