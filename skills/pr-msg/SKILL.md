@@ -393,6 +393,29 @@ generation before submission):
 - Add to post-submission workflow: fill the actual
   PR number in the tracking issue after submit
 
+### Tracking issue task completion
+
+When a commit addresses a task bullet from a
+tracking issue, update the issue body:
+
+1. **Check off** the bullet: `- [ ]` → `- [x]`
+2. **Prefix** with a commit-hash ref-link in the
+   same `([hash][hash])` style used in "Summary
+   of changes" bullets:
+   ```
+   - [x] ([<hash>][<hash>]) Original task text...
+   ```
+3. **Add the ref-link def** at the bottom of the
+   issue body:
+   ```
+   [<hash>]: https://github.com/<o>/<r>/commit/<full-hash>
+   ```
+4. **PATCH** the issue via `gh api`.
+
+This keeps tracking issues in sync with the
+actual commits that resolve each item — readers
+can click through to the exact fix.
+
 ### Reference-style link definitions
 - Collect ALL commit-hash links at the bottom of
   the document.

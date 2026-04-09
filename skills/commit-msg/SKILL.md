@@ -295,3 +295,22 @@ changes, use subject line only.
    to review further), remind them that the
    `reply_ids` are saved in `.claude/review_context.md`
    and can be PATCHed in a follow-up session.
+
+7. **Update tracking issue** (when the commit
+   addresses a task bullet from a tracking issue):
+
+   If the current work was motivated by a task
+   item in a tracking issue (e.g. created by
+   `/pr-msg`'s step 4c), update the issue after
+   the user commits:
+
+   - **Check off** the bullet: `- [ ]` → `- [x]`
+   - **Prefix** with a commit-hash ref-link:
+     `([<hash>][<hash>])` — same style as
+     `/pr-msg` "Summary of changes" bullets
+   - **Add the ref-link def** at the bottom of
+     the issue body
+   - **PATCH** via `gh api`
+
+   This keeps tracking issues in sync with the
+   commits that resolve each item.
