@@ -11,7 +11,7 @@ metadata:
   author: goodboy
   version: "0.1"
 argument-hint: "<name> [--fixturize] [--notify-on-teardown]"
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   - Bash(git *)
   - Bash(ln *)
