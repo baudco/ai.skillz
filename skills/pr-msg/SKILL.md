@@ -105,6 +105,19 @@ etc.). Same rule as commit-msg body and project
 code style. Only raw URLs in reference-link defs
 may exceed this.
 
+**Always use `scripts/rewrap.py`** to enforce the
+fill-width rule before writing or pushing any PR
+body. The script lives in this skill's directory:
+
+```bash
+python skills/pr-msg/scripts/rewrap.py < body.md
+python skills/pr-msg/scripts/rewrap.py --width 67 < msg.md
+```
+
+Default width is 69 (pr-msg). Use `--width 67` for
+commit-msg bodies. Never hand-wrap prose — always
+pipe through the script.
+
 **Measure rendered width, not raw markdown** — when
 a line contains reference-link syntax like
 `[display text][ref-id]`, count only the display
