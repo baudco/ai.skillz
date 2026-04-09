@@ -96,9 +96,24 @@ By chronological commit
 
 ### Future follow up
 
-<optional — planned next steps, known limitations,
-or follow-up work. Scan diff for # TODO / XXX /
-FIXME / NOTE comments and surface relevant items.>
+<!-- inline form (no tracking issue): -->
+
+<Each item as a separate `- [ ]` task entry —
+one logical concern per checkbox. Scan diff for
+`# TODO` / `XXX` / `FIXME` / `NOTE` comments.>
+
+- [ ] <Short summary of follow-up item>
+  `<file_or_module>` has a `# TODO` noting <context>.
+
+- [ ] <Short summary of another item>
+  `<file_or_module>` `# XXX NOTE`: <context>.
+
+<!-- linked form (when tracking issue exists): -->
+
+See [tracking issue #NNN][follow-up] for
+follow-up items from this PR.
+
+[follow-up]: https://github.com/<o>/<r>/issues/<num>#follow-up-from-branch-pr-nnn
 
 <!--
 ### Cross-references

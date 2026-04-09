@@ -3,3 +3,7 @@ __pycache__/
 py313/
 Session.vim
 *.swp
+
+# per-deployment pr-msg output
+skills/pr-msg/msgs/
+skills/pr-msg/pr_msg_LATEST.md
