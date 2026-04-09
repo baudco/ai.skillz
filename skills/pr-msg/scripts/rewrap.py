@@ -7,6 +7,11 @@ using greedy (textwrap) fill. Preserves structure:
 headers, bullets, sub-bullets, HTML comments, code
 blocks, link refs, blank lines, credit footers.
 
+Measures **rendered** width for reference-link syntax:
+``[display text][ref-id]`` counts only ``display text``
+toward the column limit — the ``[ref-id]`` bracket
+portion is invisible when rendered.
+
 Usage:
     python rewrap.py < pr_body.md
     python rewrap.py pr_body.md
@@ -15,18 +20,66 @@ Usage:
 Default width: 69 (matching /pr-msg display-col rule).
 """
 import argparse
+import re
 import sys
 import textwrap
 
+# Reference-style link: [display text][ref-id]
+# Also handles empty-ref shorthand: [display text][]
+REF_LINK_RE = re.compile(r'\[([^\]]+)\]\[([^\]]*)\]')
 
-def rewrap(text, width=69, indent=''):
-    return textwrap.fill(
+
+def rendered_len(line: str) -> int:
+    '''Return display width of *line*, discounting
+    invisible reference-link ``[ref-id]`` portions.
+
+    ``[display][ref]`` → counts only ``display``;
+    the surrounding brackets and ref-id vanish in
+    rendered markdown.
+    '''
+    return len(REF_LINK_RE.sub(r'\1', line))
+
+
+def _rejoin_short_lines(wrapped: str, width: int) -> str:
+    '''Post-wrap pass: rejoin lines that were broken
+    too aggressively due to reference-link overhead.
+
+    ``textwrap`` measures raw chars, so lines containing
+    ref-links get split sooner than necessary. Walk the
+    output and merge adjacent lines whenever the
+    *rendered* width of the combined line still fits
+    within *width*.
+    '''
+    if '[' not in wrapped or '][' not in wrapped:
+        return wrapped
+
+    lines = wrapped.split('\n')
+    if len(lines) <= 1:
+        return wrapped
+
+    result = [lines[0]]
+    for line in lines[1:]:
+        stripped = line.lstrip()
+        joined = result[-1] + ' ' + stripped
+        if rendered_len(joined) <= width:
+            result[-1] = joined
+        else:
+            result.append(line)
+
+    return '\n'.join(result)
+
+
+def rewrap(text, width=69, indent='', subsequent_indent=None):
+    if subsequent_indent is None:
+        subsequent_indent = indent
+    wrapped = textwrap.fill(
         text, width=width,
         initial_indent=indent,
-        subsequent_indent=indent,
+        subsequent_indent=subsequent_indent,
         break_on_hyphens=False,
         break_long_words=False,
     )
+    return _rejoin_short_lines(wrapped, width)
 
 
 def process(lines, width=69):
@@ -73,10 +126,16 @@ def process(lines, width=69):
             i += 1
             continue
 
-        # Headers, HRs, link refs, tables, credit footer
-        if stripped.startswith((
-            '#', '---', '|', '[', '(this',
-        )):
+        # Headers, HRs, tables
+        if stripped.startswith(('#', '---', '|')):
+            out.append(line)
+            i += 1
+            continue
+
+        # Link reference definitions: [ref-id]: URL
+        # Pass through as-is (but NOT inline ref-links
+        # like [display][ref] which are prose).
+        if re.match(r'^\[([^\]]+)\]:\s', stripped):
             out.append(line)
             i += 1
             continue
@@ -139,13 +198,10 @@ def process(lines, width=69):
                 text = ' '.join(
                     l.strip() for l in bullet_lines
                 )
-                wrapped = textwrap.fill(
-                    text, width=width,
+                out.append(rewrap(
+                    text, width,
                     subsequent_indent='  ',
-                    break_on_hyphens=False,
-                    break_long_words=False,
-                )
-                out.append(wrapped)
+                ))
             continue
 
         # Regular prose paragraph
@@ -157,8 +213,11 @@ def process(lines, width=69):
                 break
             if s.startswith((
                 '#', '---', '- ', '* ',
-                '|', '[', '<!--', '```',
+                '|', '<!--', '```',
             )):
+                break
+            # Break on link ref defs, not inline links
+            if re.match(r'^\[([^\]]+)\]:\s', s):
                 break
             para.append(l)
             i += 1
