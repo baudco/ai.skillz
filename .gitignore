@@ -4,6 +4,13 @@ py313/
 Session.vim
 *.swp
 
-# per-deployment pr-msg output
+# per-deployment skill state
+.claude/git_commit_msg_LATEST.md
+.claude/review_context.md
+.claude/skills/commit-msg/conf.toml
+.claude/skills/commit-msg/msgs/
+.claude/skills/commit-msg/SKILL.md
+.claude/skills/pr-msg/msgs/
+.claude/skills/pr-msg/pr_msg_LATEST.md
 skills/pr-msg/msgs/
 skills/pr-msg/pr_msg_LATEST.md
