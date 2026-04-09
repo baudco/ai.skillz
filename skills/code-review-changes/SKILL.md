@@ -64,6 +64,19 @@ For each comment, determine:
 
 - **File + line**: from `.path` and `.line` /
   `.original_line`
+- **Symlink check**: if the file is a symlink,
+  resolve the target via `readlink -f`. Record:
+  * `canonical_path`: the resolved absolute path
+  * `canonical_repo`: the git repo root containing
+    the target (`git -C <dir> rev-parse
+    --show-toplevel`)
+  * `is_cross_repo`: whether `canonical_repo`
+    differs from the PR repo
+  When `is_cross_repo` is true, fixes must be
+  applied in the canonical repo, not the PR
+  worktree. Note this in the triage table with an
+  extra column or annotation (e.g. "fix in
+  ai.skillz").
 - **Suggestion**: extract the core ask
 - **Validity**: read the current code on the PR
   branch to verify whether the suggestion is
@@ -105,6 +118,20 @@ For each comment triaged as `fix`:
   suggestion.
 - Follow all project code-style rules (see
   `py-codestyle` skill if applicable).
+
+### Cross-repo symlink fixes
+
+When a fix targets a symlinked file with
+`is_cross_repo == true`:
+
+- Edit the `canonical_path` (the symlink target),
+  NOT the symlink itself. The change propagates
+  into the PR worktree automatically.
+- Track each distinct `canonical_repo` that
+  receives fixes — these repos need their own
+  stage/commit cycle in step 6.
+- Verify the fix is visible from the PR worktree
+  by reading the symlink path after editing.
 
 ## 5. Verify: run tests (mandatory)
 
@@ -196,10 +223,18 @@ all pass. Only proceed to step 6 once green.
 
 ### Write review context file
 
-Write `.claude/review_context.md` (relative to
-`git rev-parse --show-toplevel`) so `/commit-msg`
-can add a `Review:` trailer. Initial contents
-(before GH replies are posted):
+Write `.claude/review_context.md` so `/commit-msg`
+can add a `Review:` trailer. **Placement rule**:
+write it to the repo where the `fix` changes
+actually land — i.e. `<canonical_repo>/.claude/`
+when cross-repo symlink fixes were applied, NOT
+the PR repo. This ensures `/commit-msg` finds
+the context when run from the correct repo.
+
+If fixes span multiple repos (rare), write a copy
+to each repo that received changes.
+
+Initial contents (before GH replies are posted):
 
 ```
 pr: <N>
@@ -214,15 +249,55 @@ GH comments are posted. If the review was fetched
 by bare PR number (no specific `review_id`),
 use the PR URL as `review_url`.
 
+### Cross-repo commit flow
+
+When `is_cross_repo` fixes exist, drive the
+commit from this session rather than deferring
+to a separate session in the other repo:
+
+1. Stage the changed files in `canonical_repo`:
+   ```
+   git -C <canonical_repo> add <changed-files>
+   ```
+2. Show the staged diff to the user for review.
+3. Generate the commit message inline (same
+   rules as `/commit-msg` — pick up
+   `review_context.md` from that repo).
+4. Ask the user to confirm, then commit:
+   ```
+   git -C <canonical_repo> commit \
+     --edit --file <msg-file>
+   ```
+5. Read back the hash:
+   ```
+   git -C <canonical_repo> log -1 --format=%h
+   ```
+6. Use the hash immediately in step 7 to PATCH
+   reply footers — no placeholder needed when
+   the commit happens before replies are posted.
+
+When the fix commit is in a different repo than
+the PR, use that repo's remote URL for the
+commit-ref footer link (e.g.
+`https://github.com/baudco/ai.skillz/commit/`
+instead of the PR repo's URL).
+
 ## 7. Post inline reply comments
 
 For EVERY review comment (not just `fix` items),
-post an inline reply via `gh api`:
+post an inline reply via `gh api` using the
+`in_reply_to` field (NOT the `/replies`
+sub-endpoint, which returns 404):
 
 ```
 gh api \
-  repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
-  -f body="<reply>"
+  repos/<owner>/<repo>/pulls/<N>/comments \
+  -f body="<reply>" \
+  -f commit_id="<head-sha>" \
+  -f path="<file-path>" \
+  -f line=1 \
+  -f side="RIGHT" \
+  -F in_reply_to=<comment_id>
 ```
 
 ### Reply format
