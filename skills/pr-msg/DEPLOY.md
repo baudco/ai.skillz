@@ -8,6 +8,8 @@ ln -s /path/to/ai.skillz/skills/pr-msg/SKILL.md \
       .claude/skills/pr-msg/SKILL.md
 ln -s /path/to/ai.skillz/skills/pr-msg/references \
       .claude/skills/pr-msg/references
+ln -s /path/to/ai.skillz/skills/pr-msg/scripts \
+      .claude/skills/pr-msg/scripts
 ```
 
 Or use the deploy script:
@@ -37,6 +39,8 @@ bash /path/to/ai.skillz/scripts/deploy-skill.sh pr-msg <your-repo>
   to `../../ai.skillz/skills/pr-msg/SKILL.md`
 - `.claude/skills/pr-msg/references` → relative symlink
   to `../../ai.skillz/skills/pr-msg/references`
+- `.claude/skills/pr-msg/scripts` → relative symlink
+  to `../../ai.skillz/skills/pr-msg/scripts`
 
 ### What gets gitignored
 
@@ -51,6 +55,7 @@ bash /path/to/ai.skillz/scripts/deploy-skill.sh pr-msg <your-repo>
 
 - `SKILL.md` — the generic workflow definition
 - `references/format-reference.md` — PR format spec
+- `scripts/rewrap.py` — line-width enforcement tool
 
 ## Prerequisites
 

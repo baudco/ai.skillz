@@ -252,11 +252,14 @@ cmd_deploy() {
                     "$skill_dst/SKILL.md"
                 ln -sfn "../../ai.skillz/skills/pr-msg/references" \
                     "$skill_dst/references"
+                ln -sfn "../../ai.skillz/skills/pr-msg/scripts" \
+                    "$skill_dst/scripts"
             else
                 ln -sfn "$skill_src/SKILL.md" "$skill_dst/SKILL.md"
                 ln -sfn "$skill_src/references" "$skill_dst/references"
+                ln -sfn "$skill_src/scripts" "$skill_dst/scripts"
             fi
-            echo "  Linked SKILL.md + references/, created msgs/"
+            echo "  Linked SKILL.md + references/ + scripts/, created msgs/"
             ;;
 
         # -------------------------------------------------------
