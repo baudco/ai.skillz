@@ -132,6 +132,30 @@ These rules apply globally to ALL python projects.
   ) = some_tuple
   ```
 
+## Re-exports from `__init__` modules
+
+- Use `import X as X` to mark a name as an
+  intentional public re-export:
+
+  ```python
+  # GOOD - explicit re-export (PEP 484 convention)
+  from ._submod import (
+      some_func as some_func,
+  )
+
+  # BAD - `__all__` is a different concern
+  # (controls `from pkg import *` only)
+  from ._submod import some_func
+  __all__ = ['some_func']
+
+  # BAD - noqa hides intent
+  from ._submod import some_func  # noqa
+  ```
+
+- This is the modern convention recognized by
+  type checkers (pyright/mypy) to distinguish
+  public API from internal imports.
+
 ## Whitespace
 
 - Never write lines containing only whitespace;
