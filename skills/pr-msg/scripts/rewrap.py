@@ -140,6 +140,38 @@ def process(lines, width=69):
             i += 1
             continue
 
+        # Orphaned sub-bullets (`* `) not nested under
+        # a `- ` parent — e.g. sub-bullets following a
+        # prose paragraph like `([hash][hash]) ...`.
+        # Collect continuation lines and rewrap with
+        # 2-space indent + 4-space continuation.
+        if stripped.startswith('* '):
+            sub_lines = [line]
+            i += 1
+            while i < len(lines):
+                snxt = lines[i]
+                ss = snxt.strip()
+                if (
+                    snxt.startswith('    ')
+                    and ss
+                    and not ss.startswith('* ')
+                    and not ss.startswith('- ')
+                ):
+                    sub_lines.append(snxt)
+                    i += 1
+                else:
+                    break
+            text = ' '.join(
+                l.strip() for l in sub_lines
+            )
+            out.append(
+                rewrap(
+                    text, width, '  ',
+                    subsequent_indent='    ',
+                )
+            )
+            continue
+
         # Bullets (with possible sub-bullets)
         if stripped.startswith('- '):
             bullet_lines = [line]
@@ -190,7 +222,10 @@ def process(lines, width=69):
                             for l in sub_lines
                         )
                         out.append(
-                            rewrap(text, width, '  ')
+                            rewrap(
+                                text, width, '  ',
+                                subsequent_indent='    ',
+                            )
                         )
                     else:
                         break
