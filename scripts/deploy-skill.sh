@@ -8,6 +8,7 @@
 #   bash scripts/deploy-skill.sh all <target-repo> [--method symlink|submodule]
 #   bash scripts/deploy-skill.sh update <target-repo> [--ref REF]
 #   bash scripts/deploy-skill.sh status <target-repo>
+#   bash scripts/deploy-skill.sh gitignore <target-repo> [skill-name]
 #
 # When --method is omitted the script auto-detects:
 #   .claude/ai.skillz/ exists as submodule → submodule (relative links)
@@ -18,6 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLZ_ROOT="$(dirname "$SCRIPT_DIR")"
 DEFAULT_URL="file://${SKILLZ_ROOT}"
+PATTERNS_CONF="$SKILLZ_ROOT/gitignore-patterns.conf"
 
 # -------------------------------------------------------------------
 # helpers
@@ -32,12 +34,14 @@ Usage:
   deploy-skill.sh all    <target-repo> [--method symlink|submodule]
   deploy-skill.sh update <target-repo> [--ref REF]
   deploy-skill.sh status <target-repo>
+  deploy-skill.sh gitignore <target-repo> [skill-name]
 
 Subcommands:
-  init    Add ai.skillz as a git submodule at .claude/ai.skillz/.
-  all     Deploy every skill that has a SKILL.md.
-  update  Update the submodule to latest (or --ref REF).
-  status  Show deployed skills and their link method.
+  init      Add ai.skillz as a git submodule at .claude/ai.skillz/.
+  all       Deploy every skill that has a SKILL.md.
+  update    Update the submodule to latest (or --ref REF).
+  status    Show deployed skills and their link method.
+  gitignore Update .gitignore patterns (all or single skill).
 
 Available skills:
 EOF
@@ -54,6 +58,78 @@ detect_method() {
     else
         echo "symlink"
     fi
+}
+
+# Read gitignore patterns for a skill from the centralized
+# manifest and idempotently append missing entries to the
+# target repo's .gitignore.
+ensure_gitignore() {
+    local skill="$1" target="$2"
+    [ -f "$PATTERNS_CONF" ] || return 0
+
+    # Extract patterns for [skill] section
+    local in_section=false
+    local patterns=()
+    while IFS= read -r line; do
+        # strip leading/trailing whitespace
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+
+        # section header
+        if [[ "$line" =~ ^\[([^]]+)\]$ ]]; then
+            if [ "${BASH_REMATCH[1]}" = "$skill" ]; then
+                in_section=true
+            else
+                $in_section && break
+            fi
+            continue
+        fi
+
+        $in_section || continue
+        # skip blanks and comments
+        [ -z "$line" ] && continue
+        [[ "$line" == \#* ]] && continue
+        patterns+=("$line")
+    done < "$PATTERNS_CONF"
+
+    [ ${#patterns[@]} -eq 0 ] && return 0
+
+    local gitignore="$target/.gitignore"
+    touch "$gitignore"
+
+    # Check if the skill header already exists
+    local header="# ai.skillz/$skill"
+    if grep -qFx "$header" "$gitignore" 2>/dev/null; then
+        # Header present — only append truly missing patterns
+        local added=0
+        for pat in "${patterns[@]}"; do
+            if ! grep -qFx "$pat" "$gitignore" 2>/dev/null; then
+                # Insert after the header block
+                echo "$pat" >> "$gitignore"
+                added=$((added + 1))
+            fi
+        done
+        [ $added -gt 0 ] \
+            && echo "  .gitignore: added $added pattern(s) for $skill"
+        return 0
+    fi
+
+    # Ensure a blank-line separator before our block
+    if [ -s "$gitignore" ]; then
+        local last_line
+        last_line="$(tail -n1 "$gitignore")"
+        if [ -n "$last_line" ]; then
+            echo "" >> "$gitignore"
+        fi
+    fi
+
+    {
+        echo "$header"
+        for pat in "${patterns[@]}"; do
+            echo "$pat"
+        done
+    } >> "$gitignore"
+    echo "  .gitignore: added ${#patterns[@]} pattern(s) for $skill"
 }
 
 # -------------------------------------------------------------------
@@ -295,6 +371,9 @@ cmd_deploy() {
             ;;
     esac
 
+    # Merge gitignore patterns for this skill
+    ensure_gitignore "$skill_name" "$target"
+
     echo ""
     echo "Deployed $skill_name → $target/.claude/skills/$skill_name"
     [ -f "$deploy_md" ] && echo "See $deploy_md for full details."
@@ -335,15 +414,56 @@ cmd_all() {
 }
 
 # -------------------------------------------------------------------
+# gitignore — update .gitignore patterns standalone
+# -------------------------------------------------------------------
+cmd_gitignore() {
+    local target="" skill=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            *)
+                if [ -z "$target" ]; then
+                    target="$1"; shift; continue
+                elif [ -z "$skill" ]; then
+                    skill="$1"; shift; continue
+                fi
+                die "unexpected argument: $1"
+                ;;
+        esac
+    done
+    [ -z "$target" ] && die "missing <target-repo>"
+    target="$(cd "$target" && pwd)"
+
+    if [ -n "$skill" ]; then
+        # Single skill
+        ensure_gitignore "$skill" "$target"
+    else
+        # All skills that have patterns in the manifest
+        local current_skill=""
+        while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
+            if [[ "$line" =~ ^\[([^]]+)\]$ ]]; then
+                current_skill="${BASH_REMATCH[1]}"
+                ensure_gitignore "$current_skill" "$target"
+            fi
+        done < "$PATTERNS_CONF"
+    fi
+    echo ""
+    echo "Updated .gitignore at $target/.gitignore"
+}
+
+# -------------------------------------------------------------------
 # main dispatch
 # -------------------------------------------------------------------
 [ $# -lt 1 ] && usage
 
 case "$1" in
     -h|--help|help) usage ;;
-    init)   shift; cmd_init "$@" ;;
-    update) shift; cmd_update "$@" ;;
-    status) shift; cmd_status "$@" ;;
-    all)    shift; cmd_all "$@" ;;
-    *)      cmd_deploy "$@" ;;
+    init)      shift; cmd_init "$@" ;;
+    update)    shift; cmd_update "$@" ;;
+    status)    shift; cmd_status "$@" ;;
+    gitignore) shift; cmd_gitignore "$@" ;;
+    all)       shift; cmd_all "$@" ;;
+    *)         cmd_deploy "$@" ;;
 esac
