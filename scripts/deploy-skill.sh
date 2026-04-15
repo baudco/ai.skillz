@@ -239,9 +239,10 @@ cmd_deploy() {
             echo "  Linked SKILL.md, created msgs/"
             echo ""
             echo "Next steps:"
-            echo "  1. Generate a style guide:"
-            echo "     Have claude analyze your commit history"
-            echo "     and write .claude/skills/commit-msg/style-guide-reference.md"
+            echo "  1. Generate a style guide from commit history:"
+            echo "     python $SKILLZ_ROOT/scripts/generate-style-guide.py \\"
+            echo "       $target --commits 500 \\"
+            echo "       --output $skill_dst/style-guide-reference.md"
             echo "  2. Optionally create conf.toml for session tracking"
             ;;
 

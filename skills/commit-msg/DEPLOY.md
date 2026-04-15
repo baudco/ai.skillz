@@ -50,18 +50,32 @@ bash /path/to/ai.skillz/scripts/deploy-skill.sh commit-msg <your-repo>
 
 ### Generate a project-specific style guide
 
-Option A: use the `generate-style-guide.py` script
-(requires `jinja2`):
+**Option A** (recommended): use the
+`generate-style-guide.py` script (no deps beyond
+Python stdlib):
 
 ```bash
 python /path/to/ai.skillz/scripts/generate-style-guide.py \
-  --repo . --commits 500 \
+  . --commits 500 \
   --output .claude/skills/commit-msg/style-guide-reference.md
 ```
 
-Option B: have `claude` analyze your commit history
-and write the style guide manually, using the examples
-in `ai.skillz/skills/commit-msg/references/` as models.
+This analyzes the repo's commit history and writes
+a complete `style-guide-reference.md` with quantified
+patterns (verb frequencies, backtick usage, section
+markers, abbreviations, tone indicators, examples).
+
+Optional flags:
+- `--author <pattern>` — filter to a specific
+  author's commits
+- `-n <count>` — number of commits (default: 500)
+
+**Option B**: have `claude` analyze your commit
+history and write the style guide manually, using
+the examples in
+`ai.skillz/skills/commit-msg/references/` as
+models. The output should match the same structure
+as Option A's generated guide.
 
 ### (Optional) Create session tracking config
 
