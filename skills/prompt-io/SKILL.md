@@ -103,13 +103,64 @@ process:
    service: <ai-service>
    timestamp: <ISO-8601>
    git_ref: <short-hash>
+   diff_cmd: git diff <ref>~1..<ref>
    ---
-
-   <verbatim AI output, unedited>
    ```
 
-   If the output exceeds 500 lines, include the
-   first 100 lines verbatim plus:
+   If the commit hash is not yet known (entry
+   written before committing), use the branch
+   name as placeholder:
+
+   ```yaml
+   diff_cmd: git diff HEAD~1..HEAD
+   ```
+
+   Update to the actual hash after committing
+   if practical; the branch-relative form works
+   as a persistent pointer regardless.
+
+   **Diff-ref mode** (default for `code` scope):
+
+   When the AI output includes code that will be
+   committed alongside this log entry, do NOT
+   copy the code verbatim. Instead:
+
+   a) For each file with generated code, write a
+      diff pointer as a blockquote:
+
+      > `git diff <ref>~1..<ref> -- <file-path>`
+
+   b) Follow with a prose summary of what was
+      generated: function names, class names,
+      key design decisions, integration points.
+
+   c) Keep non-code output verbatim: explanations,
+      test run summaries, architectural rationale,
+      diagnostic traces.
+
+   This avoids duplicating code that already
+   appears in `git log -p <ref>`.
+
+   **Decision rule:**
+
+   ```
+   IF output contains code that will be committed
+      in the same commit as this prompt-io entry:
+
+      → Replace each code block with:
+        > `git diff <ref>~1..<ref> -- <file-path>`
+        followed by a prose summary of what was
+        generated (functions, classes, key logic).
+
+   ELSE (output is explanatory, diagnostic, or
+      won't appear in a diff):
+
+      → Include verbatim as today.
+   ```
+
+   **Truncation fallback** — if non-code output
+   exceeds 500 lines, include the first 100 lines
+   verbatim plus:
    `[truncated — see git diff for full changes]`
 
 4. **Write the prompt-io log entry**
