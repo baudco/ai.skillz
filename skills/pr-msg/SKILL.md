@@ -49,7 +49,66 @@ technical notes).
    commits diverge from BASE!" with a reminder
    to commit before invoking this skill.
 
-1. **Gather context** from the branch diff and
+1. **Detect update mode**: check whether a prior
+   `pr_msg_LATEST.md` exists for this branch and
+   determine the invocation mode.
+
+   a. Read `.claude/skills/pr-msg/pr_msg_LATEST.md`.
+      If it does not exist or its `<!-- pr-msg-meta`
+      `branch:` field does not match the current
+      branch, this is a **fresh** invocation — skip
+      to step 2.
+
+   b. Extract all `[<hash>]` reference-link defs
+      from the existing file (the
+      `[xxxxxxxx]: https://.../<full-hash>` lines
+      at the bottom).
+
+   c. Run `git log BASE..HEAD --format='%H %s'` and
+      compare against the old hashes:
+      - For each old hash, search the new log by
+        **commit subject** (the msg text after the
+        hash). If a match is found with a *different*
+        hash, that commit was **rebased** — record
+        the old→new hash mapping.
+      - Any new-log commits with no corresponding
+        old-file hash are **new commits** to add.
+      - Any old hashes with no subject match in the
+        new log were **dropped** (squashed/removed).
+
+   d. Determine the mode:
+      - **fresh** — no prior file or branch mismatch.
+        Generate everything from scratch (existing
+        behavior).
+      - **rebase-update** — old hashes found but they
+        map to new hashes via subject matching. Remap
+        all hash refs in the existing body (Summary
+        bullets, ref-link defs) using the old→new
+        mapping.
+      - **append** — all old hashes still valid but
+        new commits exist beyond what the file covers.
+        Add new bullets to Summary and new ref-link
+        defs.
+      - **rebase+append** — combination of both.
+        Remap stale hashes AND add new commit bullets.
+
+   e. In **any update mode**, carry forward the
+      existing Motivation, Src of research, Scopes
+      changed, and Future follow up sections as the
+      baseline — only the Summary of changes and
+      ref-link definitions need mechanical updates.
+      The user may also request prose edits to other
+      sections; apply those on top of the carried-
+      forward content.
+
+   f. For **dropped commits** (old hash with no
+      subject match in new log), remove the
+      corresponding Summary bullet and ref-link def.
+      If two commits cancel out (e.g. "Add X" then
+      "Drop X" both disappear after a squash), remove
+      both bullets as net-zero changes.
+
+2. **Gather context** from the branch diff and
    commit history:
 
    - Commit log:
@@ -64,7 +123,7 @@ technical notes).
      !`git remote -v`
      (to determine commit-link base URL)
 
-2. **Determine the commit-link base URL**:
+3. **Determine the commit-link base URL**:
 
    Inspect remotes to find the primary hosting
    service and construct the commit URL prefix.
@@ -78,19 +137,32 @@ technical notes).
      the user can override via the cross-service
      ref-link stubs.
 
-3. **Analyze the diff**: read through the full diff
+4. **Analyze the diff**: read through the full diff
    to understand the semantic scope of changes — new
    features, bug fixes, refactors, test coverage,
    etc.
 
-4. **Write the PR description** following these
-   rules (includes interactive sub-steps 4a/4b/4c
+5. **Write the PR description** following these
+   rules (includes interactive sub-steps 5a/5b/5c
    that run *before* final text assembly):
 
-   4a. **Suggest related issues/PRs** — see the
+   In **update mode** (detected in step 1), start
+   from the existing `pr_msg_LATEST.md` content:
+   - Apply hash remapping to Summary bullets and
+     ref-link defs (rebase-update).
+   - Append new commit bullets at the end of the
+     Summary section (append).
+   - Remove bullets for dropped commits (net-zero).
+   - Carry forward all other sections unchanged
+     unless the user requests edits.
+
+   In **fresh mode**, generate everything from
+   scratch per the rules below.
+
+   5a. **Suggest related issues/PRs** — see the
        "Related issues & PRs" section below;
        prompt the user with candidates.
-   4b. **Suggest reviewers** — see the "Reviewer
+   5b. **Suggest reviewers** — see the "Reviewer
        suggestions" section below; prompt the
        user with contributor names.
 
@@ -296,7 +368,7 @@ Separate major sections with `---` horizontal rules.
   collaborators as reviewers, listing each with
   their most-relevant file scope.
 
-### Follow-up tracking issue (step 4c)
+### Follow-up tracking issue (step 5c)
 
 When the generated PR body contains a
 `### Future follow up` section with `- [ ]` task
@@ -450,16 +522,40 @@ text does, so this fits on one line):
 [claude-code-gh]: https://github.com/anthropics/claude-code
 ```
 
-5. **Write to TWO files**:
+6. **Write to TWO files**:
    - `.claude/skills/pr-msg/msgs/<timestamp>_<branch>_pr_msg.md`
      * `<timestamp>` from `date -u +%Y%m%dT%H%M%SZ`
      * `<branch>` from `git branch --show-current`
    - `.claude/skills/pr-msg/pr_msg_LATEST.md`
      (overwrite)
 
-6. **Present the raw markdown** to the user in a
+7. **Present the raw markdown** to the user in a
    fenced code block (` ```` `) so they can
    copy-paste into any git-service web form.
+
+8. **Sync to GitHub** (post-update step):
+
+   After writing the output files, check whether a
+   PR already exists for this branch on GitHub:
+
+   a. First check the `<!-- pr-msg-meta` block's
+      `submitted: github:` field — if it contains
+      a number (not `___`), use that.
+   b. Otherwise detect via:
+      `gh pr list --head <branch> --json number \
+        --jq '.[0].number'`
+   c. If a PR number is found, sync the body:
+      `gh pr edit <num> --body-file \
+        .claude/skills/pr-msg/pr_msg_LATEST.md`
+      and report the updated PR URL.
+   d. If NO existing PR is detected, skip silently
+      — the user hasn't submitted yet, so the local
+      files from step 6 are sufficient.
+
+   This ensures that re-invocations of `/pr-msg`
+   (e.g. after a rebase or new commits) propagate
+   updates to the live PR without requiring a
+   manual "sync to gh" step.
 
 ## Post-submission workflow
 
