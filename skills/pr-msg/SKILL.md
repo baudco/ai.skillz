@@ -109,16 +109,62 @@ technical notes).
       both bullets as net-zero changes.
 
 2. **Gather context** from the branch diff and
-   commit history:
+   commit history.
+
+   ### MANDATORY: pivot to the PR's `headRefName`
+
+   **If this skill is invoked with a specific PR
+   number (e.g. `/pr-msg #444` or `/pr-msg 444`) —
+   OR there's already a submitted PR for the current
+   branch (detected via `gh pr list --head <branch>`
+   in step 8) — the PR's head ref is authoritative.
+   NOT local HEAD.** This is a hard rule with no
+   exceptions.
+
+   Before any `git log` / `git diff` call below:
+
+   a. Resolve the PR number (from args, or via
+      `gh pr list --head <branch> --json number`).
+   b. Get the PR's head branch:
+      ```
+      HEAD_REF=$(gh pr view <N> --json headRefName \
+        --jq .headRefName)
+      ```
+   c. Compare `HEAD_REF` against
+      `git branch --show-current`. If they differ,
+      **all** subsequent `BASE..HEAD` references in
+      this step MUST be rewritten as
+      `BASE..$HEAD_REF`.
+
+   Why this is a hard rule: when `HEAD_REF` is a
+   branch ≠ local HEAD (e.g. the user is on a
+   follow-up WIP branch stacked on top of the PR's
+   branch), using `main..HEAD` silently produces a
+   summary full of commits that aren't in the PR.
+   The web UI will show the correct N commits; the
+   generated PR body will show N + M phantoms. This
+   has happened in production and is load-bearing
+   embarrassing.
+
+   If the PR's head branch is **not available
+   locally** (user never fetched it), stop and ask
+   the user via `AskUserQuestion` whether to
+   `git fetch <remote> <headRef>` first or abort.
+
+   ### Normal context gathering (after the pivot)
+
+   Use `<HEAD>` below to mean the resolved ref from
+   the pivot above — either the PR's `headRefName`
+   when applicable, or literal `HEAD` otherwise.
 
    - Commit log:
-     `git log BASE..HEAD --oneline`
+     `git log BASE..<HEAD> --oneline`
    - Full hashes:
-     `git log BASE..HEAD --format='%H %s'`
+     `git log BASE..<HEAD> --format='%H %s'`
    - Diffstat:
-     `git diff BASE..HEAD --stat`
+     `git diff BASE..<HEAD> --stat`
    - Full diff:
-     `git diff BASE..HEAD`
+     `git diff BASE..<HEAD>`
    - Remotes:
      !`git remote -v`
      (to determine commit-link base URL)
