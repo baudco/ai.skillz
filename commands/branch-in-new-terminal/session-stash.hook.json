@@ -1,0 +1,16 @@
+{
+  "//": "Merge this `SessionStart` hook into your settings.json (project .claude/settings.json or global ~/.claude/settings.json). It stashes the active session UUID to `.claude/.current_session` on every session start/resume so the /branch-in-new-terminal command can fork THIS exact session. Requires `jq`. Uses $CLAUDE_PROJECT_DIR so it's cwd-robust.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r .session_id > \"$CLAUDE_PROJECT_DIR/.claude/.current_session\""
+          }
+        ]
+      }
+    ]
+  }
+}

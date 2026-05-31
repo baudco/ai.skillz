@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Deploy ai.skillz skills into a target repo via
+# Deploy ai.skillz skills + commands into a target repo via
 # absolute symlinks or git-submodule-relative symlinks.
 #
 # Usage:
 #   bash scripts/deploy-skill.sh init <target-repo> [--url URL] [--ref REF]
 #   bash scripts/deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
 #   bash scripts/deploy-skill.sh all <target-repo> [--method symlink|submodule]
+#   bash scripts/deploy-skill.sh command <name|all> <target-repo> [--method ...] [--global]
 #   bash scripts/deploy-skill.sh update <target-repo> [--ref REF]
 #   bash scripts/deploy-skill.sh status <target-repo>
 #   bash scripts/deploy-skill.sh gitignore <target-repo> [skill-name]
+#
+# Commands (the `/name` slash-command kind) live under commands/<name>/
+# and deploy as a flat `.claude/commands/<name>.md` symlink (+ any
+# companion hook printed for manual settings.json merge). Use --global
+# to symlink into ~/.claude/commands/ instead of a target repo.
 #
 # When --method is omitted the script auto-detects:
 #   .claude/ai.skillz/ exists as submodule → submodule (relative links)
@@ -32,6 +38,7 @@ Usage:
   deploy-skill.sh init   <target-repo> [--url URL] [--ref REF]
   deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
   deploy-skill.sh all    <target-repo> [--method symlink|submodule]
+  deploy-skill.sh command <name|all> <target-repo> [--method ...] [--global]
   deploy-skill.sh update <target-repo> [--ref REF]
   deploy-skill.sh status <target-repo>
   deploy-skill.sh gitignore <target-repo> [skill-name]
@@ -39,6 +46,9 @@ Usage:
 Subcommands:
   init      Add ai.skillz as a git submodule at .claude/ai.skillz/.
   all       Deploy every skill that has a SKILL.md.
+  command   Deploy a slash-command (commands/<name>/<name>.md) as a
+            flat .claude/commands/<name>.md symlink. `command all`
+            deploys every one. --global targets ~/.claude/commands/.
   update    Update the submodule to latest (or --ref REF).
   status    Show deployed skills and their link method.
   gitignore Update .gitignore patterns (all or single skill).
@@ -46,6 +56,11 @@ Subcommands:
 Available skills:
 EOF
     ls "$SKILLZ_ROOT/skills/"
+    if [ -d "$SKILLZ_ROOT/commands" ]; then
+        echo ""
+        echo "Available commands:"
+        ls "$SKILLZ_ROOT/commands/" | grep -v '^README.md$' || true
+    fi
     exit 1
 }
 
@@ -454,6 +469,89 @@ cmd_gitignore() {
 }
 
 # -------------------------------------------------------------------
+# command — symlink a slash-command's .md into .claude/commands/
+# -------------------------------------------------------------------
+cmd_deploy_command() {
+    local name="" target="" method="" global="no"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --method) method="$2"; shift 2 ;;
+            --global) global="yes"; shift ;;
+            *)
+                if [ -z "$name" ]; then name="$1"; shift; continue; fi
+                if [ -z "$target" ]; then target="$1"; shift; continue; fi
+                die "unexpected argument: $1"
+                ;;
+        esac
+    done
+    [ -z "$name" ] && die "missing <command-name> (or 'all')"
+
+    # 'all' → recurse over every commands/<name>/<name>.md
+    if [ "$name" = "all" ]; then
+        local d n
+        for d in "$SKILLZ_ROOT"/commands/*/; do
+            [ -d "$d" ] || continue
+            n="$(basename "$d")"
+            [ -f "$d/$n.md" ] || continue
+            echo "--- /$n ---"
+            local fwd=("$n")
+            if [ "$global" = "yes" ]; then fwd+=(--global); else fwd+=("$target"); fi
+            [ -n "$method" ] && fwd+=(--method "$method")
+            cmd_deploy_command "${fwd[@]}"
+            echo ""
+        done
+        return 0
+    fi
+
+    local cmd_src_dir="$SKILLZ_ROOT/commands/$name"
+    local cmd_md="$cmd_src_dir/$name.md"
+    [ -f "$cmd_md" ] || die "command '$name' not found at $cmd_md"
+
+    local cmd_dir
+    if [ "$global" = "yes" ]; then
+        cmd_dir="$HOME/.claude/commands"
+        method="symlink"   # no submodule under ~/.claude
+    else
+        [ -z "$target" ] && die "missing <target-repo> (or pass --global)"
+        target="$(cd "$target" && pwd)"
+        cmd_dir="$target/.claude/commands"
+        [ -z "$method" ] && method="$(detect_method "$target")"
+    fi
+    mkdir -p "$cmd_dir"
+    local dst="$cmd_dir/$name.md"
+
+    echo "Deploying command '/$name' via $method method..."
+    if [ "$method" = "submodule" ]; then
+        # dst is .claude/commands/<name>.md → submodule is .claude/ai.skillz/
+        ln -sfn "../ai.skillz/commands/$name/$name.md" "$dst"
+    else
+        ln -sfn "$cmd_md" "$dst"
+    fi
+    echo "  Linked $name.md → $dst"
+
+    # gitignore any per-machine state (eg. .claude/.current_session)
+    [ "$global" = "yes" ] || ensure_gitignore "$name" "$target"
+
+    # companion hook (precise-id variant) — manual settings.json merge
+    local hook_json
+    hook_json="$(ls "$cmd_src_dir"/*.hook.json 2>/dev/null | head -1 || true)"
+    if [ -n "$hook_json" ]; then
+        echo ""
+        echo "Companion hook (for the precise-id variant) — merge:"
+        echo "  $hook_json"
+        if [ "$global" = "yes" ]; then
+            echo "  into ~/.claude/settings.json (under the \"hooks\" key)"
+        else
+            echo "  into $target/.claude/settings.json (under \"hooks\")"
+        fi
+    fi
+
+    local deploy_md="$cmd_src_dir/DEPLOY.md"
+    [ -f "$deploy_md" ] && echo "See $deploy_md for full details."
+}
+
+# -------------------------------------------------------------------
 # main dispatch
 # -------------------------------------------------------------------
 [ $# -lt 1 ] && usage
@@ -465,5 +563,6 @@ case "$1" in
     status)    shift; cmd_status "$@" ;;
     gitignore) shift; cmd_gitignore "$@" ;;
     all)       shift; cmd_all "$@" ;;
+    command)   shift; cmd_deploy_command "$@" ;;
     *)         cmd_deploy "$@" ;;
 esac
