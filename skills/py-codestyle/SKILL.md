@@ -82,6 +82,51 @@ These rules apply globally to ALL python projects.
   print(f"  cat {args.output} | <your-tool>")
   ```
 
+- Pre-assign any value injected via an f-string to a
+  named local FIRST, then reference that name from
+  inside the literal. Two reasons: (1) easier to
+  inspect at a breakpoint or log-line edit since
+  the value has a name, (2) avoids embedding
+  comprehensions / `'\n'.join(...)` mid-literal which
+  break the implicit concat AND scatter F541 warnings
+  on the trailing `f'...'` lines that lose their
+  contiguity with substitution-bearing lines:
+
+  ```python
+  # GOOD - join pre-extracted, single implicit-concat
+  mismatch_lines: str = '\n'.join(
+      f'  - proto_key={pk!r}  addr={a!r}'
+      for pk, a in bad_addrs
+  )
+  raise ValueError(
+      f'`registry_addrs` contains addr(s) whose proto is '
+      f'not in `enable_transports`!\n'
+      f'enable_transports: {enable_transports!r}\n'
+      f'mismatched_addrs:\n'
+      f'{mismatch_lines}\n'
+      f'\n'
+      f'Either add the missing proto to '
+      f'`enable_transports`, or remove the addr from '
+      f'`registry_addrs`.'
+  )
+
+  # BAD - join inlined, breaks implicit concat
+  raise ValueError(
+      f'`registry_addrs` contains addr(s) whose proto is '
+      f'not in `enable_transports`!\n'
+      f'enable_transports: {enable_transports!r}\n'
+      f'mismatched_addrs:\n'
+      + '\n'.join(
+          f'  - proto_key={pk!r}  addr={a!r}'
+          for pk, a in bad_addrs
+      )
+      + '\n\n'
+      f'Either add the missing proto to '   # F541!
+      f'`enable_transports`, or remove the '  # F541!
+      f'addr from `registry_addrs`.'          # F541!
+  )
+  ```
+
 ## Docstrings
 
 - Always use `'''` (single-quote triple) with this
@@ -131,6 +176,81 @@ These rules apply globally to ALL python projects.
       var3,
   ) = some_tuple
   ```
+
+## Exception handling
+
+- When catching a tuple of multiple exception types,
+  always use the multiline tuple style — one type
+  per line, even when the line would fit. Makes diffs
+  cleaner when adding/removing types and matches the
+  surrounding multi-line tuple convention:
+
+  ```python
+  # GOOD
+  try:
+      ...
+  except (
+      FileNotFoundError,
+      PermissionError,
+      ProcessLookupError,
+  ):
+      ...
+
+  # BAD — single-line tuple even when it fits
+  except (FileNotFoundError, PermissionError, ProcessLookupError):
+      ...
+  ```
+
+- A single exception type on one line is fine
+  (`except OSError:`) — the rule kicks in only when
+  the `except` clause catches a *tuple* of types.
+
+## Boolean & branch expressions
+
+- In any branch condition (`if`/`elif`/`while`/`assert`)
+  that combines sub-expressions with boolean
+  connectives (`and`/`or`), put each **connective on
+  its OWN line**, separate from the operand
+  expressions it joins. The operands each get their
+  own line(s) too. This keeps every clause visually
+  isolated and makes diffs that add/remove a clause
+  minimal — same spirit as the multi-line tuple rules.
+- Apply this whenever the condition has more than one
+  operand, even if it would fit on one line. A single
+  operand (`if ready:`, `while not done:`) stays
+  inline.
+
+  ```python
+  # GOOD - each operand + connective on its own line
+  if (
+      grandrent is con.workspace()
+      or
+      any('wks' in mrk for mrk in grandrent.marks)
+  ):
+      ...
+
+  if (
+      rescued
+      and
+      (cur_src_id := src_node.id) in con_ids
+  ):
+      ...
+
+  # BAD - connective jammed inline with operands
+  if rescued and (cur_src_id := src_node.id) in con_ids:
+      ...
+
+  # BAD - connective trailing an operand line
+  if (
+      grandrent is con.workspace() or
+      any('wks' in mrk for mrk in grandrent.marks)
+  ):
+      ...
+  ```
+
+- The same shape applies to a boolean assigned to a
+  named local (`reset_ppt: bool = (...)`) — operands
+  and connectives each on their own line.
 
 ## Re-exports from `__init__` modules
 
