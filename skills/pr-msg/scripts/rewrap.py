@@ -197,7 +197,12 @@ def process(lines, width=69):
                 text = ' '.join(
                     l.strip() for l in bullet_lines
                 )
-                out.append(rewrap(text, width, ''))
+                out.append(
+                    rewrap(
+                        text, width, '',
+                        subsequent_indent='  ',
+                    )
+                )
                 while i < len(lines):
                     nxt = lines[i]
                     ns = nxt.strip()
