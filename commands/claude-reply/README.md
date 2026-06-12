@@ -6,7 +6,7 @@ Captured while building it; verified against Claude Code **2.1.156**.
 
 > ⚠️ This is **not** a Claude Code slash-command — it's a Neovim
 > plugin spec (`claude-reply.lua`). It deploys by symlinking into your
-> nvim config, **not** via `deploy-skill.sh command`. See `DEPLOY.md`.
+> nvim config, **not** via `deploy.sh command`. See `DEPLOY.md`.
 
 ## TL;DR
 

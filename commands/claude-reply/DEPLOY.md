@@ -4,7 +4,7 @@ A Neovim plugin that reformats Claude Code's **Ctrl-G "edit last
 response"** buffer (`claude-prompt-*.md`) for email-style quote-reply.
 Two steps: **(1)** symlink the lua into your nvim config, **(2)** turn
 on Claude Code's `externalEditorContext`. There is **no** Claude
-slash-command here, so `deploy-skill.sh command` does **not** apply.
+slash-command here, so `deploy.sh command` does **not** apply.
 
 ## 1. Symlink the module into nvim
 

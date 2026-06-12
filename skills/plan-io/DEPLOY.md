@@ -14,7 +14,7 @@ mkdir -p plans/claude
 Or use the deploy script:
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh plan-io <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh plan-io <your-repo>
 mkdir -p <your-repo>/plans/claude
 ```
 
@@ -23,13 +23,13 @@ mkdir -p <your-repo>/plans/claude
 ### One-time setup
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh init <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
 ```
 
 ### Deploy this skill
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh plan-io <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh plan-io <your-repo>
 mkdir -p <your-repo>/plans/claude
 ```
 
