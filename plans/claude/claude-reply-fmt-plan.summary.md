@@ -32,6 +32,22 @@ a reproducible package in `commands/claude-reply/`.
   pull wraps a heading+bullets section to ≤69 cols preserving markdown
   list structure.
 
+- re-inflate truncated references: Claude Code hard-caps the Ctrl-G
+  reference at 50 lines (`rh4=50`, no setting); when the
+  `… (earlier output truncated)` sentinel is present, reconstruct the
+  full last reply from the session transcript
+  (`~/.claude/projects/<cwd-slug>/*.jsonl`, mirroring the binary's
+  `WG4` walk: skip thinking/tool blocks, tool-result/meta/sidechain
+  entries, 8-msg/64KB caps) and swap it in — a candidate transcript is
+  accepted only when the visible truncated lines tail-match its
+  reconstruction, so concurrent same-cwd sessions can't cross-inflate;
+  opt-out via `vim.g.claude_reply_reinflate`, dir override via
+  `vim.g.claude_reply_transcript_dir`
+- add DWIM pull granularity: `\e` on a bullet/numbered list item (any
+  nesting depth) quotes just that item + its indented children —
+  minimizing quoted tokens in the next send; heading/prose lines still
+  pull the whole section; whole-section from an item via the heading
+  or a V-select
 - harden after live use: anchor marker detection on the `# ─` (U+2500)
   box rule so a response that *mentions* the marker phrase in prose no
   longer truncates the navigable region; de-hash the reference into

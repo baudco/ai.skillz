@@ -95,6 +95,33 @@ local function dehash(line)
   return (line:gsub("^#", "", 1))
 end
 
+-- returns the leading-indent string if `line` begins a markdown list
+-- item (bullet `-`/`*`/`+` or numbered `1.`/`1)`), else nil.
+local function list_item_indent(line)
+  return line:match("^(%s*)[-*+] ") or line:match("^(%s*)%d+[%.%)] ")
+end
+
+-- span of the single list item starting at `cur`: the item line plus
+-- any following deeper-indented lines (wrapped continuations + nested
+-- children), bounded by the section end `e`. 1-based inclusive.
+local function item_bounds_at(lines, e, cur)
+  local ind = list_item_indent(lines[cur])
+  if not ind then
+    return nil
+  end
+  local last = cur
+  while last < e do
+    local nxt = lines[last + 1]
+    local nind = nxt:match("^(%s*)") or ""
+    if not ref_is_blank(nxt) and #nind > #ind then
+      last = last + 1
+    else
+      break
+    end
+  end
+  return cur, last
+end
+
 -- section == maximal run of non-blank reference lines; a heading line
 -- also STARTS a new section. all args/returns 1-based inclusive.
 local function section_bounds_at(lines, lo, hi, cur)
@@ -290,6 +317,14 @@ function M.pull_under_cursor(buf)
     warn("no section here (try ]m / [m)")
     return
   end
+  -- DWIM granularity: on a list item, pull just that item (+ its
+  -- indented children); on a heading/prose line, the whole section.
+  -- whole-section from an item == put the cursor on the heading, or
+  -- V-select the span.
+  local is, ie = item_bounds_at(lines, e, cur)
+  if is then
+    s, e = is, ie
+  end
   local orig = {}
   for i = s, e do
     orig[#orig + 1] = lines[i] -- reference is already de-hashed markdown
@@ -340,6 +375,174 @@ function M.foldexpr(lnum)
     return ">1"
   end
   return "1"
+end
+
+-- ── re-inflate a truncated reference from the session transcript ───
+--
+-- Claude Code hard-caps the Ctrl-G reference at the last 50 lines
+-- (`rh4=50` in the binary, no setting), prepending a sentinel line
+-- `… (earlier output truncated)`. The FULL reply is on disk though, in
+-- the session transcript (`<config>/projects/<cwd-slug>/<uuid>.jsonl`),
+-- so when the sentinel is present we reconstruct the last reply from
+-- the transcript and swap it into the reference region. A candidate
+-- transcript is only accepted if the visible truncated lines match the
+-- TAIL of its reconstructed reply — so a concurrent session in the
+-- same cwd can never inflate the wrong conversation.
+
+local SENTINEL = "\226\128\166 (earlier output truncated)" -- "… (…)"
+
+local function transcript_dir()
+  local override = vim.g.claude_reply_transcript_dir
+  if override and override ~= "" then
+    return override
+  end
+  local cfg = vim.env.CLAUDE_CONFIG_DIR or (vim.env.HOME .. "/.claude")
+  -- slug == cwd with every non-alphanumeric char (incl. '.') -> '-'
+  local slug = vim.fn.getcwd():gsub("[^%w]", "-")
+  return cfg .. "/projects/" .. slug
+end
+
+-- *.jsonl in dir, most-recently-modified first
+local function list_transcripts(dir)
+  local fs = vim.uv or vim.loop
+  local out = {}
+  local h = fs.fs_scandir(dir)
+  if not h then
+    return out
+  end
+  while true do
+    local name, t = fs.fs_scandir_next(h)
+    if not name then
+      break
+    end
+    if name:match("%.jsonl$") and t ~= "directory" then
+      local st = fs.fs_stat(dir .. "/" .. name)
+      if st then
+        out[#out + 1] = { path = dir .. "/" .. name, mtime = st.mtime.sec }
+      end
+    end
+  end
+  table.sort(out, function(a, b)
+    return a.mtime > b.mtime
+  end)
+  return out
+end
+
+-- reconstruct the "last reply" exactly as Claude's context builder
+-- (`WG4`) does, but without the 50-line display cut: forward-scan the
+-- jsonl, RESET the accumulator on every real user prompt (not isMeta,
+-- not a tool_result carrier, not a sidechain), collect assistant text
+-- blocks (skip thinking/tool_use and sidechain agents), join messages
+-- with blank lines, mirror WG4's 8-message/64KB caps.
+function M.last_reply_text(path)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local msgs = {}
+  for line in f:lines() do
+    -- cheap prefilter; full classification happens post-decode
+    if line:find('"type":"assistant"', 1, true) or line:find('"type":"user"', 1, true) then
+      local ok, obj = pcall(vim.json.decode, line)
+      if ok and type(obj) == "table" and not obj.isSidechain then
+        if obj.type == "assistant" and obj.message and type(obj.message.content) == "table" then
+          local parts = {}
+          for _, blk in ipairs(obj.message.content) do
+            if type(blk) == "table" and blk.type == "text" and type(blk.text) == "string" then
+              parts[#parts + 1] = blk.text
+            end
+          end
+          local txt = vim.trim(table.concat(parts, "\n\n"))
+          if txt ~= "" then
+            msgs[#msgs + 1] = txt
+          end
+        elseif obj.type == "user" and not obj.isMeta then
+          local c = obj.message and obj.message.content
+          local is_tool_result = false
+          if type(c) == "table" then
+            for _, blk in ipairs(c) do
+              if type(blk) == "table" and blk.type == "tool_result" then
+                is_tool_result = true
+                break
+              end
+            end
+          end
+          if not is_tool_result then
+            msgs = {} -- real user prompt: reply restarts after this
+          end
+        end
+      end
+    end
+  end
+  f:close()
+  if #msgs == 0 then
+    return nil
+  end
+  local keep, bytes = {}, 0
+  for i = #msgs, 1, -1 do
+    local b = #msgs[i]
+    if #keep >= 8 or (#keep > 0 and bytes + b > 65536) then
+      break
+    end
+    table.insert(keep, 1, msgs[i])
+    bytes = bytes + b
+  end
+  return table.concat(keep, "\n\n")
+end
+
+local function rstrip(s)
+  return (s:gsub("%s+$", ""))
+end
+
+-- visible truncated lines must equal the tail of the full reply
+local function tail_matches(full, visible)
+  if #visible == 0 or #full < #visible then
+    return false
+  end
+  local off = #full - #visible
+  for i = 1, #visible do
+    if rstrip(full[off + i]) ~= rstrip(visible[i]) then
+      return false
+    end
+  end
+  return true
+end
+
+-- returns true if the reference region was replaced (markers moved!)
+local function reinflate(buf, mk)
+  if vim.g.claude_reply_reinflate == false then
+    return false
+  end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local lo = (mk.header or 0) + 1
+  if lo > mk.reply - 1 then
+    return false
+  end
+  if not lines[lo]:find(SENTINEL, 1, true) then
+    return false -- not truncated: nothing to do
+  end
+  local visible = {}
+  for i = lo + 1, mk.reply - 1 do
+    visible[#visible + 1] = dehash(lines[i])
+  end
+  for _, ent in ipairs(list_transcripts(transcript_dir())) do
+    local txt = M.last_reply_text(ent.path)
+    if txt then
+      local full = vim.split(txt, "\n", { plain = true })
+      if tail_matches(full, visible) then
+        -- swap in the full reply, re-hashed to mirror claude's own
+        -- format; the normal de-hash pass below then applies uniformly
+        local hashed = {}
+        for _, l in ipairs(full) do
+          hashed[#hashed + 1] = (l == "") and "#" or ("# " .. l)
+        end
+        vim.api.nvim_buf_set_lines(buf, lo - 1, mk.reply - 1, false, hashed)
+        return true
+      end
+    end
+  end
+  warn("could not re-inflate truncated reference (no matching transcript)")
+  return false
 end
 
 -- de-hash the reference (lines between the markers) into plain markdown
@@ -484,6 +687,9 @@ function M.setup_buffer(buf)
   end
   vim.b[buf].claude_reply_ready = true
 
+  if reinflate(buf, mk) then
+    mk = M.find_markers(buf) -- region grew: marker line numbers moved
+  end
   strip_reference(buf, mk)
   apply_view_opts()
   apply_folds(buf, mk)

@@ -73,9 +73,11 @@ change.
    in the empty reply area below it.
 3. `[m` / `]m` to move between response sections (folds are open;
    `<Space>` toggles a section fold, `zM`/`zR` collapse/expand all).
-4. Put the cursor on a section you want to answer, press **`\e`** — it
+4. Put the cursor on what you want to answer, press **`\e`** — it
    drops below the marker as a `> ` blockquote wrapped to col 69, and
-   you land in insert mode underneath. Type your reply.
+   you land in insert mode underneath. Type your reply. On a
+   bullet/numbered **list item** this pulls just that item (+ nested
+   children); on a heading/prose line, the whole section.
 5. Repeat for each section; visually select reference lines + `\e` to
    pull an arbitrary span.
 6. `:wq`. Claude receives only the below-marker text (your quotes +

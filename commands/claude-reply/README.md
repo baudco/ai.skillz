@@ -18,9 +18,14 @@ buffer, lets you:
 
 - `]m` / `[m` — jump between Claude's response **sections** (in the
   reference region), like `]m`/`[m` jump methods in code.
-- `\e` (normal) — **pull** the section under the cursor *down* below
-  the marker as a `gq`-wrapped (your `textwidth=69`) `> ` blockquote,
+- `\e` (normal) — **pull** content under the cursor *down* below the
+  marker as a `gq`-wrapped (your `textwidth=69`) `> ` blockquote,
   cursor parked underneath in insert mode for your inline reply.
+  Granularity is do-what-I-mean: on a **list item** (bullet/numbered,
+  any nesting depth) it pulls *just that item* plus its indented
+  children — quote only what you're answering, send fewer tokens; on a
+  heading or prose line it pulls the whole section. (Whole section
+  from an item: cursor on the heading, or V-select.)
 - `\e` (visual) — pull the selected reference lines.
 
 Only what ends up **below** the marker is sent back to Claude, so you
@@ -54,6 +59,20 @@ Decompiled from the bundled binary (`bin/.claude-unwrapped`):
   survive verbatim (exactly one occurrence), and anything you want
   sent must sit below it. (The HEADER/`#`-reference above is never
   re-sent — that's why `\e` copies a `> ` quote *down*.)
+- **The reference is hard-capped at 50 lines** by Claude Code itself
+  (`rh4=50` in the binary — no setting changes it), with a sentinel
+  first line `… (earlier output truncated)`. The plugin **re-inflates**
+  a truncated reference from the session transcript on disk
+  (`~/.claude/projects/<cwd-slug>/<uuid>.jsonl`, where the slug is the
+  cwd with every non-alphanumeric → `-`): it reconstructs the last
+  reply the same way Claude's context builder does (all assistant text
+  blocks since your last real prompt; thinking/tool blocks, tool-result
+  carriers, meta and sidechain entries skipped; 8-message/64KB caps),
+  then swaps the full text into the reference. A candidate transcript
+  is accepted **only if the visible truncated lines match the tail of
+  its reconstructed reply**, so a concurrent session in the same cwd
+  can never inflate the wrong conversation; no match → warn and leave
+  the truncated reference as-is.
 - **Marker detection anchors on the box rule** (`# ─`, U+2500), not the
   bare phrase. Claude Code prefixes every response line with `# `, so a
   response that *mentions* "Write your reply below this line" in prose
@@ -126,6 +145,13 @@ editor, so its real `gq` gives exactly your vimrc wrapping.
   - `"treesitter"` — leave whatever your config attached (use only if
     your markdown TS actually works).
   - `"off"` — no highlighting.
+- **`vim.g.claude_reply_reinflate`** — set `false` to disable
+  re-inflating a truncated reference from the session transcript
+  (default: enabled).
+- **`vim.g.claude_reply_transcript_dir`** — override the transcript
+  directory searched for re-inflation (default: derived from
+  `$CLAUDE_CONFIG_DIR` or `~/.claude`, plus the cwd slug). Mainly for
+  tests and non-standard setups.
 
 ## Known limitations
 

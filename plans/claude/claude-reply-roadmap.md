@@ -14,6 +14,15 @@ then **#3 cross-provider** (largest, most speculative).
 
 ## Shared infrastructure: a session-transcript reader
 
+> **STATUS: partially built.** The reader's core now exists in
+> `claude-reply.lua` (`M.last_reply_text`, `transcript_dir`,
+> `list_transcripts`), added for the **truncation re-inflation**
+> feature (Claude caps the Ctrl-G reference at 50 lines; the plugin
+> reconstructs the full last reply from the transcript, validated by
+> tail-match against the visible truncated lines). #1/#2 below extend
+> this from "last reply" to "any turn" — move it to `session.lua` when
+> #5's restructure happens.
+
 #1 and #2 both need to read the live session transcript, so build this
 once as `lua/claude-reply/session.lua`:
 
@@ -40,14 +49,49 @@ once as `lua/claude-reply/session.lua`:
 **Verdict:** doable entirely plugin-side; **no Claude cooperation
 needed** because the transcript is on disk. High value, well scoped.
 
-**Approach:** a buffer-local command/keymap (e.g. `:ClaudeReplyPick`
-or `\E`) that, from inside the compose buffer:
-1. reads the session transcript (shared reader above),
-2. lists prior assistant turns via `vim.ui.select` (or telescope/fzf
-   if present) — preview first line + timestamp,
-3. on pick, runs the chosen turn's text through the **existing**
-   de-hash→section→`gq`-wrap→`> `-quote machinery and drops it below
-   the marker, exactly like `\e` does for the current reference.
+**Draft implementation design** (captured 2026-06-12; infra is ~70%
+built — the re-inflation feature shipped `M.last_reply_text()` +
+`transcript_dir()` + `list_transcripts()` with tail-match session
+validation):
+
+1. **`M.all_replies(path)`** — sibling of `last_reply_text()`. Same
+   forward scan and entry classification (skip thinking/tool_use
+   blocks, tool_result carriers, `isMeta`, `isSidechain`), but instead
+   of *resetting* the accumulator on each real user prompt, it
+   **closes the current turn and starts a new one**, returning an
+   ordered list:
+   `{ { text, first_line, ts = <timestamp of first entry> }, … }`.
+   Reuse the per-message trim + `\n\n` join; no 8-msg/64KB cap (these
+   are single turns). The current session file is chosen the same way
+   re-inflation does (slug dir, mtime order); since the parent Claude
+   process is frozen mid-Ctrl-G, the active session is the
+   most-recently-written file — and for the picker the tail-match
+   validation can also anchor on the *current* reference text.
+2. **Picker UI** — buffer-local `\E` (capital; lowercase `\e` = pull)
+   and `:ClaudeReplyPick`. Use `vim.ui.select` with labels like
+   `[#7 12:31] Confirmed working live — excellent. Both asks…` (turn
+   index + HH:MM + first ~60 cols of the first non-blank line).
+   `vim.ui.select` automatically upgrades to telescope/fzf-lua/dressing
+   if the user has one configured — no hard dependency.
+3. **On pick** — two insertion modes:
+   - default: run the chosen turn through the existing
+     section/`gq`/`> `-quote machinery (`pull_section`) below the
+     marker — quote the *whole* turn;
+   - refine (v2): instead of quoting the whole turn, *swap the chosen
+     turn into the reference region* (re-using the re-inflation swap +
+     re-find-markers dance) so the normal `]m`/`[m` + granular `\e`
+     workflow applies to the older turn — then a second `\E` (or a
+     dedicated map) restores the live last-reply reference. This
+     "reference paging" is the better UX and reuses everything.
+4. **Caveat to surface in docs/UI**: quoting an older turn doesn't
+   rewind the conversation — the composed text is still sent as the
+   next message in the live session (rewind = Claude's own Esc-Esc
+   checkpoint menu). Frame as "respond to something you forgot".
+5. **Tests**: fixture jsonl with 3+ turns (interleaved tool_results,
+   meta, sidechain noise) → `all_replies()` returns exactly the 3
+   turns in order; picker insertion reuses the existing pull asserts;
+   reference-paging swap preserves the reply-marker contract (exactly
+   one marker, below-marker content untouched).
 
 **Honest caveat to document:** this lets you *quote* an older message
 for context, but your reply is still delivered to the **current** turn
