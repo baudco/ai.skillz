@@ -64,6 +64,16 @@ technical notes).
       `[xxxxxxxx]: https://.../<full-hash>` lines
       at the bottom).
 
+      NOTE: current-format bodies are **hash-free**
+      until the pre-merge linking pass, so finding
+      no hash defs is normal — in that case update
+      mode reduces to: re-group/append Summary
+      bullets for new commits, drop bullets whose
+      feature group vanished, carry everything
+      else forward. The hash remap logic in (c)/(d)
+      only applies to legacy hashed bodies or a
+      previously-appended `### Commit index`.
+
    c. Run `git log BASE..HEAD --format='%H %s'` and
       compare against the old hashes:
       - For each old hash, search the new log by
@@ -272,10 +282,12 @@ Separate major sections with `---` horizontal rules.
   base: <base-branch>
   submitted:
     github: ___
-    gitea: ___
-    srht: ___
   -->
   ```
+- Only list `submitted:` entries for services
+  actually detected via `git remote -v` — a
+  github-only repo gets a single `github:` line,
+  no `gitea:`/`srht:` placeholders.
 
 ### Title (h2)
 - Use `## <Title>` as the first visible heading.
@@ -311,27 +323,30 @@ Separate major sections with `---` horizontal rules.
 ### Summary of changes
 - Use heading `### Summary of changes` (not just
   "Summary").
-- Optional subtitle like "By chronological commit"
-  when organizing by commit order.
-- Bulleted list of changes, one per logical unit.
-- Each bullet prefixed with a parenthesized
-  commit-hash reference link:
-  `([<short-hash>][<short-hash>])` using md
-  reference-style.
+- **Minimize**: one bullet per *feature/logical
+  group* of commits — NOT one bullet per commit.
+  A 6-commit branch implementing 2 features gets
+  2 bullets.
+- **No commit-hash refs at draft time.** The
+  working body stays hash-free; commit links are
+  appended as a `### Commit index` by the
+  pre-merge linking pass (see "Pre-merge commit
+  linking" below). This avoids hash-remap churn
+  across rebases/squashes while the PR is alive.
 - End each bullet with a period for prose-y feel.
 - Use backticks for all code elements.
 - **69 char line limit** — wrap long bullets.
-- When a single bullet covers multiple commits,
-  chain the hash refs:
-  `([abc1234][abc1234]) ([def5678][def5678])`.
-- Use `*` sub-bullets for secondary details within
-  a change.
+- Use `*` sub-bullets sparingly for secondary
+  details within a change.
 
 ### Scopes changed
-- **Optional for small PRs** — when the diff is ≤3
-  files and "Summary of changes" already covers the
-  per-file detail, this section may be omitted to
-  reduce noise.
+- **Omit by default.** Include ONLY when the PR
+  moves/renames large chunks of code or makes
+  substantial namespace restructures — i.e. when
+  the *layout* change is itself the story and a
+  reviewer needs the old→new mapping. For
+  ordinary feature/fix PRs the Summary's inline
+  paths are enough.
 - Organized by file/module path, NOT by commit.
 - Use `- \`<scope>\`` prefix with `*` sub-bullets
   for what changed within each scope.
@@ -381,9 +396,10 @@ Separate major sections with `---` horizontal rules.
   ```
 
 ### Cross-references (commented out)
-- Always include a commented-out cross-references
-  section as a placeholder for linking the same
-  PR/patch across services:
+- **Only when >1 hosting service is detected** via
+  `git remote -v` — include a commented-out
+  cross-references section as a placeholder for
+  linking the same PR/patch across services:
   ```
   <!--
   ### Cross-references
@@ -395,6 +411,10 @@ Separate major sections with `---` horizontal rules.
   - [design-doc-or-screenshot](url)
   -->
   ```
+- Single-service repos (e.g. github-only): omit
+  the whole block. If related links surface (see
+  "Related issues & PRs"), add a plain `### Links`
+  section instead.
 
 ### Related issues & PRs
 - Scan commit messages, branch name, and diff for
@@ -535,21 +555,22 @@ actual commits that resolve each item — readers
 can click through to the exact fix.
 
 ### Reference-style link definitions
-- Collect ALL commit-hash links at the bottom of
-  the document.
-- Format:
-  `[<short-hash>]: <base-url><full-or-short-hash>`
-- Use the 8-char short hash as both display text
-  and ref ID.
-- This ensures cross-service md compatibility —
-  most services will also auto-link bare SHAs but
-  the explicit refs are a guaranteed fallback.
+- The working (pre-merge) body carries NO
+  commit-hash ref defs — only the footer's
+  `[claude-code-gh]` def and any `### Links`
+  entries.
+- Commit-hash refs + defs arrive together as the
+  `### Commit index` appended by the pre-merge
+  linking pass (below). Format there:
+  `[<short-hash>]: <base-url>/commit/<full-hash>`
+  — explicit refs are a guaranteed cross-service
+  fallback to bare-SHA auto-linking.
 
 ### Cross-service PR ref-link stubs
-- After the commit-hash refs, include commented-out
-  reference-link stubs for each detected remote's
-  PR URL pattern, using `___` as the number
-  placeholder:
+- **Only when >1 hosting service is detected**:
+  include commented-out reference-link stubs for
+  each detected remote's PR URL pattern, using
+  `___` as the number placeholder:
   ```
   <!-- cross-service pr refs (fill after submit):
   [github-pr]: https://github.com/<owner>/<repo>/pull/___
@@ -557,8 +578,7 @@ can click through to the exact fix.
   [srht-patch]: https://git.sr.ht/~<owner>/<repo>/patches/___
   -->
   ```
-- Only include stubs for remotes actually detected
-  via `git remote -v`.
+- Single-service repos: omit entirely.
 
 **Footer** (note: the link ref syntax does NOT count
 toward the 69-col limit — only the rendered display
@@ -602,6 +622,34 @@ text does, so this fits on one line):
    (e.g. after a rebase or new commits) propagate
    updates to the live PR without requiring a
    manual "sync to gh" step.
+
+## Pre-merge commit linking
+
+The working PR body stays **hash-free** (see
+"Summary of changes"). Immediately before the PR
+is merged — i.e. once the human is about to click
+the merge button and the commit set is final — run
+the linking pass to append a `### Commit index`:
+
+```bash
+python skills/pr-msg/scripts/linkify-commits.py \
+  main..<head-ref> >> body.md
+gh pr edit <num> --body-file body.md
+```
+
+The script emits one `([short][short]) <subject>`
+line per commit (chronological) plus the
+reference-link defs, deriving the commit-URL base
+from `git remote -v` (`--repo-url` to override).
+Running it any earlier just means re-running it
+after the next rebase — hashes are only stable at
+merge time, which is the whole point of deferring.
+
+- [ ] TODO: automate as an actual pre-merge gate —
+  e.g. a `gh pr merge` wrapper alias or a GitHub
+  Action on `pull_request` `auto_merge_enabled`/
+  label that appends the index then merges. Until
+  then it's a manual final pass.
 
 ## Post-submission workflow
 
