@@ -645,11 +645,26 @@ Running it any earlier just means re-running it
 after the next rebase — hashes are only stable at
 merge time, which is the whole point of deferring.
 
-- [ ] TODO: automate as an actual pre-merge gate —
-  e.g. a `gh pr merge` wrapper alias or a GitHub
-  Action on `pull_request` `auto_merge_enabled`/
-  label that appends the index then merges. Until
-  then it's a manual final pass.
+**xonsh aliases** (`pr-merge.xsh`, source from your
+xonshrc) wrap this for any repo with the skill
+deployed (`.claude/skills/pr-msg`, or the global
+`~/.claude/skills/pr-msg` fallback):
+
+```
+pr-linkify <num> [base]   # append Commit index to
+                          # the live PR body via gh
+pr-merge   <num> [base]   # pr-linkify, then
+                          # `gh pr merge <num>`
+```
+
+`pr-linkify` is idempotent-guarded (refuses to
+double-append if a `### Commit index` already
+exists) and needs the PR's head-branch history
+locally.
+
+- [ ] TODO: also automate as a server-side gate —
+  e.g. a GitHub Action on `auto_merge_enabled`/
+  label that appends the index then merges.
 
 ## Post-submission workflow
 
