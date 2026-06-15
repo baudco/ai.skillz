@@ -24,6 +24,17 @@ allowed-tools:
   - Write
 ---
 
+## XXX NEVER auto-commit!
+
+This skill (and agents working in any repo deploying
+it) must NOT run `git commit` (nor amend/rebase) by
+default: ONLY generate + write the msg file(s) per the
+process below and leave staging/committing to the
+human, who normally reviews and/or live-tests changes
+before blessing them. Run `git commit` ONLY when the
+human explicitly requests it (eg. "commit this", an
+approved commit-plan execution).
+
 When generating commit messages, always follow this process:
 
 -1. **Session tracking** (`conf.toml`):
