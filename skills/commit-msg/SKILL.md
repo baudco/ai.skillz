@@ -252,6 +252,16 @@ as `review_regression.md`).
    detected in step 0 (i.e. `git rev-parse
    --show-toplevel`; in a worktree this is the
    *worktree* root, NOT the main repo):
+
+   > **Worktrees:** ALWAYS write both files under the
+   > *active worktree's* own `.claude/` dir — the
+   > `git rev-parse --show-toplevel` path from step 0,
+   > which for a worktree is the worktree root. Do NOT
+   > redirect them to the main checkout's `.claude/`.
+   > Each worktree keeps its own commit-msg state so
+   > `git commit --edit --file .claude/git_commit_msg_LATEST.md`
+   > resolves locally without any cross-tree copying.
+
    - `.claude/skills/commit-msg/msgs/<timestamp>_<hash>_commit_msg.md`
      * with `<timestamp>` from `date -u +%Y%m%dT%H%M%SZ`
        or similar filesystem-safe format.
