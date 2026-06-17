@@ -264,7 +264,7 @@ form (~26 cols).
 - Specific about what the branch accomplishes
 
 **Use the accompanying style/format reference:**
-- See [format-reference.md](format-reference.md)
+- See [format-reference.md](references/format-reference.md)
   for the canonical PR description structure.
 
 **Body Sections (in order):**
@@ -583,8 +583,16 @@ can click through to the exact fix.
 **Footer** (note: the link ref syntax does NOT count
 toward the 69-col limit — only the rendered display
 text does, so this fits on one line):
+
+**A blank line MUST separate the footer text from the
+`[claude-code-gh]:` ref-def** — GitHub markdown otherwise
+absorbs the def line into the preceding paragraph (it
+renders as literal text instead of being consumed as a
+link definition). Same rule applies anywhere a ref-def
+follows prose (see the tracking-issue template above).
 ```
 (this pr content was generated in some part by [`claude-code`][claude-code-gh])
+
 [claude-code-gh]: https://github.com/anthropics/claude-code
 ```
 

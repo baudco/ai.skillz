@@ -30,9 +30,9 @@ branch: <branch-name>
 base: <base-branch>
 submitted:
   github: ___
-  gitea: ___
-  srht: ___
 -->
+<!-- ^ list ONLY services detected via `git remote -v`;
+     a github-only repo gets just the `github:` line. -->
 
 ## <Title: present-tense verb + backticked code>
 
@@ -58,30 +58,33 @@ makes sense,
 
 ### Summary of changes
 
-By chronological commit
+<MINIMIZE — one bullet per FEATURE / logical group
+of commits, NOT one per commit. Hash-free at draft
+time; commit links are added by the pre-merge
+linking pass (see "Pre-merge `### Commit index`"
+below). End each bullet with a period.>
 
-- ([<hash>][<hash>]) Description of change ending
-  with period.
+- A feature/logical-group description ending with
+  a period.
+  * Sub-detail only when it carries real signal.
 
-- ([<hash>][<hash>]) Another change description
-  ending with period.
-  * Sub-detail about this change.
-
-- ([<hash>][<hash>]) ([<hash>][<hash>]) Multi-commit
-  change description.
+- Another feature group, same idea.
 
 ---
 
 ### Scopes changed
+
+<OPTIONAL — omit by default. Include ONLY on large
+code moves / renames / substantial namespace
+restructures, where the old→new layout mapping is
+itself the story. Ordinary feature/fix PRs rely on
+the inline paths in the Summary.>
+
 - `pkg.mod`
   * description of what changed.
 
 - `pkg.mod.submod`
   * full rewrite; drop old impl, replace with new.
-  * re-export `Thing` from upstream lib.
-
-- `tests.test_mod`
-  * add test coverage for new feature.
 
 ---
 
@@ -115,43 +118,74 @@ follow-up items from this PR.
 
 [follow-up]: https://github.com/<o>/<r>/issues/<num>#follow-up-from-branch-pr-nnn
 
-<!--
+<!-- Cross-references — ONLY when >1 hosting service
+     is detected. Single-service repos omit this block.
 ### Cross-references
 Also submitted as
 [github-pr][] | [gitea-pr][] | [srht-patch][].
+-->
 
-### Links
+<!-- ### Links  (use when related issues/PRs surface)
 - [<repo>#NNN](url) — related issue/PR
-- [design-doc-or-screenshot](url)
 -->
 
 ---
 
 (this pr content was generated in some part by [`claude-code`][claude-code-gh])
 
-[<hash>]: https://<service>/<owner>/<repo>/commit/<full-hash>
 [claude-code-gh]: https://github.com/anthropics/claude-code
 
-<!-- cross-service pr refs (fill after submit):
+<!-- cross-service pr refs — ONLY if >1 service
+     (fill after submit):
 [github-pr]: https://github.com/<owner>/<repo>/pull/___
 [gitea-pr]: https://<host>/<owner>/<repo>/pulls/___
 [srht-patch]: https://git.sr.ht/~<owner>/<repo>/patches/___
 -->
 ```
 
-## Markdown Reference-Link Strategy
+Note the working body carries **no** commit-hash
+ref-link defs — only the `[claude-code-gh]` footer
+def (+ any `### Links`). Hash refs arrive with the
+`### Commit index` at merge time (next section).
 
-Use reference-style links for ALL commit hashes
-and cross-service PR refs to ensure cross-service
-compatibility:
+## Pre-merge `### Commit index`
 
-**Inline usage** (in bullets):
+The working PR body stays **hash-free** while the PR
+is alive — this avoids re-mapping churn across
+rebases/squashes. Immediately before merge, run
+`scripts/linkify-commits.py main..<head-ref>` to
+append a `### Commit index`. This is the ONLY place
+commit-hash reference links live:
+
 ```markdown
-- [f3726cf9][f3726cf9] Add `reg_err_types()`
-  for custom exc lookup.
+---
+
+### Commit index
+
+- ([<short>][<short>]) <commit subject line>
+- ([<short>][<short>]) <commit subject line>
+
+[<short>]: https://<service>/<owner>/<repo>/commit/<full-hash>
 ```
 
-**Definition** (bottom of document):
+The `pr-merge.xsh` aliases (`pr-linkify`, `pr-merge`)
+wrap this for any repo with the skill deployed.
+
+## Markdown Reference-Link Strategy
+
+Commit-hash refs do NOT appear in the working body —
+they live only in the pre-merge `### Commit index`
+(above). When they are emitted there (and for the
+cross-service PR refs), use reference-style links for
+cross-service compatibility:
+
+**Inline usage** (Commit index bullets):
+```markdown
+- ([f3726cf9][f3726cf9]) Add `reg_err_types()` for
+  custom exc lookup.
+```
+
+**Definition** (bottom of the Commit index):
 ```markdown
 [f3726cf9]: https://github.com/goodboy/tractor/commit/f3726cf9
 ```
@@ -171,9 +205,14 @@ compatibility:
 
 ## Cross-Service PR Placeholder Mechanism
 
-The generated description includes three layers
-of cross-service support, all using native md
-reference-links:
+**Only applies when >1 hosting service is detected**
+via `git remote -v`. Single-service (e.g. github-only)
+repos omit all three layers below — no `gitea:`/`srht:`
+meta lines, no cross-references block, no PR-ref stubs.
+
+When multiple services ARE in play, the description
+includes three layers of cross-service support, all
+using native md reference-links:
 
 ### 1. Metadata comment (top of file)
 
