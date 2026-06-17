@@ -248,10 +248,10 @@ cmd_status() {
         name="$(basename "$entry")"
         local status_str=""
 
-        if [ -L "$entry" ]; then
-            # It's a directory symlink (remove trailing /)
-            entry="${entry%/}"
-        fi
+        # strip the glob's trailing slash FIRST: `[ -L dir/ ]`
+        # dereferences the symlink (always false for a dir-symlink),
+        # so the tests below must see the bare path to detect it.
+        entry="${entry%/}"
 
         if [ -L "$entry" ]; then
             local link_target
