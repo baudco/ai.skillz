@@ -421,6 +421,16 @@ Separate major sections with `---` horizontal rules.
   issue/PR references (`#123`, `fixes #N`, URLs).
 - Search the repo's open issues for keywords from
   the PR title/motivation.
+- **If the diff touches dependency manifests**
+  (`pyproject.toml`, `uv.lock`, `requirements*.txt`,
+  `package.json`, …), run `/dep-supersede-scan` (when
+  deployed) to cross-check the branch's dep bumps
+  against open dependabot alerts + bot PRs. It returns
+  ready-to-paste `supersedes #N` / `resolves alert #M`
+  lines — fold confirmed ones into `### Links`. Heed
+  its `needs relock` flag: a constraint-floor bump
+  alone won't close an alert if the committed lockfile
+  still pins the vulnerable version.
 - **Prompt the user**: present any candidate links
   and ask which (if any) to include. Add confirmed
   links to the `### Links` block inside the
