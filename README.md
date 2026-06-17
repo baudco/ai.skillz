@@ -20,6 +20,7 @@ generalized for cross-repo deployment.
 | `commit-msg` | Git commit message generation |
 | `pr-msg` | PR description generation |
 | `code-review-changes` | Apply PR review feedback |
+| `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
 | `run-tests` | Test runner (template-based) |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
