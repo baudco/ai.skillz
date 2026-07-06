@@ -27,11 +27,13 @@ note in `DEPLOY.md`.
 
 ### First consumer: `modden`
 
-`modden`'s run-tests is currently the tractor example dumped
-verbatim + an inline modden fixture-hygiene note, and is **untracked
-/ local-only** (so it can't propagate to the author's other test
-boxes — a concrete reason to do this factor). Its per-repo
-`test-harness-reference.md` should cover:
+`modden` has **NO run-tests skill of its own**:
+`modden/.claude/skills/run-tests` is a **symlink to
+`~/repos/tractor/.claude/skills/run-tests`** (gitignored deploy
+wiring), so modden silently reuses *tractor's* skill verbatim. There
+is nowhere to put modden-specific guidance without polluting
+tractor's shared skill — THAT is the concrete driver for this
+factor. Its per-repo `test-harness-reference.md` should cover:
 
 - multi-backend i3 / sway / hyprland; `--twm` / `--sw` selection
 - `--headless` requirement on sway-only hosts; Xephyr via `.#i3test`
@@ -42,5 +44,8 @@ boxes — a concrete reason to do this factor). Its per-repo
   `'doggy'`->`'dev_skygpu'` runtime "swap" that was a symlinked
   fixture (fixed in modden `af043a7`).
 
-Cross-ref: `modden:.claude/skills/run-tests/SKILL.md` carries the
-inline fixture-hygiene note + a pointer back to this roadmap.
+Until the factor lands there is no modden-local skill to hold it, so
+the modden fixture-hygiene lesson lives in the author's auto-memory
+(`feedback_check_fixture_source_first`) + this roadmap ONLY; it must
+NOT be added to the shared tractor skill (verified: a first attempt
+accidentally did, and was reverted).
