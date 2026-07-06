@@ -501,6 +501,60 @@ function M.last_reply_text(path)
   return table.concat(keep, "\n\n")
 end
 
+-- like `last_reply_text` but keeps EVERY turn: a real user prompt
+-- CLOSES the accumulated turn instead of discarding it. returns an
+-- ordered (oldest-first) list of { text, ts } or nil.
+function M.all_replies(path)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local turns, msgs, ts = {}, {}, nil
+  local function close_turn()
+    if #msgs > 0 then
+      turns[#turns + 1] = { text = table.concat(msgs, "\n\n"), ts = ts }
+      msgs, ts = {}, nil
+    end
+  end
+  for line in f:lines() do
+    if line:find('"type":"assistant"', 1, true) or line:find('"type":"user"', 1, true) then
+      local ok, obj = pcall(vim.json.decode, line)
+      if ok and type(obj) == "table" and not obj.isSidechain then
+        if obj.type == "assistant" and obj.message and type(obj.message.content) == "table" then
+          local parts = {}
+          for _, blk in ipairs(obj.message.content) do
+            if type(blk) == "table" and blk.type == "text" and type(blk.text) == "string" then
+              parts[#parts + 1] = blk.text
+            end
+          end
+          local txt = vim.trim(table.concat(parts, "\n\n"))
+          if txt ~= "" then
+            msgs[#msgs + 1] = txt
+            ts = ts or obj.timestamp
+          end
+        elseif obj.type == "user" and not obj.isMeta then
+          local c = obj.message and obj.message.content
+          local is_tool_result = false
+          if type(c) == "table" then
+            for _, blk in ipairs(c) do
+              if type(blk) == "table" and blk.type == "tool_result" then
+                is_tool_result = true
+                break
+              end
+            end
+          end
+          if not is_tool_result then
+            close_turn()
+          end
+        end
+      end
+    end
+  end
+  f:close()
+  close_turn()
+  return #turns > 0 and turns or nil
+end
+
 local function rstrip(s)
   return (s:gsub("%s+$", ""))
 end
@@ -683,6 +737,15 @@ local function setup_maps(buf)
     silent = true,
     desc = "claude-reply: pull selection as quote",
   })
+
+  -- prior-reply picker (shadows the global vimrc-source \r map ONLY
+  -- inside compose buffers)
+  vim.keymap.set("n", "<leader>r", function()
+    M.pick_reply(buf)
+  end, opts("pick a prior reply (page/quote)"))
+  vim.api.nvim_buf_create_user_command(buf, "ClaudeReplyPick", function()
+    M.pick_reply(buf)
+  end, { desc = "claude-reply: pick a prior reply" })
 end
 
 -- provider-shared UI wiring: view opts, folds, highlight, colors,
@@ -826,6 +889,208 @@ function M.setup_opencode_buffer(buf)
   -- park at buffer end: the user's in-progress draft (if any) sits
   -- below the marker and the reply continues after it.
   setup_ui(buf, mk, vim.api.nvim_buf_line_count(buf))
+end
+
+-- ── prior-reply picker: page/quote any earlier turn ────────────────
+--
+-- `\r` (or :ClaudeReplyPick) opens a fuzzy picker over EVERY prior
+-- reply of the session — telescope when available (custom picker:
+-- fuzzy matches the full reply text via `ordinal`, live markdown
+-- preview, user's own sorter/theme), else `vim.ui.select`.
+--   <CR>  "reference paging": swap the chosen turn INTO the reference
+--         region so the whole ]m/[m + granular \e workflow applies to
+--         it; re-pick to page elsewhere (the newest turn == "live").
+--   <C-q> quote the whole turn below the marker directly.
+
+-- replace the reference region with `text`; tag the header line with
+-- a ⟨#idx/total⟩ paging suffix (the "last response" phrase the marker
+-- matcher anchors on is preserved).
+function M.set_reference(buf, text, idx, total)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local mk = M.find_markers(buf)
+  if not mk.reply then
+    return
+  end
+  local lo = (mk.header or 0) + 1
+  local new = {}
+  for _, l in ipairs(vim.split(text, "\n", { plain = true })) do
+    if is_marker(l) then
+      l = "\194\183" .. l -- '·' defuse, same guard as injection
+    end
+    new[#new + 1] = l
+  end
+  vim.api.nvim_buf_set_lines(buf, lo - 1, mk.reply - 1, false, new)
+  if mk.header and idx and total then
+    local h = vim.api.nvim_buf_get_lines(buf, mk.header - 1, mk.header, false)[1]
+    h = h:gsub("%s*⟨#%d+/%d+[^⟩]*⟩%s*$", "")
+    local tag = (idx == total) and (" ⟨#%d/%d live⟩"):format(idx, total)
+      or (" ⟨#%d/%d⟩"):format(idx, total)
+    vim.api.nvim_buf_set_lines(buf, mk.header - 1, mk.header, false, { h .. tag })
+  end
+  local nmk = M.find_markers(buf)
+  apply_folds(buf, nmk) -- region length changed: refresh fold bounds
+  vim.bo[buf].modified = false
+  vim.api.nvim_win_set_cursor(0, { (nmk.header or 0) + 1, 0 })
+end
+
+-- claude: resolve (once, cached) WHICH transcript is this session's by
+-- tail-matching the reference visible at first pick — before any
+-- paging has replaced it — against each candidate's reconstructed
+-- last reply; falls back to the most-recently-modified transcript.
+local function resolve_transcript(buf)
+  local path = vim.b[buf].claude_reply_transcript
+  if path then
+    return path
+  end
+  local mk, lines = M.find_markers(buf)
+  local visible = {}
+  if mk.reply then
+    for i = (mk.header or 0) + 1, mk.reply - 1 do
+      visible[#visible + 1] = lines[i]
+    end
+  end
+  local entries = list_transcripts(transcript_dir())
+  for _, ent in ipairs(entries) do
+    local txt = M.last_reply_text(ent.path)
+    if txt and #visible > 0 and tail_matches(vim.split(txt, "\n", { plain = true }), visible) then
+      path = ent.path
+      break
+    end
+  end
+  path = path or (entries[1] and entries[1].path)
+  vim.b[buf].claude_reply_transcript = path
+  return path
+end
+
+-- ordered (oldest-first) turn list for the buffer's provider
+local function fetch_turns(buf)
+  if vim.b[buf].claude_reply_provider == "opencode" then
+    local cmd = vim.g.claude_reply_oc_list_cmd
+    if not cmd then
+      local py = vim.g.claude_reply_python or vim.fn.exepath("python3")
+      if py == nil or py == "" then
+        return nil
+      end
+      local script = vim.g.claude_reply_oc_script or (plugin_dir() .. "/oc-last-reply.py")
+      cmd = { py, script, "--cwd", vim.fn.getcwd(), "--list" }
+    end
+    local out = vim.fn.system(cmd)
+    if vim.v.shell_error ~= 0 then
+      return nil
+    end
+    local ok, turns = pcall(vim.json.decode, out)
+    return (ok and type(turns) == "table") and turns or nil
+  end
+  local path = resolve_transcript(buf)
+  return path and M.all_replies(path) or nil
+end
+
+-- ts is an ISO string (claude jsonl) or epoch-ms number (opencode db)
+local function fmt_ts(ts)
+  if type(ts) == "number" then
+    return os.date("%H:%M", math.floor(ts / 1000))
+  end
+  if type(ts) == "string" then
+    return ts:match("T(%d%d:%d%d)") or "??:??"
+  end
+  return "??:??"
+end
+
+local function first_line(text)
+  for _, l in ipairs(vim.split(text, "\n", { plain = true })) do
+    if not l:match("^%s*$") then
+      return vim.fn.strcharpart(l, 0, 56)
+    end
+  end
+  return ""
+end
+
+function M.pick_reply(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local turns = fetch_turns(buf)
+  if not turns or #turns == 0 then
+    warn("no prior replies found for this session")
+    return
+  end
+  local total = #turns
+  local items = {}
+  for i = total, 1, -1 do -- newest first in the list
+    local t = turns[i]
+    items[#items + 1] = {
+      idx = i,
+      total = total,
+      text = t.text,
+      label = ("#%d %s  %s"):format(i, fmt_ts(t.ts), first_line(t.text)),
+    }
+  end
+
+  local has_telescope, pickers = pcall(require, "telescope.pickers")
+  if not has_telescope then
+    vim.ui.select(items, {
+      prompt = "prior AI replies",
+      format_item = function(it)
+        return it.label
+      end,
+    }, function(choice)
+      if choice then
+        M.set_reference(buf, choice.text, choice.idx, choice.total)
+      end
+    end)
+    return
+  end
+
+  local finders = require("telescope.finders")
+  local tconf = require("telescope.config").values
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+  local previewers = require("telescope.previewers")
+
+  pickers
+    .new({}, {
+      prompt_title = "prior AI replies · <CR> page reference · <C-q> quote turn",
+      finder = finders.new_table({
+        results = items,
+        entry_maker = function(it)
+          return {
+            value = it,
+            display = it.label,
+            -- ordinal carries the FULL reply text: fuzzy back-search
+            -- matches reply content, not just the label
+            ordinal = it.label .. " " .. it.text,
+          }
+        end,
+      }),
+      sorter = tconf.generic_sorter({}),
+      previewer = previewers.new_buffer_previewer({
+        title = "reply",
+        define_preview = function(self, entry)
+          vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(entry.value.text, "\n", { plain = true }))
+          pcall(function()
+            vim.bo[self.state.bufnr].syntax = "markdown"
+          end)
+        end,
+      }),
+      attach_mappings = function(prompt_bufnr, map)
+        actions.select_default:replace(function()
+          local e = action_state.get_selected_entry()
+          actions.close(prompt_bufnr)
+          if e then
+            M.set_reference(buf, e.value.text, e.value.idx, e.value.total)
+          end
+        end)
+        local quote = function()
+          local e = action_state.get_selected_entry()
+          actions.close(prompt_bufnr)
+          if e then
+            M.pull_section(buf, vim.split(e.value.text, "\n", { plain = true }))
+          end
+        end
+        map("i", "<C-q>", quote)
+        map("n", "<C-q>", quote)
+        return true
+      end,
+    })
+    :find()
 end
 
 -- ── per-buffer setup + autocmd ─────────────────────────────────────

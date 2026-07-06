@@ -44,7 +44,23 @@ once as `lua/claude-reply/session.lua`:
 
 ---
 
-## #2 — Ctrl-G / quote from an OLDER reply  ·  ✅ very feasible
+## #2 — Ctrl-G / quote from an OLDER reply  ·  ✅ SHIPPED 2026-07-06
+
+> **STATUS: shipped**, per the draft below with these deltas:
+> telescope custom picker (not bare `vim.ui.select` — that's the
+> fallback when telescope is absent): `ordinal` carries the full reply
+> text (content back-search), live md preview, user's own
+> sorter/theme. Key is **`\r`** (not `\E`) + `:ClaudeReplyPick`.
+> BOTH insertion modes landed at once: `<CR>` = reference paging
+> (v2's "better UX" — swaps the turn into the reference, header
+> tagged `⟨#N/M⟩`/`⟨#M/M live⟩`), `<C-q>` = quote-whole-turn.
+> Works for BOTH providers: claude via `M.all_replies()` (turn =
+> consecutive assistant msgs between real user prompts; transcript
+> resolved once by tail-match vs the visible reference, cached in
+> `b:claude_reply_transcript`), opencode via `oc-last-reply.py
+> --list` (same turn-grouping from sqlite; NB fixed a cursor-reuse
+> bug — inner part queries clobbered the streamed outer message
+> rows, fetchall() them).
 
 **Verdict:** doable entirely plugin-side; **no Claude cooperation
 needed** because the transcript is on disk. High value, well scoped.

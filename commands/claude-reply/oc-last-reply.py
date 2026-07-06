@@ -45,39 +45,95 @@ def parts_text(parts: list[dict]) -> str:
     return "\n\n".join(t.strip() for t in texts if t.strip())
 
 
+def _pick_session(c: sqlite3.Cursor, cwd: str) -> str | None:
+    row = c.execute(
+        "select id from session"
+        " where parent_id is null"
+        "   and (directory = ? or directory like ? || '/%')"
+        " order by time_updated desc limit 1",
+        (cwd, cwd),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _msg_text(c: sqlite3.Cursor, mid: str) -> str:
+    parts = [
+        json.loads(d)
+        for (d,) in c.execute(
+            "select data from part"
+            " where message_id = ? order by time_created",
+            (mid,),
+        )
+    ]
+    return parts_text(parts)
+
+
 def via_db(db: str, cwd: str) -> str | None:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         c = con.cursor()
-        ses = c.execute(
-            "select id from session"
-            " where parent_id is null"
-            "   and (directory = ? or directory like ? || '/%')"
-            " order by time_updated desc limit 1",
-            (cwd, cwd),
-        ).fetchone()
-        if not ses:
+        sid = _pick_session(c, cwd)
+        if not sid:
             return None
-        # newest assistant message with non-empty text parts
-        for (mid,) in c.execute(
+        # newest assistant message with non-empty text parts.
+        # NB fetchall(): `_msg_text` reuses this cursor — streaming the
+        # outer rows would be clobbered by the inner execute.
+        rows = c.execute(
             "select id from message"
             " where session_id = ?"
             "   and json_extract(data, '$.role') = 'assistant'"
             " order by time_created desc",
-            (ses[0],),
-        ):
-            parts = [
-                json.loads(d)
-                for (d,) in c.execute(
-                    "select data from part"
-                    " where message_id = ? order by time_created",
-                    (mid,),
-                )
-            ]
-            txt = parts_text(parts)
+            (sid,),
+        ).fetchall()
+        for (mid,) in rows:
+            txt = _msg_text(c, mid)
             if txt:
                 return txt
         return None
+    finally:
+        con.close()
+
+
+def via_db_list(db: str, cwd: str) -> list[dict] | None:
+    """All replies of the session as ordered turns.
+
+    Mirrors the claude-transcript semantics: consecutive assistant
+    messages between two user prompts form ONE logical turn. Each
+    turn: {"text": ..., "ts": <epoch-ms of first msg>}.
+    """
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        c = con.cursor()
+        sid = _pick_session(c, cwd)
+        if not sid:
+            return None
+        turns: list[dict] = []
+        texts: list[str] = []
+        ts = None
+
+        def close() -> None:
+            nonlocal texts, ts
+            if texts:
+                turns.append({"text": "\n\n".join(texts), "ts": ts})
+                texts, ts = [], None
+
+        # fetchall(): same cursor-reuse hazard as `via_db` above
+        rows = c.execute(
+            "select id, json_extract(data, '$.role'), time_created"
+            " from message where session_id = ?"
+            " order by time_created",
+            (sid,),
+        ).fetchall()
+        for mid, role, tc in rows:
+            if role == "assistant":
+                txt = _msg_text(c, mid)
+                if txt:
+                    texts.append(txt)
+                    ts = ts if ts is not None else tc
+            elif role == "user":
+                close()
+        close()
+        return turns or None
     finally:
         con.close()
 
@@ -133,9 +189,21 @@ def main() -> int:
         help="use the opencode CLI (session list + export) instead of"
         " reading the sqlite store directly",
     )
+    ap.add_argument(
+        "--list", action="store_true",
+        help="emit ALL replies of the session as a JSON array of"
+        ' {"text", "ts"} turns (oldest first) instead of the last'
+        " reply's text",
+    )
     args = ap.parse_args()
 
     cwd = os.path.realpath(args.cwd)
+    if args.list:
+        turns = via_db_list(args.db, cwd)
+        if not turns:
+            return 3
+        json.dump(turns, sys.stdout)
+        return 0
     if args.via_export:
         txt = via_export(cwd)
     else:

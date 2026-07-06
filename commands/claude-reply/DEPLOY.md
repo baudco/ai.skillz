@@ -99,6 +99,11 @@ schema-drift-proof `opencode session list`+`export` route.
    children); on a heading/prose line, the whole section.
 5. Repeat for each section; visually select reference lines + `\e` to
    pull an arbitrary span.
+5b. **`\r`** opens the prior-reply picker (telescope if installed,
+   `vim.ui.select` otherwise): fuzzy back-search every earlier turn
+   (matches reply *content*), `<CR>` pages it into the reference for
+   the normal `]m`/`\e` workflow (header shows `⟨#N/M⟩`), `<C-q>`
+   quotes the whole turn directly. Works for both providers.
 6. `:wq`. Claude receives only the below-marker text (your quotes +
    replies); everything above the marker is dropped.
 

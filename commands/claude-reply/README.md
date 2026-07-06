@@ -177,6 +177,36 @@ too — not done here.
   `setup_autocmds()` at import, returns `{}` (no remote plugin).
 - `DEPLOY.md` — symlink + the one-time `/config` toggle.
 
+## Prior-reply picker (`\r`)
+
+Back-search and re-use ANY earlier reply of the session, not just the
+last one. **`\r`** (buffer-local; shadows the global vimrc-source map
+only inside compose buffers) or `:ClaudeReplyPick` opens a fuzzy
+picker over every prior turn — **telescope** when available (custom
+picker: your own sorter/theme/mappings; the `ordinal` carries the
+full reply text so fuzzing matches reply *content*, with a live
+markdown preview pane), else a plain `vim.ui.select` fallback.
+
+- **`<CR>` — "reference paging"**: swaps the chosen turn INTO the
+  reference region, so the whole normal workflow (`]m`/`[m`, granular
+  `\e` pulls, folds) applies to the older reply. The header line gets
+  a `⟨#N/M⟩` tag (`⟨#M/M live⟩` when back on the newest); re-`\r` to
+  page elsewhere.
+- **`<C-q>` — quote whole turn**: short-circuit; appends the entire
+  selected reply as a wrapped `> ` quote below the marker.
+
+Turn sources per provider: claude — `all_replies()` over the session
+jsonl (turn = consecutive assistant messages between real user
+prompts; tool-result carriers/meta/sidechain noise skipped; the RIGHT
+transcript is resolved once by tail-matching the visible reference,
+then cached); opencode — `oc-last-reply.py --list` (same grouping,
+from the sqlite store).
+
+Caveat (same as roadmap #2): paging/quoting an older turn does NOT
+rewind the conversation — whatever you compose is still sent as the
+next message in the live session. It's "respond to something you
+forgot", not time travel (that's Claude's own Esc-Esc rewind).
+
 ## opencode support
 
 The plugin's second provider (opencode `1.17.9`, verified by
