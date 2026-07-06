@@ -150,21 +150,19 @@ Common in piker commits (33.0% use colons):
 - File:line references not used (0 occurrences)
 - No WIP commits in analyzed set
 
-### Claude-code Footer
-When the written **patch** was assisted by claude-code,
+### Harness/model Footer
+When the written **patch** was assisted by an AI coding harness,
 include:
 
 ```
-(this patch was generated in some part by [`claude-code`][claude-code-gh])
-[claude-code-gh]: https://github.com/anthropics/claude-code
+(this patch was generated in some part by `<harness>` using `<model>` (`<provider>`))
 ```
 
-When only the **commit msg** was written by claude-code
+When only the **commit msg** was written by the AI coding harness
 (human wrote the patch), use:
 
 ```
-(this commit msg was generated in some part by [`claude-code`][claude-code-gh])
-[claude-code-gh]: https://github.com/anthropics/claude-code
+(this commit msg was generated in some part by `<harness>` using `<model>` (`<provider>`))
 ```
 
 ## Piker-Specific Terms
