@@ -207,6 +207,24 @@ rewind the conversation — whatever you compose is still sent as the
 next message in the live session. It's "respond to something you
 forgot", not time travel (that's Claude's own Esc-Esc rewind).
 
+## Session picker (`\R`) — cross-harness
+
+One level up from `\r`: **`\R`** (or `:ClaudeReplySessions`) fuzzes
+over **sessions from BOTH harnesses' stores merged** — claude
+(`~/.claude/projects/<slug>/*.jsonl`; title = last
+`custom-title`/`ai-title` line, `last-prompt` fallback) and opencode
+(sqlite `session` table via `oc-last-reply.py --sessions`) — rows like
+`[oc] 07-03 20:38  taken_todo_sys  (repos/lns)`, preview = that
+session's last reply (lazily fetched, cached). Scope defaults to the
+cwd project; **`<C-a>`** toggles all-projects/all-dirs (claude side
+capped to the newest 30 transcripts). `<CR>` drills into the normal
+turn picker for that session (`<CR>` page / `<C-q>` quote as usual;
+**`<C-o>`** goes back to the session list). Foreign-session pages tag
+the header `⟨<session title> #N/M⟩` so you always know whose reply
+you're reading. Since quoting is just text, this is **cross-harness
+pollination**: quote a claude reply into an opencode conversation and
+vice versa. Same `vim.ui.select` fallback when telescope is absent.
+
 ## opencode support
 
 The plugin's second provider (opencode `1.17.9`, verified by

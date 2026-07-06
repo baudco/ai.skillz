@@ -746,6 +746,14 @@ local function setup_maps(buf)
   vim.api.nvim_buf_create_user_command(buf, "ClaudeReplyPick", function()
     M.pick_reply(buf)
   end, { desc = "claude-reply: pick a prior reply" })
+
+  -- cross-harness session picker (stage 1 of session -> turn)
+  vim.keymap.set("n", "<leader>R", function()
+    M.pick_session(buf)
+  end, opts("pick a session (cross-harness), then a reply"))
+  vim.api.nvim_buf_create_user_command(buf, "ClaudeReplySessions", function()
+    M.pick_session(buf)
+  end, { desc = "claude-reply: pick a session, then a reply" })
 end
 
 -- provider-shared UI wiring: view opts, folds, highlight, colors,
@@ -837,15 +845,22 @@ local function oc_write(buf)
   while #out > 0 and out[#out]:match("^%s*$") do
     out[#out] = nil
   end
-  -- NEVER write a 0-byte file: opencode's read-back treats empty as
-  -- "abort" (`content || undefined` in fn `ue`) and would LEAVE THE
-  -- OLD PROMPT in place. a lone newline reads back truthy ("\n") and
-  -- opencode's own single-trailing-newline strip (`le`) turns it into
-  -- "" — so clearing the reply area genuinely CLEARS the prompt box.
+  local name = vim.api.nvim_buf_get_name(buf)
   if #out == 0 then
-    out = { "" }
+    -- NEVER write a 0-byte file: opencode's read-back treats empty as
+    -- "abort" (`content || undefined` in fn `ue`) and would LEAVE THE
+    -- OLD PROMPT in place. a lone newline reads back truthy ("\n")
+    -- and opencode's `le` strips it (single-line case) — the prompt
+    -- box genuinely CLEARS.
+    vim.fn.writefile({ "" }, name)
+  else
+    -- binary mode ('b'): NO trailing newline. opencode's `le` only
+    -- strips a trailing "\n" from SINGLE-line content — multi-line
+    -- content keeps it and renders an extra blank line at the end of
+    -- the prompt box (claude strips it itself in `Vt_`, hence
+    -- "opencode-only extra line").
+    vim.fn.writefile(out, name, "b")
   end
-  vim.fn.writefile(out, vim.api.nvim_buf_get_name(buf))
   vim.bo[buf].modified = false
 end
 
@@ -912,9 +927,10 @@ end
 --   <C-q> quote the whole turn below the marker directly.
 
 -- replace the reference region with `text`; tag the header line with
--- a ⟨#idx/total⟩ paging suffix (the "last response" phrase the marker
--- matcher anchors on is preserved).
-function M.set_reference(buf, text, idx, total)
+-- a ⟨#idx/total⟩ paging suffix — or ⟨<label> #idx/total⟩ when paging a
+-- FOREIGN session's turn (the "last response" phrase the marker
+-- matcher anchors on is preserved either way).
+function M.set_reference(buf, text, idx, total, label)
   buf = buf or vim.api.nvim_get_current_buf()
   local mk = M.find_markers(buf)
   if not mk.reply then
@@ -931,9 +947,15 @@ function M.set_reference(buf, text, idx, total)
   vim.api.nvim_buf_set_lines(buf, lo - 1, mk.reply - 1, false, new)
   if mk.header and idx and total then
     local h = vim.api.nvim_buf_get_lines(buf, mk.header - 1, mk.header, false)[1]
-    h = h:gsub("%s*⟨#%d+/%d+[^⟩]*⟩%s*$", "")
-    local tag = (idx == total) and (" ⟨#%d/%d live⟩"):format(idx, total)
-      or (" ⟨#%d/%d⟩"):format(idx, total)
+    h = h:gsub("%s*⟨[^⟩]*⟩%s*$", "")
+    local tag
+    if label and label ~= "" then
+      local short = vim.fn.strcharpart(label:gsub("[⟨⟩]", ""), 0, 24)
+      tag = (" ⟨%s #%d/%d⟩"):format(short, idx, total)
+    else
+      tag = (idx == total) and (" ⟨#%d/%d live⟩"):format(idx, total)
+        or (" ⟨#%d/%d⟩"):format(idx, total)
+    end
     vim.api.nvim_buf_set_lines(buf, mk.header - 1, mk.header, false, { h .. tag })
   end
   local nmk = M.find_markers(buf)
@@ -971,24 +993,39 @@ local function resolve_transcript(buf)
   return path
 end
 
--- ordered (oldest-first) turn list for the buffer's provider
-local function fetch_turns(buf)
-  if vim.b[buf].claude_reply_provider == "opencode" then
-    local cmd = vim.g.claude_reply_oc_list_cmd
-    if not cmd then
-      local py = vim.g.claude_reply_python or vim.fn.exepath("python3")
-      if py == nil or py == "" then
-        return nil
-      end
-      local script = vim.g.claude_reply_oc_script or (plugin_dir() .. "/oc-last-reply.py")
-      cmd = { py, script, "--cwd", vim.fn.getcwd(), "--list" }
-    end
-    local out = vim.fn.system(cmd)
-    if vim.v.shell_error ~= 0 then
+-- run the extractor with `extra` args and decode its JSON stdout.
+-- `override` (a vim.g test hook) replaces the whole command when set.
+local function oc_json(extra, override)
+  local cmd = override
+  if not cmd then
+    local py = vim.g.claude_reply_python or vim.fn.exepath("python3")
+    if py == nil or py == "" then
       return nil
     end
-    local ok, turns = pcall(vim.json.decode, out)
-    return (ok and type(turns) == "table") and turns or nil
+    local script = vim.g.claude_reply_oc_script or (plugin_dir() .. "/oc-last-reply.py")
+    cmd = { py, script, "--cwd", vim.fn.getcwd() }
+    vim.list_extend(cmd, extra)
+  end
+  local out = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+  local ok, val = pcall(vim.json.decode, out)
+  return (ok and type(val) == "table") and val or nil
+end
+
+-- ordered (oldest-first) turn list. `src` targets an explicit session
+-- ({provider="claude", path=…} | {provider="opencode", session=…});
+-- nil == the buffer's own current session.
+local function fetch_turns(buf, src)
+  if src then
+    if src.provider == "opencode" then
+      return oc_json({ "--list", "--session", src.session }, vim.g.claude_reply_oc_list_cmd)
+    end
+    return src.path and M.all_replies(src.path) or nil
+  end
+  if vim.b[buf].claude_reply_provider == "opencode" then
+    return oc_json({ "--list" }, vim.g.claude_reply_oc_list_cmd)
   end
   local path = resolve_transcript(buf)
   return path and M.all_replies(path) or nil
@@ -1014,13 +1051,132 @@ local function first_line(text)
   return ""
 end
 
-function M.pick_reply(buf)
+-- month-day + time for session rows (turn rows use fmt_ts). handles
+-- fs mtime (seconds) and opencode epoch-ms.
+local function fmt_date(ts)
+  if type(ts) ~= "number" then
+    return "??-??"
+  end
+  if ts > 1e12 then
+    ts = math.floor(ts / 1000)
+  end
+  return os.date("%m-%d %H:%M", ts)
+end
+
+-- pretty project label from a claude slug dir or an opencode
+-- directory path: "-home-goodboy-repos-lns" / "/home/goodboy/repos/lns"
+-- -> "repos/lns"
+local function proj_label(s)
+  s = s:gsub("^" .. vim.pesc(vim.env.HOME or ""), ""):gsub("^[-/]home[-/][^-/]+[-/]?", "")
+  s = s:gsub("^[-/]+", ""):gsub("-", "/")
+  return (s == "") and "~" or s
+end
+
+-- claude sessions: *.jsonl under the cwd slug dir (or, all_scope, the
+-- newest 30 across every project slug). titles: LAST custom-title or
+-- ai-title line, else LAST last-prompt line, else the uuid prefix —
+-- extracted with two batched greps (2 shell-outs total, any file count).
+local function claude_sessions(all_scope)
+  local fs = vim.uv or vim.loop
+  local dirs = {}
+  if all_scope then
+    local base = (vim.env.CLAUDE_CONFIG_DIR or (vim.env.HOME .. "/.claude")) .. "/projects"
+    local h = fs.fs_scandir(base)
+    while h do
+      local name, t = fs.fs_scandir_next(h)
+      if not name then
+        break
+      end
+      if t == "directory" then
+        dirs[#dirs + 1] = base .. "/" .. name
+      end
+    end
+  else
+    dirs = { transcript_dir() }
+  end
+  local files = {}
+  for _, dir in ipairs(dirs) do
+    for _, ent in ipairs(list_transcripts(dir)) do
+      files[#files + 1] = { path = ent.path, ts = ent.mtime, proj = proj_label(vim.fn.fnamemodify(dir, ":t")) }
+    end
+  end
+  table.sort(files, function(a, b)
+    return a.ts > b.ts
+  end)
+  if all_scope and #files > 30 then
+    for i = #files, 31, -1 do
+      files[i] = nil
+    end
+  end
+  if #files == 0 then
+    return {}
+  end
+  -- batched title greps: last match per file wins
+  local paths = {}
+  for _, f in ipairs(files) do
+    paths[#paths + 1] = f.path
+  end
+  local titles = {}
+  local function harvest(pattern, tbl)
+    local cmd = { "grep", "-aoHE", pattern }
+    vim.list_extend(cmd, paths)
+    for _, line in ipairs(vim.fn.systemlist(cmd)) do
+      local p, val = line:match('^(.-):"[^"]+":"(.*)"$')
+      if p and val then
+        tbl[p] = val -- later lines overwrite: LAST occurrence wins
+      end
+    end
+  end
+  harvest('"(customTitle|aiTitle)":"[^"]*"', titles)
+  local prompts = {}
+  harvest('"lastPrompt":"[^"]*"', prompts)
+  local out = {}
+  for _, f in ipairs(files) do
+    local title = titles[f.path] or prompts[f.path]
+      or vim.fn.fnamemodify(f.path, ":t:r"):sub(1, 8)
+    out[#out + 1] = {
+      provider = "claude",
+      path = f.path,
+      title = title,
+      ts = f.ts,
+      proj = f.proj,
+    }
+  end
+  return out
+end
+
+-- merged cross-harness session list, newest first
+function M.list_sessions(all_scope)
+  local out = claude_sessions(all_scope)
+  local extra = all_scope and { "--sessions", "--all-dirs" } or { "--sessions" }
+  for _, s in ipairs(oc_json(extra, vim.g.claude_reply_oc_sessions_cmd) or {}) do
+    out[#out + 1] = {
+      provider = "opencode",
+      session = s.id,
+      title = (s.title and s.title ~= "") and s.title or s.id:sub(1, 12),
+      ts = s.ts,
+      proj = proj_label(s.directory or ""),
+    }
+  end
+  table.sort(out, function(a, b)
+    local ta = (a.ts or 0) > 1e12 and (a.ts / 1000) or (a.ts or 0)
+    local tb = (b.ts or 0) > 1e12 and (b.ts / 1000) or (b.ts or 0)
+    return ta > tb
+  end)
+  return out
+end
+
+-- `src` (optional) targets another session's turns; `from_scope`
+-- (optional, boolean) marks arrival FROM the session picker with that
+-- all-projects scope — enables <C-o> back-navigation.
+function M.pick_reply(buf, src, from_scope)
   buf = buf or vim.api.nvim_get_current_buf()
-  local turns = fetch_turns(buf)
+  local turns = fetch_turns(buf, src)
   if not turns or #turns == 0 then
     warn("no prior replies found for this session")
     return
   end
+  local label = src and src.title or nil
   local total = #turns
   local items = {}
   for i = total, 1, -1 do -- newest first in the list
@@ -1036,13 +1192,13 @@ function M.pick_reply(buf)
   local has_telescope, pickers = pcall(require, "telescope.pickers")
   if not has_telescope then
     vim.ui.select(items, {
-      prompt = "prior AI replies",
+      prompt = label and ("replies · " .. label) or "prior AI replies",
       format_item = function(it)
         return it.label
       end,
     }, function(choice)
       if choice then
-        M.set_reference(buf, choice.text, choice.idx, choice.total)
+        M.set_reference(buf, choice.text, choice.idx, choice.total, label)
       end
     end)
     return
@@ -1056,7 +1212,9 @@ function M.pick_reply(buf)
 
   pickers
     .new({}, {
-      prompt_title = "prior AI replies · <CR> page reference · <C-q> quote turn",
+      prompt_title = (label and ("replies · " .. label) or "prior AI replies")
+        .. " · <CR> page · <C-q> quote"
+        .. (from_scope ~= nil and " · <C-o> back" or ""),
       finder = finders.new_table({
         results = items,
         entry_maker = function(it)
@@ -1084,7 +1242,7 @@ function M.pick_reply(buf)
           local e = action_state.get_selected_entry()
           actions.close(prompt_bufnr)
           if e then
-            M.set_reference(buf, e.value.text, e.value.idx, e.value.total)
+            M.set_reference(buf, e.value.text, e.value.idx, e.value.total, label)
           end
         end)
         local quote = function()
@@ -1096,6 +1254,107 @@ function M.pick_reply(buf)
         end
         map("i", "<C-q>", quote)
         map("n", "<C-q>", quote)
+        if from_scope ~= nil then
+          local back = function()
+            actions.close(prompt_bufnr)
+            M.pick_session(buf, from_scope)
+          end
+          map("i", "<C-o>", back)
+          map("n", "<C-o>", back)
+        end
+        return true
+      end,
+    })
+    :find()
+end
+
+-- stage 1: fuzzy-pick a SESSION (both harnesses merged, [cc]/[oc]
+-- badges), then drill into its turns. `all_scope` widens from the
+-- cwd project to every project/directory (<C-a> toggles it live).
+function M.pick_session(buf, all_scope)
+  buf = buf or vim.api.nvim_get_current_buf()
+  all_scope = all_scope or false
+  local sessions = M.list_sessions(all_scope)
+  if #sessions == 0 then
+    warn(all_scope and "no sessions found anywhere" or "no sessions for this project (try <C-a> for all)")
+    return
+  end
+  local items = {}
+  for _, s in ipairs(sessions) do
+    items[#items + 1] = {
+      src = s,
+      label = ("[%s] %s  %s  (%s)"):format(
+        s.provider == "opencode" and "oc" or "cc",
+        fmt_date(s.ts),
+        vim.fn.strcharpart(s.title or "", 0, 48),
+        s.proj or "?"
+      ),
+    }
+  end
+
+  local has_telescope, pickers = pcall(require, "telescope.pickers")
+  if not has_telescope then
+    vim.ui.select(items, {
+      prompt = all_scope and "AI sessions (all projects)" or "AI sessions",
+      format_item = function(it)
+        return it.label
+      end,
+    }, function(choice)
+      if choice then
+        M.pick_reply(buf, choice.src, all_scope)
+      end
+    end)
+    return
+  end
+
+  local finders = require("telescope.finders")
+  local tconf = require("telescope.config").values
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+  local previewers = require("telescope.previewers")
+  local preview_cache = {}
+
+  pickers
+    .new({}, {
+      prompt_title = (all_scope and "AI sessions (ALL projects)" or "AI sessions")
+        .. " · <CR> open · <C-a> scope",
+      finder = finders.new_table({
+        results = items,
+        entry_maker = function(it)
+          return { value = it, display = it.label, ordinal = it.label }
+        end,
+      }),
+      sorter = tconf.generic_sorter({}),
+      previewer = previewers.new_buffer_previewer({
+        title = "last reply",
+        define_preview = function(self, entry)
+          local key = entry.value.label
+          local text = preview_cache[key]
+          if text == nil then
+            local turns = fetch_turns(buf, entry.value.src)
+            text = (turns and #turns > 0) and turns[#turns].text or "(no replies)"
+            preview_cache[key] = text
+          end
+          vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(text, "\n", { plain = true }))
+          pcall(function()
+            vim.bo[self.state.bufnr].syntax = "markdown"
+          end)
+        end,
+      }),
+      attach_mappings = function(prompt_bufnr, map)
+        actions.select_default:replace(function()
+          local e = action_state.get_selected_entry()
+          actions.close(prompt_bufnr)
+          if e then
+            M.pick_reply(buf, e.value.src, all_scope)
+          end
+        end)
+        local toggle = function()
+          actions.close(prompt_bufnr)
+          M.pick_session(buf, not all_scope)
+        end
+        map("i", "<C-a>", toggle)
+        map("n", "<C-a>", toggle)
         return true
       end,
     })

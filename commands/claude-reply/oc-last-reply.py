@@ -56,6 +56,28 @@ def _pick_session(c: sqlite3.Cursor, cwd: str) -> str | None:
     return row[0] if row else None
 
 
+def list_sessions(db: str, cwd: str, all_dirs: bool) -> list[dict]:
+    """Top-level sessions, newest first: {id, title, directory, ts}."""
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        c = con.cursor()
+        q = (
+            "select id, title, directory, time_updated from session"
+            " where parent_id is null"
+        )
+        args: tuple = ()
+        if not all_dirs:
+            q += " and (directory = ? or directory like ? || '/%')"
+            args = (cwd, cwd)
+        q += " order by time_updated desc"
+        return [
+            {"id": i, "title": t, "directory": d, "ts": ts}
+            for (i, t, d, ts) in c.execute(q, args).fetchall()
+        ]
+    finally:
+        con.close()
+
+
 def _msg_text(c: sqlite3.Cursor, mid: str) -> str:
     parts = [
         json.loads(d)
@@ -68,11 +90,11 @@ def _msg_text(c: sqlite3.Cursor, mid: str) -> str:
     return parts_text(parts)
 
 
-def via_db(db: str, cwd: str) -> str | None:
+def via_db(db: str, cwd: str, sid: str | None = None) -> str | None:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         c = con.cursor()
-        sid = _pick_session(c, cwd)
+        sid = sid or _pick_session(c, cwd)
         if not sid:
             return None
         # newest assistant message with non-empty text parts.
@@ -94,7 +116,7 @@ def via_db(db: str, cwd: str) -> str | None:
         con.close()
 
 
-def via_db_list(db: str, cwd: str) -> list[dict] | None:
+def via_db_list(db: str, cwd: str, sid: str | None = None) -> list[dict] | None:
     """All replies of the session as ordered turns.
 
     Mirrors the claude-transcript semantics: consecutive assistant
@@ -104,7 +126,7 @@ def via_db_list(db: str, cwd: str) -> list[dict] | None:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         c = con.cursor()
-        sid = _pick_session(c, cwd)
+        sid = sid or _pick_session(c, cwd)
         if not sid:
             return None
         turns: list[dict] = []
@@ -195,11 +217,32 @@ def main() -> int:
         ' {"text", "ts"} turns (oldest first) instead of the last'
         " reply's text",
     )
+    ap.add_argument(
+        "--session", default=None, metavar="ID",
+        help="target this exact session id instead of picking the"
+        " most-recent one for --cwd",
+    )
+    ap.add_argument(
+        "--sessions", action="store_true",
+        help="emit the session list as a JSON array of"
+        ' {"id", "title", "directory", "ts"} (newest first)',
+    )
+    ap.add_argument(
+        "--all-dirs", action="store_true",
+        help="with --sessions: list sessions of EVERY directory, not"
+        " just --cwd's project",
+    )
     args = ap.parse_args()
 
     cwd = os.path.realpath(args.cwd)
+    if args.sessions:
+        sessions = list_sessions(args.db, cwd, args.all_dirs)
+        if not sessions:
+            return 3
+        json.dump(sessions, sys.stdout)
+        return 0
     if args.list:
-        turns = via_db_list(args.db, cwd)
+        turns = via_db_list(args.db, cwd, args.session)
         if not turns:
             return 3
         json.dump(turns, sys.stdout)
@@ -207,7 +250,7 @@ def main() -> int:
     if args.via_export:
         txt = via_export(cwd)
     else:
-        txt = via_db(args.db, cwd)
+        txt = via_db(args.db, cwd, args.session)
     if not txt:
         return 3
     sys.stdout.write(txt)

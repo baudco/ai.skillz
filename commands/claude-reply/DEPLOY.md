@@ -104,6 +104,11 @@ schema-drift-proof `opencode session list`+`export` route.
    (matches reply *content*), `<CR>` pages it into the reference for
    the normal `]m`/`\e` workflow (header shows `⟨#N/M⟩`), `<C-q>`
    quotes the whole turn directly. Works for both providers.
+5c. **`\R`** opens the cross-harness SESSION picker: claude + opencode
+   sessions merged (`[cc]`/`[oc]` badges, last-reply preview), `<C-a>`
+   toggles cwd-project ↔ all-projects scope, `<CR>` drills into that
+   session's turn picker (`<C-o>` backs out). Quote any harness's
+   reply into any conversation.
 6. `:wq`. Claude receives only the below-marker text (your quotes +
    replies); everything above the marker is dropped.
 

@@ -44,6 +44,21 @@ once as `lua/claude-reply/session.lua`:
 
 ---
 
+## #2b — cross-harness SESSION picker  ·  ✅ SHIPPED 2026-07-06
+
+> `\R`/`:ClaudeReplySessions`: stage-1 fuzzy picker over sessions from
+> BOTH stores merged ([cc]/[oc] badges, lazy last-reply preview,
+> `<C-a>` cwd-project ↔ all-projects scope, claude all-scope capped to
+> newest 30 transcripts), `<CR>` → the existing turn picker
+> parameterized by source (`<C-o>` back-nav); foreign pages tag the
+> header `⟨<title> #N/M⟩`. Infra: `oc-last-reply.py --sessions
+> [--all-dirs]` + `--session <id>`; lua `list_sessions()` (batched
+> title greps: last custom-title/ai-title, last-prompt fallback),
+> `fetch_turns(buf, src)`, `set_reference(..., label)`. Plan doc:
+> `session-picker-plan.md`. NOTE: `~/.claude/sessions/<pid>.json`
+> (live pid→session map) recorded for a future exact-current-session
+> upgrade.
+
 ## #2 — Ctrl-G / quote from an OLDER reply  ·  ✅ SHIPPED 2026-07-06
 
 > **STATUS: shipped**, per the draft below with these deltas:
