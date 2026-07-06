@@ -824,8 +824,11 @@ local function oc_write(buf)
     for i = mk.reply + 1, #lines do
       out[#out + 1] = lines[i]
     end
-    if out[1] == "" then
-      table.remove(out, 1) -- the separator blank we inserted
+    -- drop ALL leading blanks (the separator we inserted + any
+    -- stragglers) — a leading newline in a chat prompt is noise and
+    -- compounds across editor round-trips
+    while out[1] and out[1]:match("^%s*$") do
+      table.remove(out, 1)
     end
   else
     out = lines
@@ -870,6 +873,12 @@ function M.setup_opencode_buffer(buf)
     end
     block[#block + 1] = OC_REPLY
     block[#block + 1] = ""
+    -- strip the draft's LEADING blanks (an empty prompt box arrives
+    -- as one empty line): exactly ONE blank sits below the marker,
+    -- never two.
+    while draft[1] and draft[1]:match("^%s*$") do
+      table.remove(draft, 1)
+    end
     vim.list_extend(block, draft)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, block)
     vim.bo[buf].modified = false -- bare :q still aborts (draft kept)
