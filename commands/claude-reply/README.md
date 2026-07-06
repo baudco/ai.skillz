@@ -177,6 +177,57 @@ too — not done here.
   `setup_autocmds()` at import, returns `{}` (no remote plugin).
 - `DEPLOY.md` — symlink + the one-time `/config` toggle.
 
+## opencode support
+
+The plugin's second provider (opencode `1.17.9`, verified by
+decompiling its bundle). Same UX — `]m`/`[m`, `\e` pulls, folds,
+highlight — but the wiring is inverted because opencode's external
+editor is much more bare-bones than Claude Code's:
+
+- `editor_open` (default **ctrl+e**) writes ONLY the current prompt
+  draft to **`<os.tmpdir()>/<Date.now()>.md`** (a 13-digit epoch-ms
+  basename), spawns `$VISUAL || $EDITOR` blocking (TUI suspended,
+  fn `ue` in the bundle), then reads the **whole file back** into the
+  prompt box. No reference content, no marker stripping, no
+  config-file editor setting.
+- So the plugin does both sides itself, nvim-side only:
+  1. an autocmd on `<tmpdir>/*.md` (basename must be exactly 13
+     digits) **injects** the session's last assistant reply as plain-md
+     reference above a reply marker (same `# ───…` shape as Claude's,
+     so all shared machinery applies), keeping any in-progress draft
+     below the marker;
+  2. a **`BufWriteCmd`** strips everything at/above the marker on
+     save — the `Vt_`-equivalent opencode lacks — so opencode receives
+     only your quotes + reply.
+- The last reply comes from **`oc-last-reply.py`** (stdlib-only):
+  reads opencode's sqlite store read-only
+  (`~/.local/share/opencode/opencode-stable.db`, `session`/`message`/
+  `part` tables, ~20ms) for the most-recently-updated top-level
+  session at/under nvim's cwd (opencode spawns the editor with
+  cwd = worktree root). `--via-export` instead chains the built-in
+  CLI (`opencode session list` + `opencode export <id>` — export must
+  go to a file: its stdout truncates on pipes) — slower (~1.2s+) but
+  schema-drift-proof; it's the documented fallback.
+- Injected reference lines that would themselves parse as markers
+  (a session *about* this plugin…) are defused with a `·` prefix.
+- Zero opencode-side configuration: nvim already is the editor via
+  `$EDITOR`. Knobs: `vim.g.claude_reply_opencode = false`
+  (kill-switch), `claude_reply_python`, `claude_reply_oc_script`,
+  `claude_reply_oc_via_export`, `claude_reply_oc_fetch_cmd`
+  (full command override; used by tests).
+- Save semantics: clearing everything below the marker **clears the
+  prompt box** — the plugin writes a lone newline rather than a 0-byte
+  file, because opencode treats an empty read-back as *abort*
+  (`content || undefined` in fn `ue`) and would silently keep the old
+  prompt; the newline reads back truthy and opencode's own
+  trailing-newline strip reduces it to `""`. Trailing blank padding is
+  trimmed on save (interior blanks kept).
+- Caveats: no per-session identity check (heuristic = most recent
+  session for cwd; two concurrent opencode sessions in one dir could
+  cross-pollinate the *reference*, never the sent text); a bare `:q`
+  aborts cleanly (buffer marked unmodified after injection, draft
+  survives); deleting the marker line sends the whole buffer.
+
 ## Roadmap
 
 Follow-up ideas (older-reply quoting, a transcript side-panel,

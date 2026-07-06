@@ -139,6 +139,21 @@ low. Depends on §shared reader.
 
 ## #3 — cross-provider support  ·  🔭 design now, populate later
 
+> **STATUS: first non-Claude provider SHIPPED (2026-07-06) —
+> opencode.** Done ad-hoc (an `-- opencode provider --` section in
+> `claude-reply.lua` + the `oc-last-reply.py` extractor), not yet as
+> the profile registry below. Verified facts (opencode 1.17.9 bundle,
+> fn `ue`): `editor_open` writes the prompt draft to
+> `<os.tmpdir()>/<Date.now()>.md`, spawns `$VISUAL||$EDITOR` blocking,
+> reads the WHOLE file back; no reference, no strip, no config-file
+> editor setting. So the plugin injects the reference (sqlite read of
+> `~/.local/share/opencode/opencode-stable.db` — `session`/`message`/
+> `part`, ~20ms; `opencode export` CLI as `--via-export` fallback,
+> NB export stdout truncates on pipes → must redirect to a file) and
+> strips on save via `BufWriteCmd`. The genericized bits (HEAD_TXT
+> phrase match, `setup_ui`, `reassert_view`) are the seam the profile
+> registry should grow from when #5 restructures.
+
 **Findings (web, June 2026):** the "compose your reply in `$EDITOR`
 with the prior response quoted/marked" pattern is **fairly
 Claude-specific**. Gemini CLI and Codex CLI expose "modify with

@@ -64,6 +64,25 @@ self-contained; the plugin also restores your previous scheme on
 buffer-leave if you open one of these in your main nvim. Unset → no
 change.
 
+## opencode
+
+Nothing to configure opencode-side — its `editor_open` keybind
+(default **ctrl+e**; see `~/.config/opencode/tui.json`) already spawns
+`$VISUAL`/`$EDITOR` (your nvim), and the plugin recognizes opencode's
+prompt temp file (`<tmpdir>/<epoch-ms>.md`) automatically. Rebind
+`"editor_open": "ctrl+g"` in `tui.json` if you want Claude-Code
+muscle-memory parity.
+
+Requirements: `python3` on `$PATH` (the `oc-last-reply.py` extractor
+is stdlib-only and ships next to the lua file — the plugin resolves it
+through the deploy symlink). No session for the cwd, or no python3 →
+the plugin stays out of the way (plain draft buffer, as stock).
+
+Knobs (nvim side): `vim.g.claude_reply_opencode = false` disables the
+provider; `claude_reply_python` picks the interpreter;
+`claude_reply_oc_via_export = true` swaps in the slower
+schema-drift-proof `opencode session list`+`export` route.
+
 ## Usage
 
 1. `\e` is `<leader>e` — your leader is `\`.

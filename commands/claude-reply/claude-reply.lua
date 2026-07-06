@@ -1,8 +1,16 @@
 -- claude-reply.lua
 --
--- Augment Claude Code's external-editor temp buffer
--- (`claude-prompt-*.md`, opened on Ctrl-G when `externalEditorContext`
--- is on) with an email-style quote-reply workflow.
+-- Augment an AI-CLI's external-editor prompt buffer with an
+-- email-style quote-reply workflow. Providers:
+--
+--   * Claude Code — `claude-prompt-*.md` on Ctrl-G (needs the
+--     `externalEditorContext` setting); Claude writes the reference
+--     itself and strips it back out on save.
+--   * opencode — `<tmpdir>/<epoch-ms>.md` on `editor_open` (ctrl+e);
+--     opencode writes only the prompt draft, so THIS plugin injects
+--     the last-reply reference (via `oc-last-reply.py`) and strips it
+--     on save (`BufWriteCmd`) since opencode reads the whole file
+--     back as the prompt.
 --
 -- The buffer Claude Code hands nvim looks like:
 --
@@ -37,7 +45,10 @@ local M = {}
 -- written as raw bytes: LuaJIT (nvim) has no `\u{}` string escape.
 local BOX = "\226\148\128"
 local REPLY_TXT = "Write your reply below this line"
-local HEAD_TXT = "Claude's last response"
+-- generic phrase: matches Claude Code's own header ("Claude's last
+-- response …") AND the one this plugin writes for opencode
+-- ("opencode's last response …").
+local HEAD_TXT = "last response"
 
 -- ── buffer scan ────────────────────────────────────────────────────
 
@@ -674,6 +685,149 @@ local function setup_maps(buf)
   })
 end
 
+-- provider-shared UI wiring: view opts, folds, highlight, colors,
+-- maps, cursor park (at `park`, clamped to the buffer). must precede
+-- every provider's setup fn (plain local, no forward declaration).
+local function setup_ui(buf, mk, park)
+  apply_view_opts()
+  apply_folds(buf, mk)
+  ensure_highlight(buf)
+  setup_colorscheme(buf)
+  park = math.min(park, vim.api.nvim_buf_line_count(buf))
+  vim.api.nvim_win_set_cursor(0, { park, 0 })
+  setup_maps(buf)
+end
+
+-- ── opencode provider ──────────────────────────────────────────────
+--
+-- opencode's `editor_open` (ctrl+e) writes the CURRENT PROMPT DRAFT to
+-- `<os.tmpdir()>/<Date.now()>.md`, spawns $VISUAL||$EDITOR on it
+-- (blocking, TUI suspended), then reads the WHOLE file back into the
+-- prompt box (verified in the 1.17.9 bundle, fn `ue`). Unlike Claude
+-- Code it neither includes the last reply nor strips anything on save,
+-- so this provider does both: inject the reference (fetched from
+-- opencode's session store by `oc-last-reply.py`) above a reply
+-- marker, and strip at/above the marker on write via `BufWriteCmd`.
+-- The reference is injected as PLAIN markdown (no `# `-hash dance —
+-- that exists only to mirror what Claude Code writes).
+
+-- markers mirror Claude's shape (`# ───… <phrase> …───`) so ALL the
+-- shared machinery (find_markers/nav/pull/folds) applies unchanged.
+local OC_HEADER = "# " .. BOX:rep(3) .. " opencode's last response (for reference; removed on save) " .. BOX:rep(3)
+local OC_REPLY = "# " .. BOX:rep(3) .. " Write your reply below this line " .. BOX:rep(26)
+
+-- this file's real dir (through the deploy symlink) — the extractor
+-- script lives beside it.
+local function plugin_dir()
+  local src = debug.getinfo(1, "S").source:sub(2)
+  local real = (vim.uv or vim.loop).fs_realpath(src) or src
+  return vim.fn.fnamemodify(real, ":h")
+end
+
+-- fetch the last assistant reply for cwd's opencode session, or nil.
+-- override the whole command with `vim.g.claude_reply_oc_fetch_cmd`
+-- (list, e.g. from tests); pick the interpreter with
+-- `vim.g.claude_reply_python`; force the CLI route with
+-- `vim.g.claude_reply_oc_via_export = true`.
+function M.opencode_last_reply()
+  local cmd = vim.g.claude_reply_oc_fetch_cmd
+  if not cmd then
+    local py = vim.g.claude_reply_python or vim.fn.exepath("python3")
+    if py == nil or py == "" then
+      warn("opencode: no python3 on PATH (set g:claude_reply_python)")
+      return nil
+    end
+    local script = vim.g.claude_reply_oc_script or (plugin_dir() .. "/oc-last-reply.py")
+    cmd = { py, script, "--cwd", vim.fn.getcwd() }
+    if vim.g.claude_reply_oc_via_export then
+      table.insert(cmd, "--via-export")
+    end
+  end
+  local out = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 or out == nil or vim.trim(out) == "" then
+    return nil
+  end
+  return out
+end
+
+-- the Vt_-equivalent opencode lacks: on write, put ONLY the
+-- below-marker content in the file (opencode reads the whole file back
+-- as the prompt). if the user deleted the marker, send everything.
+local function oc_write(buf)
+  local mk, lines = M.find_markers(buf)
+  local out
+  if mk.reply then
+    out = {}
+    for i = mk.reply + 1, #lines do
+      out[#out + 1] = lines[i]
+    end
+    if out[1] == "" then
+      table.remove(out, 1) -- the separator blank we inserted
+    end
+  else
+    out = lines
+  end
+  -- drop trailing blank padding (meaningless in a chat prompt)
+  while #out > 0 and out[#out]:match("^%s*$") do
+    out[#out] = nil
+  end
+  -- NEVER write a 0-byte file: opencode's read-back treats empty as
+  -- "abort" (`content || undefined` in fn `ue`) and would LEAVE THE
+  -- OLD PROMPT in place. a lone newline reads back truthy ("\n") and
+  -- opencode's own single-trailing-newline strip (`le`) turns it into
+  -- "" — so clearing the reply area genuinely CLEARS the prompt box.
+  if #out == 0 then
+    out = { "" }
+  end
+  vim.fn.writefile(out, vim.api.nvim_buf_get_name(buf))
+  vim.bo[buf].modified = false
+end
+
+function M.setup_opencode_buffer(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  if vim.b[buf].claude_reply_ready then
+    return
+  end
+  local mk = M.find_markers(buf)
+  if not mk.reply then
+    local reply = M.opencode_last_reply()
+    if not reply then
+      return -- no session/reply for cwd: stay out of the way entirely
+    end
+    local draft = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local block = { OC_HEADER }
+    for _, l in ipairs(vim.split(reply, "\n", { plain = true })) do
+      -- a reply that itself contains a marker-shaped line (say, a
+      -- session about THIS plugin) would hijack find_markers / the
+      -- on-write strip — break the `^# ─` anchor with a middot.
+      if is_marker(l) then
+        l = "·" .. l
+      end
+      block[#block + 1] = l
+    end
+    block[#block + 1] = OC_REPLY
+    block[#block + 1] = ""
+    vim.list_extend(block, draft)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, block)
+    vim.bo[buf].modified = false -- bare :q still aborts (draft kept)
+    mk = M.find_markers(buf)
+  end
+  vim.b[buf].claude_reply_ready = true
+  vim.b[buf].claude_reply_provider = "opencode"
+
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    group = vim.api.nvim_create_augroup("ClaudeReplyOcWrite_" .. buf, { clear = true }),
+    buffer = buf,
+    callback = function()
+      oc_write(buf)
+    end,
+  })
+
+  -- park at buffer end: the user's in-progress draft (if any) sits
+  -- below the marker and the reply continues after it.
+  setup_ui(buf, mk, vim.api.nvim_buf_line_count(buf))
+end
+
 -- ── per-buffer setup + autocmd ─────────────────────────────────────
 
 function M.setup_buffer(buf)
@@ -691,15 +845,22 @@ function M.setup_buffer(buf)
     mk = M.find_markers(buf) -- region grew: marker line numbers moved
   end
   strip_reference(buf, mk)
-  apply_view_opts()
-  apply_folds(buf, mk)
-  ensure_highlight(buf)
-  setup_colorscheme(buf)
+  setup_ui(buf, mk, mk.reply + 1)
+end
 
-  local park = math.min(mk.reply + 1, vim.api.nvim_buf_line_count(buf))
-  vim.api.nvim_win_set_cursor(0, { park, 0 })
-
-  setup_maps(buf)
+-- re-shown in a new window (split): re-assert window-local view.
+-- returns true if the buffer was already initialised.
+local function reassert_view(buf)
+  if not vim.b[buf].claude_reply_ready then
+    return false
+  end
+  local mk = M.find_markers(buf)
+  if mk.reply then
+    apply_view_opts()
+    apply_folds(buf, mk)
+    ensure_highlight(buf)
+  end
+  return true
 end
 
 function M.setup_autocmds()
@@ -708,18 +869,33 @@ function M.setup_autocmds()
     group = grp,
     pattern = "claude-prompt-*.md",
     callback = function(ev)
-      local buf = ev.buf
-      if vim.b[buf].claude_reply_ready then
-        -- re-shown in a new window (split): re-assert window-local view
-        local mk = M.find_markers(buf)
-        if mk.reply then
-          apply_view_opts()
-          apply_folds(buf, mk)
-          ensure_highlight(buf)
-        end
+      if not reassert_view(ev.buf) then
+        M.setup_buffer(ev.buf)
+      end
+    end,
+  })
+
+  -- opencode's prompt temp file: `<os.tmpdir()>/<Date.now()>.md`, i.e.
+  -- a 13-digit epoch-ms basename (constant until year 2286). nvim is
+  -- spawned BY opencode, so it inherits the same $TMPDIR and
+  -- os_tmpdir() here resolves to the very dir opencode used. NB: in
+  -- autocmd patterns `*` crosses `/`, hence the strict basename guard
+  -- in the callback. kill-switch: `vim.g.claude_reply_opencode = false`.
+  local tmp = ((vim.uv or vim.loop).os_tmpdir() or "/tmp"):gsub("/+$", "")
+  vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
+    group = grp,
+    pattern = tmp .. "/*.md",
+    callback = function(ev)
+      if vim.g.claude_reply_opencode == false then
         return
       end
-      M.setup_buffer(buf)
+      local name = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(ev.buf), ":t")
+      if not name:match("^%d%d%d%d%d%d%d%d%d%d%d%d%d%.md$") then
+        return
+      end
+      if not reassert_view(ev.buf) then
+        M.setup_opencode_buffer(ev.buf)
+      end
     end,
   })
 end
