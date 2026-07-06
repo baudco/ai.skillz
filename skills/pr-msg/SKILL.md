@@ -65,14 +65,16 @@ technical notes).
       at the bottom).
 
       NOTE: current-format bodies are **hash-free**
-      until the pre-merge linking pass, so finding
-      no hash defs is normal — in that case update
-      mode reduces to: re-group/append Summary
-      bullets for new commits, drop bullets whose
-      feature group vanished, carry everything
+      by default — hashes appear ONLY as selective
+      inline refs for notable *resolving* commits
+      (see "Selective commit hashes" below), so
+      finding few/no hash defs is normal. In that
+      case update mode reduces to: re-group/append
+      Summary bullets for new commits, drop bullets
+      whose feature group vanished, carry everything
       else forward. The hash remap logic in (c)/(d)
-      only applies to legacy hashed bodies or a
-      previously-appended `### Commit index`.
+      applies only to those selective refs (or a
+      legacy fully-hashed body).
 
    c. Run `git log BASE..HEAD --format='%H %s'` and
       compare against the old hashes:
@@ -327,12 +329,15 @@ Separate major sections with `---` horizontal rules.
   group* of commits — NOT one bullet per commit.
   A 6-commit branch implementing 2 features gets
   2 bullets.
-- **No commit-hash refs at draft time.** The
-  working body stays hash-free; commit links are
-  appended as a `### Commit index` by the
-  pre-merge linking pass (see "Pre-merge commit
-  linking" below). This avoids hash-remap churn
-  across rebases/squashes while the PR is alive.
+- **Hash-free by default.** The working body stays
+  hash-free — the git-service "Commits" tab already
+  lists every commit, so a full per-commit index is
+  redundant noise. Cite a commit hash ONLY for a
+  notable *resolving* commit (fixes a named
+  issue/bug/CVE, or a landmark worth pointing a
+  reader straight at) as a selective inline ref in
+  the relevant Summary bullet — see "Selective
+  commit hashes" below.
 - End each bullet with a period for prose-y feel.
 - Use backticks for all code elements.
 - **69 char line limit** — wrap long bullets.
@@ -470,8 +475,13 @@ items, run this sub-step BEFORE final text assembly:
 3. **If creating a new issue**:
    - Title: `Follow-up: <PR title summary>`
    - Body format (see template below)
-   - Create:
+   - Create — ALWAYS tag it with the `follow-up`
+     label so leftover-TODO issues stay filterable
+     (the label exists in `goodboy/tractor`; run
+     `gh label create follow-up` first if a repo
+     lacks it):
      `gh issue create --title "..." \
+       --label "follow-up" \
        --body-file /tmp/follow_up_issue.md`
    - Capture returned issue number
 
@@ -565,13 +575,13 @@ actual commits that resolve each item — readers
 can click through to the exact fix.
 
 ### Reference-style link definitions
-- The working (pre-merge) body carries NO
-  commit-hash ref defs — only the footer's
-  `[claude-code-gh]` def and any `### Links`
-  entries.
-- Commit-hash refs + defs arrive together as the
-  `### Commit index` appended by the pre-merge
-  linking pass (below). Format there:
+- By default the body carries NO commit-hash ref
+  defs — only the footer's `[claude-code-gh]` def
+  and any `### Links` entries.
+- The only commit-hash refs are the selective
+  inline refs for notable resolving commits (see
+  "Selective commit hashes" below); each gets its
+  own ref-def at the bottom:
   `[<short-hash>]: <base-url>/commit/<full-hash>`
   — explicit refs are a guaranteed cross-service
   fallback to bare-SHA auto-linking.
@@ -641,48 +651,47 @@ follows prose (see the tracking-issue template above).
    updates to the live PR without requiring a
    manual "sync to gh" step.
 
-## Pre-merge commit linking
+## Selective commit hashes
 
-The working PR body stays **hash-free** (see
-"Summary of changes"). Immediately before the PR
-is merged — i.e. once the human is about to click
-the merge button and the commit set is final — run
-the linking pass to append a `### Commit index`:
+The PR body is **hash-free by default** — the
+git-service "Commits" tab already enumerates every
+commit, so a blanket index of all of them is
+redundant noise (esp. at high commit velocity). We
+do NOT auto-append one.
 
-```bash
-python skills/pr-msg/scripts/linkify-commits.py \
-  main..<head-ref> >> body.md
-gh pr edit <num> --body-file body.md
-```
-
-The script emits one `([short][short]) <subject>`
-line per commit (chronological) plus the
-reference-link defs, deriving the commit-URL base
-from `git remote -v` (`--repo-url` to override).
-Running it any earlier just means re-running it
-after the next rebase — hashes are only stable at
-merge time, which is the whole point of deferring.
-
-**xonsh aliases** (`pr-merge.xsh`, source from your
-xonshrc) wrap this for any repo with the skill
-deployed (`.claude/skills/pr-msg`, or the global
-`~/.claude/skills/pr-msg` fallback):
+Instead cite a commit hash ONLY when a *specific*
+commit is itself the story — it resolves a named
+issue/bug/CVE or is a landmark a reader should jump
+straight to. Emphasize those, and only those, as a
+selective inline ref in the relevant Summary
+bullet:
 
 ```
-pr-linkify <num> [base]   # append Commit index to
-                          # the live PR body via gh
-pr-merge   <num> [base]   # pr-linkify, then
-                          # `gh pr merge <num>`
+- fix the `delete_addr()` tuple-coercion race
+  ([9e49edd][9e49edd], resolves #431).
 ```
 
-`pr-linkify` is idempotent-guarded (refuses to
-double-append if a `### Commit index` already
-exists) and needs the PR's head-branch history
-locally.
+with the matching ref-def at the bottom:
 
-- [ ] TODO: also automate as a server-side gate —
-  e.g. a GitHub Action on `auto_merge_enabled`/
-  label that appends the index then merges.
+```
+[9e49edd]: <base-url>/commit/<full-hash>
+```
+
+Guidelines,
+- one ref per *notable* commit, never per commit —
+  if you're tempted to tag most bullets, none of
+  them are actually special; drop them all.
+- these hashes ARE churned by rebase/squash, so add
+  them late (near merge, once the commit is final)
+  and re-map on rebase via the update-mode logic.
+- same principle drives "Tracking issue task
+  completion" above — a resolving commit earns a
+  hash there too.
+
+A `scripts/linkify-commits.py` helper still ships
+for the rare case you *do* want a full generated
+index — but it is opt-in, NOT part of the normal
+flow.
 
 ## Post-submission workflow
 

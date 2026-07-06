@@ -59,10 +59,11 @@ makes sense,
 ### Summary of changes
 
 <MINIMIZE — one bullet per FEATURE / logical group
-of commits, NOT one per commit. Hash-free at draft
-time; commit links are added by the pre-merge
-linking pass (see "Pre-merge `### Commit index`"
-below). End each bullet with a period.>
+of commits, NOT one per commit. Hash-free by
+default; cite a commit hash ONLY for a notable
+*resolving* commit as a selective inline ref (see
+"Selective commit hashes" below). End each bullet
+with a period.>
 
 - A feature/logical-group description ending with
   a period.
@@ -144,48 +145,51 @@ Also submitted as
 ```
 
 Note the working body carries **no** commit-hash
-ref-link defs — only the `[claude-code-gh]` footer
-def (+ any `### Links`). Hash refs arrive with the
-`### Commit index` at merge time (next section).
+ref-link defs by default — only the
+`[claude-code-gh]` footer def (+ any `### Links`).
+The lone exception is a selective inline ref for a
+notable resolving commit (next section).
 
-## Pre-merge `### Commit index`
+## Selective commit hashes
 
-The working PR body stays **hash-free** while the PR
-is alive — this avoids re-mapping churn across
-rebases/squashes. Immediately before merge, run
-`scripts/linkify-commits.py main..<head-ref>` to
-append a `### Commit index`. This is the ONLY place
-commit-hash reference links live:
+The body is **hash-free by default** — the
+git-service "Commits" tab already lists every
+commit, so a blanket per-commit index is redundant
+noise. Do NOT auto-append one. Cite a commit hash
+ONLY when a *specific* commit is the story: it
+resolves a named issue/bug/CVE or is a landmark a
+reader should jump straight to. Emphasize those,
+and only those, inline in the relevant Summary
+bullet:
 
 ```markdown
----
-
-### Commit index
-
-- ([<short>][<short>]) <commit subject line>
-- ([<short>][<short>]) <commit subject line>
-
-[<short>]: https://<service>/<owner>/<repo>/commit/<full-hash>
+- fix the `delete_addr()` tuple-coercion race
+  ([9e49edd][9e49edd], resolves #431).
 ```
 
-The `pr-merge.xsh` aliases (`pr-linkify`, `pr-merge`)
-wrap this for any repo with the skill deployed.
+One ref per *notable* commit, never per commit.
+These hashes churn on rebase/squash, so add them
+late (near merge) and re-map on rebase. A
+`scripts/linkify-commits.py` helper still ships for
+the rare full-index case, but it is opt-in.
 
 ## Markdown Reference-Link Strategy
 
-Commit-hash refs do NOT appear in the working body —
-they live only in the pre-merge `### Commit index`
-(above). When they are emitted there (and for the
-cross-service PR refs), use reference-style links for
-cross-service compatibility:
+Commit-hash refs appear ONLY as the selective
+inline refs for notable resolving commits (above)
+— never a blanket per-commit set. When emitted
+(and for the cross-service PR refs), use
+reference-style links for cross-service
+compatibility:
 
-**Inline usage** (Commit index bullets):
+**Inline usage** (a notable resolving-commit
+bullet):
 ```markdown
-- ([f3726cf9][f3726cf9]) Add `reg_err_types()` for
-  custom exc lookup.
+- Add `reg_err_types()` for custom exc lookup
+  ([f3726cf9][f3726cf9], resolves #402).
 ```
 
-**Definition** (bottom of the Commit index):
+**Definition** (bottom of the body):
 ```markdown
 [f3726cf9]: https://github.com/goodboy/tractor/commit/f3726cf9
 ```
