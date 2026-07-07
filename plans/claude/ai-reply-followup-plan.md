@@ -39,6 +39,13 @@ telescope issue search. LOW priority.
 
 ## Phase 1 — execute the `ai.reply` factor-out
 
+> **HANDOFF-READY**: the full self-contained brief for another agent
+> is `plans/claude/ai-reply-factor-out-handoff.md` — house rules,
+> current-state inventory, module split table, setup(opts)+compat
+> spec, plenary port spec-by-spec, deploy flips, a 14-item landmine
+> index, verification commands, deliverables. An agent should need
+> ONLY that doc. The outline below is the short form.
+
 Pure restructure, NO behavior change. Do in a worktree/branch.
 
 1. **Create the repo**: `git init ~/repos/ai.reply` (local-only per
