@@ -75,6 +75,41 @@ C. **anyio-native minimal client, standalone daemon** (recommended
    making the cross-harness pickers instant (one warm index instead
    of per-keypress python spawns).
 
+## Remote-host operation (user requirement, 2026-07-06)
+
+Confirmed design constraint from the user: **fully decouple the py
+proc from the nvim proc and lean on RPC everywhere**, so flipping to
+remote-IPC gives remote-host operation with everything TUI client-side.
+Refs (user's lns): https://neovim.io/doc/user/remote.html and
+https://github.com/mhinz/neovim-remote (nvr).
+
+- nvim natively listens on TCP (`nvim --listen 127.0.0.1:6666`) or a
+  unix socket (`v:servername`, auto-set); `nvim --server <addr>
+  --remote[-expr|-send]` and `nvr` drive it from anywhere. Our daemon
+  speaks the same msgpack-rpc, so **local vs remote is only an address
+  change** (unix socket -> TCP/ssh-forwarded socket).
+- Topology for the remote case: harness (claude/opencode) + session
+  stores + daemon live on the REMOTE host beside each other (the
+  daemon reads `~/.claude/projects` + the opencode sqlite locally —
+  low latency where the data is); the human-side nvim TUI runs
+  locally and the compose buffer's temp file lives... NB: the temp
+  file is written by the harness on the REMOTE fs, so the *editor*
+  spawn also happens remote — meaning the natural remote shape is
+  "ssh into remote, run the harness there, nvim spawns remote w/ TUI
+  over the terminal" (already works today), OR the fancier split:
+  local nvim GUI/TUI attaching to a remote daemon via forwarded
+  socket + `scp`-less buffer sync via nvim's own `--remote` file
+  APIs. The plan should treat the daemon protocol as
+  location-transparent from day one (no fs assumptions in the
+  nvim<->daemon API; all store reads behind daemon RPCs), so the full
+  `ai.reply` plugin works end-to-end in both shapes.
+- **modden integration**: a wks (workspace) can declare + spawn the
+  daemon as part of its layout (same mechanism as its terminal/window
+  spawns — cf. `branch-in-term`'s modden notes and `_MODDEN_RT_VARS`
+  env plumbing), giving per-workspace daemon lifecycle for free;
+  `gish` is the candidate control/transport plane between daemon(s)
+  and harness sessions, incl. cross-host.
+
 ## Open questions for the user's brain-dump (ASK FIRST)
 
 1. What exactly should move to python — just the extractors/indexing
