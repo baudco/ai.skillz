@@ -202,6 +202,23 @@ def via_export(cwd: str) -> str | None:
     return None
 
 
+def dump_turns(
+    db: str, cwd: str, all_dirs: bool, grep: str | None = None
+) -> list[dict]:
+    """Flat cross-session turn dump (optionally filtered by `grep`,
+    a case-insensitive plain substring): one JSON row per session
+    with its turns — the corpus for deep content search."""
+    out = []
+    needle = grep.lower() if grep else None
+    for ses in list_sessions(db, cwd, all_dirs):
+        turns = via_db_list(db, cwd, ses["id"]) or []
+        if needle is not None:
+            turns = [t for t in turns if needle in t["text"].lower()]
+        if turns:
+            out.append({**ses, "turns": turns})
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cwd", default=os.getcwd())
@@ -229,12 +246,28 @@ def main() -> int:
     )
     ap.add_argument(
         "--all-dirs", action="store_true",
-        help="with --sessions: list sessions of EVERY directory, not"
-        " just --cwd's project",
+        help="with --sessions/--dump/--grep: cover EVERY directory,"
+        " not just --cwd's project",
+    )
+    ap.add_argument(
+        "--dump", action="store_true",
+        help="emit ALL turns of ALL (scoped) sessions as JSON — the"
+        " deep-search corpus",
+    )
+    ap.add_argument(
+        "--grep", default=None, metavar="PAT",
+        help="like --dump but keep only turns containing PAT"
+        " (case-insensitive substring)",
     )
     args = ap.parse_args()
 
     cwd = os.path.realpath(args.cwd)
+    if args.dump or args.grep is not None:
+        rows = dump_turns(args.db, cwd, args.all_dirs, args.grep)
+        if not rows:
+            return 3
+        json.dump(rows, sys.stdout)
+        return 0
     if args.sessions:
         sessions = list_sessions(args.db, cwd, args.all_dirs)
         if not sessions:

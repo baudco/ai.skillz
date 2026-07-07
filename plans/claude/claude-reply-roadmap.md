@@ -44,6 +44,23 @@ once as `lua/claude-reply/session.lua`:
 
 ---
 
+## #2c — picker UX round + deep content search  ·  ✅ SHIPPED 2026-07-06
+
+> Follow-up wave on user feedback: dialog picker rebound to **`\d`**
+> ("dialog"; keys configurable via `g:claude_reply_key_*`); colorized
+> rows (`ClaudeReplyCc/Oc/Date/Proj` hl groups, telescope display-fn
+> highlights); `⟦pwd⟧`/`⟦ALL⟧` scope prefix in prompt titles; `<C-o>`
+> back-out restores the typed query (`default_text` plumbing); first
+> `<C-c>` clears the filter, second closes; 45s TTL caches for
+> session lists + foreign-turn fetches (kills the `<C-o>` lag — the
+> py daemon remains the real fix). Deep search: `<C-g>` corpus mode
+> (ordinal = full turn text, cross-project/harness) +
+> `:ClaudeReplyGrep {pat}` (bang = all projects) with configurable
+> external grepper (`g:claude_reply_grepper`, rg default) narrowing
+> claude jsonl files; opencode side via `oc-last-reply.py
+> --dump/--grep`. Factor-out plan added:
+> `plans/claude/standalone-plugin-plan.md`.
+
 ## #2b — cross-harness SESSION picker  ·  ✅ SHIPPED 2026-07-06
 
 > `\R`/`:ClaudeReplySessions`: stage-1 fuzzy picker over sessions from

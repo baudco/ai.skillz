@@ -122,6 +122,15 @@ editor, so its real `gq` gives exactly your vimrc wrapping.
 
 ## Configuration
 
+- **Keybinds** (all buffer-local to compose buffers; defaults shadow
+  any global map only there):
+  ```lua
+  vim.g.claude_reply_key_pull = "<leader>e"     -- pull section as quote
+  vim.g.claude_reply_key_replies = "<leader>r"  -- turn picker
+  vim.g.claude_reply_key_dialogs = "<leader>d"  -- dialog picker (shadows :diffupdate)
+  ```
+- **`vim.g.claude_reply_grepper`** — external grepper for
+  `:ClaudeReplyGrep` (default: `rg` when executable, else `grep`).
 - **`vim.g.claude_reply_colorscheme`** — set to a colorscheme name to
   use a distinct scheme while editing a `claude-prompt-*.md` buffer,
   e.g. in your nvim config:
@@ -207,23 +216,65 @@ rewind the conversation — whatever you compose is still sent as the
 next message in the live session. It's "respond to something you
 forgot", not time travel (that's Claude's own Esc-Esc rewind).
 
-## Session picker (`\R`) — cross-harness
+## Dialog picker (`\d`) — cross-harness
 
-One level up from `\r`: **`\R`** (or `:ClaudeReplySessions`) fuzzes
-over **sessions from BOTH harnesses' stores merged** — claude
+One level up from `\r`: **`\d`** ("dialog"; `:ClaudeReplyDialogs`, or
+the `:ClaudeReplySessions` alias) fuzzes over **dialogs/sessions from
+BOTH harnesses' stores merged** — claude
 (`~/.claude/projects/<slug>/*.jsonl`; title = last
 `custom-title`/`ai-title` line, `last-prompt` fallback) and opencode
-(sqlite `session` table via `oc-last-reply.py --sessions`) — rows like
-`[oc] 07-03 20:38  taken_todo_sys  (repos/lns)`, preview = that
-session's last reply (lazily fetched, cached). Scope defaults to the
-cwd project; **`<C-a>`** toggles all-projects/all-dirs (claude side
-capped to the newest 30 transcripts). `<CR>` drills into the normal
-turn picker for that session (`<CR>` page / `<C-q>` quote as usual;
-**`<C-o>`** goes back to the session list). Foreign-session pages tag
-the header `⟨<session title> #N/M⟩` so you always know whose reply
-you're reading. Since quoting is just text, this is **cross-harness
-pollination**: quote a claude reply into an opencode conversation and
-vice versa. Same `vim.ui.select` fallback when telescope is absent.
+(sqlite `session` table via `oc-last-reply.py --sessions`). Rows are
+**colorized**: `[cc]`/`[oc]` badges (`ClaudeReplyCc`/`…Oc` hl groups),
+date (`…Date`), project (`…Proj`) — all default-linked and
+user-overridable. Preview = that dialog's last reply (TTL-cached).
+
+The default view is a **project-grouped "tree"**: dialogs sit indented
+under `(repos/<proj>)` header rows, groups ordered by their
+most-recent dialog, newest-first within. Telescope has no native tree
+— headers are pseudo-rows with an **empty ordinal**, so they render
+while the prompt is empty and *vanish the moment you type* (flat fuzzy
+takes over). **`<C-t>`** toggles tree ↔ flat live;
+`vim.g.claude_reply_dialogs_grouped = false` makes flat the default.
+Headers aren't openable and never appear in the `vim.ui.select`
+fallback.
+
+Scope defaults to the cwd project — the prompt title carries the
+ACTUAL project label, `⟦repos/ai.skillz⟧` vs **`⟦ALL⟧`** — and
+**`<C-a>`** toggles it (claude side capped to the newest 30
+transcripts), keeping your typed query.
+`<CR>` drills into the turn picker for that dialog (`<CR>` page /
+`<C-q>` quote as usual). Foreign pages tag the header
+`⟨<dialog title> #N/M⟩`. Cross-harness pollination: quote a claude
+reply into an opencode conversation and vice versa. `vim.ui.select`
+fallback when telescope is absent.
+
+Picker ergonomics (all our pickers):
+- every picker→picker hop (`<CR>` drill-in, `<C-a>`/`<C-t>`/`<C-g>`,
+  `<C-o>` back) is `vim.schedule()`d — same-tick close/reopen leaks
+  the trigger key's tail into the new prompt (the "stray G" bug).
+- **`<C-o>`** backs out of the turn picker INTO the dialog picker,
+  **restoring the query you had typed** there before drilling in.
+- **first `<C-c>` clears** the typed filter; a second (empty prompt)
+  closes the picker.
+- Dialog/turn lists and foreign-turn fetches are **TTL-cached (45s)**
+  so back-outs and preview hovers are snappy; the py-daemon plan
+  (`plans/claude/py-extension-plan.md`) is the real fix (warm index).
+
+## Deep content search (`<C-g>` / `:ClaudeReplyGrep`)
+
+To find "that reply about X" ACROSS dialogs and projects:
+- **`<C-g>`** in the dialog picker switches to **deep mode**: one flat
+  fuzzy list of EVERY turn of every scoped dialog, where the match
+  `ordinal` carries each turn's **full text** — typing fuzzes reply
+  *content* cross-project/cross-harness (your typed query carries
+  over). `<CR>` pages the turn, `<C-q>` quotes it, `<C-o>` returns to
+  the dialog list.
+- **`:ClaudeReplyGrep {pat}`** (bang `!` = all projects) pre-filters
+  the corpus with a real grepper first — `g:claude_reply_grepper`
+  (default `rg` when installed, else `grep`) narrows claude jsonl
+  files, and `oc-last-reply.py --grep` (case-insensitive substring)
+  filters the opencode store — then drops you in the deep picker for
+  further fuzzing.
 
 ## opencode support
 

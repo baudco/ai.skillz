@@ -708,6 +708,13 @@ local function setup_maps(buf)
   local function opts(desc)
     return { buffer = buf, silent = true, desc = "claude-reply: " .. desc }
   end
+  -- every user-facing key is configurable; all maps are BUFFER-LOCAL
+  -- (they shadow any global binding only inside compose buffers).
+  local keys = {
+    pull = vim.g.claude_reply_key_pull or "<leader>e",
+    replies = vim.g.claude_reply_key_replies or "<leader>r",
+    dialogs = vim.g.claude_reply_key_dialogs or "<leader>d",
+  }
   vim.keymap.set("n", "]m", function()
     M.nav_section(buf, 1)
   end, opts("next response section"))
@@ -725,13 +732,13 @@ local function setup_maps(buf)
     { buffer = buf, silent = true }
   )
 
-  vim.keymap.set("n", "<leader>e", "<Plug>(ClaudeReplyPull)", {
+  vim.keymap.set("n", keys.pull, "<Plug>(ClaudeReplyPull)", {
     buffer = buf,
     remap = true,
     silent = true,
     desc = "claude-reply: pull section as quote",
   })
-  vim.keymap.set("x", "<leader>e", "<Plug>(ClaudeReplyPull)", {
+  vim.keymap.set("x", keys.pull, "<Plug>(ClaudeReplyPull)", {
     buffer = buf,
     remap = true,
     silent = true,
@@ -740,20 +747,28 @@ local function setup_maps(buf)
 
   -- prior-reply picker (shadows the global vimrc-source \r map ONLY
   -- inside compose buffers)
-  vim.keymap.set("n", "<leader>r", function()
+  vim.keymap.set("n", keys.replies, function()
     M.pick_reply(buf)
   end, opts("pick a prior reply (page/quote)"))
   vim.api.nvim_buf_create_user_command(buf, "ClaudeReplyPick", function()
     M.pick_reply(buf)
   end, { desc = "claude-reply: pick a prior reply" })
 
-  -- cross-harness session picker (stage 1 of session -> turn)
-  vim.keymap.set("n", "<leader>R", function()
+  -- cross-harness dialog/session picker (stage 1 of dialog -> turn).
+  -- default \d shadows the global :diffupdate map in compose bufs only.
+  vim.keymap.set("n", keys.dialogs, function()
     M.pick_session(buf)
-  end, opts("pick a session (cross-harness), then a reply"))
-  vim.api.nvim_buf_create_user_command(buf, "ClaudeReplySessions", function()
-    M.pick_session(buf)
-  end, { desc = "claude-reply: pick a session, then a reply" })
+  end, opts("pick a dialog (cross-harness), then a reply"))
+  for _, cname in ipairs({ "ClaudeReplyDialogs", "ClaudeReplySessions" }) do
+    vim.api.nvim_buf_create_user_command(buf, cname, function()
+      M.pick_session(buf)
+    end, { desc = "claude-reply: pick a dialog, then a reply" })
+  end
+
+  -- deep content search over every reply (bang == all projects)
+  vim.api.nvim_buf_create_user_command(buf, "ClaudeReplyGrep", function(o)
+    M.grep_replies(buf, o.args, o.bang)
+  end, { nargs = 1, bang = true, desc = "claude-reply: grep all replies (:! for all projects)" })
 end
 
 -- provider-shared UI wiring: view opts, folds, highlight, colors,
@@ -993,6 +1008,27 @@ local function resolve_transcript(buf)
   return path
 end
 
+-- short-TTL caches: session lists + foreign-session turn fetches.
+-- kills the <C-o> back-out lag (each stage-1 rebuild was 2 batched
+-- greps + a python spawn). the py-daemon plan is the real fix; this
+-- is the interim one.
+local CACHE_TTL_MS = 45000
+local session_cache = {}
+local turns_cache = {}
+
+local function cache_get(tbl, key)
+  local hit = tbl[key]
+  if hit and ((vim.uv or vim.loop).now() - hit.at) < CACHE_TTL_MS then
+    return hit.val
+  end
+  return nil
+end
+
+local function cache_put(tbl, key, val)
+  tbl[key] = { at = (vim.uv or vim.loop).now(), val = val }
+  return val
+end
+
 -- run the extractor with `extra` args and decode its JSON stdout.
 -- `override` (a vim.g test hook) replaces the whole command when set.
 local function oc_json(extra, override)
@@ -1019,10 +1055,24 @@ end
 -- nil == the buffer's own current session.
 local function fetch_turns(buf, src)
   if src then
-    if src.provider == "opencode" then
-      return oc_json({ "--list", "--session", src.session }, vim.g.claude_reply_oc_list_cmd)
+    -- foreign-session fetches are TTL-cached (preview hovers + <C-o>
+    -- round-trips re-request the same turns constantly); the CURRENT
+    -- session is never cached — it can grow under us.
+    local key = src.provider .. ":" .. (src.path or src.session or "?")
+    local hit = cache_get(turns_cache, key)
+    if hit then
+      return hit
     end
-    return src.path and M.all_replies(src.path) or nil
+    local turns
+    if src.provider == "opencode" then
+      turns = oc_json({ "--list", "--session", src.session }, vim.g.claude_reply_oc_list_cmd)
+    else
+      turns = src.path and M.all_replies(src.path) or nil
+    end
+    if turns then
+      cache_put(turns_cache, key, turns)
+    end
+    return turns
   end
   if vim.b[buf].claude_reply_provider == "opencode" then
     return oc_json({ "--list" }, vim.g.claude_reply_oc_list_cmd)
@@ -1049,6 +1099,51 @@ local function first_line(text)
     end
   end
   return ""
+end
+
+-- picker-row highlight groups (default-linked: colorscheme-friendly,
+-- user-overridable). re-applied on ColorScheme by setup_autocmds.
+local function define_hls()
+  local hl = vim.api.nvim_set_hl
+  hl(0, "ClaudeReplyCc", { link = "Function", default = true })
+  hl(0, "ClaudeReplyOc", { link = "String", default = true })
+  hl(0, "ClaudeReplyDate", { link = "Comment", default = true })
+  hl(0, "ClaudeReplyProj", { link = "Directory", default = true })
+end
+M.define_hls = define_hls
+
+-- build a telescope display (text, highlights) pair from
+-- { {chunk, hl_group|nil}, ... } segments (byte-indexed columns).
+local function hl_display(segs)
+  local text, hls, off = "", {}, 0
+  for _, s in ipairs(segs) do
+    text = text .. s[1]
+    if s[2] then
+      hls[#hls + 1] = { { off, off + #s[1] }, s[2] }
+    end
+    off = off + #s[1]
+  end
+  return text, hls
+end
+
+local function badge_hl(provider)
+  return provider == "opencode" and "ClaudeReplyOc" or "ClaudeReplyCc"
+end
+
+-- first <C-c> clears the typed filter; a second (prompt now empty)
+-- closes the picker.
+local function map_clear_first_cc(map, prompt_bufnr)
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+  local cc = function()
+    if action_state.get_current_line() ~= "" then
+      action_state.get_current_picker(prompt_bufnr):reset_prompt()
+    else
+      actions.close(prompt_bufnr)
+    end
+  end
+  map("i", "<C-c>", cc)
+  map("n", "<C-c>", cc)
 end
 
 -- month-day + time for session rows (turn rows use fmt_ts). handles
@@ -1145,8 +1240,13 @@ local function claude_sessions(all_scope)
   return out
 end
 
--- merged cross-harness session list, newest first
+-- merged cross-harness session list, newest first (TTL-cached)
 function M.list_sessions(all_scope)
+  local ckey = all_scope and "all" or "cwd"
+  local hit = cache_get(session_cache, ckey)
+  if hit then
+    return hit
+  end
   local out = claude_sessions(all_scope)
   local extra = all_scope and { "--sessions", "--all-dirs" } or { "--sessions" }
   for _, s in ipairs(oc_json(extra, vim.g.claude_reply_oc_sessions_cmd) or {}) do
@@ -1163,13 +1263,14 @@ function M.list_sessions(all_scope)
     local tb = (b.ts or 0) > 1e12 and (b.ts / 1000) or (b.ts or 0)
     return ta > tb
   end)
-  return out
+  return cache_put(session_cache, ckey, out)
 end
 
--- `src` (optional) targets another session's turns; `from_scope`
--- (optional, boolean) marks arrival FROM the session picker with that
--- all-projects scope — enables <C-o> back-navigation.
-function M.pick_reply(buf, src, from_scope)
+-- `src` (optional) targets another session's turns; `nav` (optional,
+-- {scope=<bool>, query=<string>}) marks arrival FROM the dialog picker
+-- — enables <C-o> back-navigation that restores its scope AND typed
+-- filter query.
+function M.pick_reply(buf, src, nav)
   buf = buf or vim.api.nvim_get_current_buf()
   local turns = fetch_turns(buf, src)
   if not turns or #turns == 0 then
@@ -1214,7 +1315,7 @@ function M.pick_reply(buf, src, from_scope)
     .new({}, {
       prompt_title = (label and ("replies · " .. label) or "prior AI replies")
         .. " · <CR> page · <C-q> quote"
-        .. (from_scope ~= nil and " · <C-o> back" or ""),
+        .. (nav ~= nil and " · <C-o> back" or ""),
       finder = finders.new_table({
         results = items,
         entry_maker = function(it)
@@ -1254,54 +1355,119 @@ function M.pick_reply(buf, src, from_scope)
         end
         map("i", "<C-q>", quote)
         map("n", "<C-q>", quote)
-        if from_scope ~= nil then
+        if nav ~= nil then
           local back = function()
             actions.close(prompt_bufnr)
-            M.pick_session(buf, from_scope)
+            -- restore the dialog picker with its scope AND the query
+            -- that was typed there before drilling in (scheduled:
+            -- same-tick reopen leaks the trigger key into the prompt)
+            vim.schedule(function()
+              M.pick_session(buf, nav.scope, nav.query)
+            end)
           end
           map("i", "<C-o>", back)
           map("n", "<C-o>", back)
         end
+        map_clear_first_cc(map, prompt_bufnr)
         return true
       end,
     })
     :find()
 end
 
--- stage 1: fuzzy-pick a SESSION (both harnesses merged, [cc]/[oc]
--- badges), then drill into its turns. `all_scope` widens from the
--- cwd project to every project/directory (<C-a> toggles it live).
-function M.pick_session(buf, all_scope)
+-- dialog rows, either flat (newest-first) or GROUPED by project dir:
+-- parent groups ordered by their most-recent dialog, children
+-- newest-first inside. group headers are telescope-only pseudo-rows
+-- with an EMPTY ordinal — visible while the prompt is empty (the
+-- "tree" view), gone the instant you type (flat fuzzy takes over;
+-- telescope has no real tree, this is the idiomatic fake).
+local function dialog_items(sessions, grouped)
+  local function row(s, indent)
+    local badge = s.provider == "opencode" and "oc" or "cc"
+    local segs = {
+      { indent .. "[" .. badge .. "]", badge_hl(s.provider) },
+      { " " .. fmt_date(s.ts), "ClaudeReplyDate" },
+      { "  " .. vim.fn.strcharpart(s.title or "", 0, 48) },
+    }
+    if not grouped then
+      segs[#segs + 1] = { "  (" .. (s.proj or "?") .. ")", "ClaudeReplyProj" }
+    end
+    local text = ""
+    for _, seg in ipairs(segs) do
+      text = text .. seg[1]
+    end
+    return { src = s, segs = segs, label = text }
+  end
+  local items = {}
+  if not grouped then
+    for _, s in ipairs(sessions) do
+      items[#items + 1] = row(s, "")
+    end
+    return items
+  end
+  -- sessions arrive newest-first, so first-appearance order of each
+  -- proj == MRU order of the groups
+  local groups, order = {}, {}
+  for _, s in ipairs(sessions) do
+    local k = s.proj or "?"
+    if not groups[k] then
+      groups[k] = {}
+      order[#order + 1] = k
+    end
+    table.insert(groups[k], s)
+  end
+  for _, k in ipairs(order) do
+    items[#items + 1] = {
+      header = true,
+      label = "(" .. k .. ")",
+      segs = { { "(" .. k .. ")", "ClaudeReplyProj" } },
+    }
+    for _, s in ipairs(groups[k]) do
+      items[#items + 1] = row(s, "  ")
+    end
+  end
+  return items
+end
+
+-- stage 1: fuzzy-pick a DIALOG/session (both harnesses merged,
+-- colorized [cc]/[oc] badges), then drill into its turns. `all_scope`
+-- widens from the cwd project to every project/directory (<C-a>
+-- toggles it live, keeping the typed query). `default_text` pre-fills
+-- the fuzzy prompt (used by <C-o> back-nav query retention). the view
+-- is GROUPED by project dir by default (g:claude_reply_dialogs_grouped
+-- = false, or <C-t> live, for flat newest-first).
+function M.pick_session(buf, all_scope, default_text, flat)
   buf = buf or vim.api.nvim_get_current_buf()
   all_scope = all_scope or false
+  if flat == nil then
+    flat = vim.g.claude_reply_dialogs_grouped == false
+  end
   local sessions = M.list_sessions(all_scope)
   if #sessions == 0 then
     warn(all_scope and "no sessions found anywhere" or "no sessions for this project (try <C-a> for all)")
     return
   end
-  local items = {}
-  for _, s in ipairs(sessions) do
-    items[#items + 1] = {
-      src = s,
-      label = ("[%s] %s  %s  (%s)"):format(
-        s.provider == "opencode" and "oc" or "cc",
-        fmt_date(s.ts),
-        vim.fn.strcharpart(s.title or "", 0, 48),
-        s.proj or "?"
-      ),
-    }
-  end
+  local items = dialog_items(sessions, not flat)
+  -- the scope tag shows the ACTUAL project dir, not the word "pwd"
+  local scope_tag = all_scope and "⟦ALL⟧" or ("⟦" .. proj_label(vim.fn.getcwd()) .. "⟧")
 
   local has_telescope, pickers = pcall(require, "telescope.pickers")
   if not has_telescope then
-    vim.ui.select(items, {
-      prompt = all_scope and "AI sessions (all projects)" or "AI sessions",
+    -- headers are telescope-only sugar: flat list for the fallback
+    local flat_items = {}
+    for _, it in ipairs(items) do
+      if not it.header then
+        flat_items[#flat_items + 1] = it
+      end
+    end
+    vim.ui.select(flat_items, {
+      prompt = scope_tag .. " AI dialogs",
       format_item = function(it)
         return it.label
       end,
     }, function(choice)
       if choice then
-        M.pick_reply(buf, choice.src, all_scope)
+        M.pick_reply(buf, choice.src, { scope = all_scope, query = "" })
       end
     end)
     return
@@ -1312,30 +1478,246 @@ function M.pick_session(buf, all_scope)
   local actions = require("telescope.actions")
   local action_state = require("telescope.actions.state")
   local previewers = require("telescope.previewers")
-  local preview_cache = {}
 
   pickers
     .new({}, {
-      prompt_title = (all_scope and "AI sessions (ALL projects)" or "AI sessions")
-        .. " · <CR> open · <C-a> scope",
+      prompt_title = scope_tag .. " AI dialogs · <C-a> scope · <C-g> deep · <C-t> tree/flat",
+      default_text = default_text,
       finder = finders.new_table({
         results = items,
         entry_maker = function(it)
-          return { value = it, display = it.label, ordinal = it.label }
+          return {
+            value = it,
+            display = function()
+              return hl_display(it.segs)
+            end,
+            -- group headers get an EMPTY ordinal: they never match a
+            -- typed query, so the "tree" collapses to flat fuzzy the
+            -- moment you start filtering
+            ordinal = it.header and "" or it.label,
+          }
         end,
       }),
       sorter = tconf.generic_sorter({}),
       previewer = previewers.new_buffer_previewer({
         title = "last reply",
         define_preview = function(self, entry)
-          local key = entry.value.label
-          local text = preview_cache[key]
-          if text == nil then
-            local turns = fetch_turns(buf, entry.value.src)
-            text = (turns and #turns > 0) and turns[#turns].text or "(no replies)"
-            preview_cache[key] = text
+          if entry.value.header then
+            vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { entry.value.label })
+            return
           end
+          -- fetch_turns is TTL-cached for src fetches: hover spam is ok
+          local turns = fetch_turns(buf, entry.value.src)
+          local text = (turns and #turns > 0) and turns[#turns].text or "(no replies)"
           vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(text, "\n", { plain = true }))
+          pcall(function()
+            vim.bo[self.state.bufnr].syntax = "markdown"
+          end)
+        end,
+      }),
+      attach_mappings = function(prompt_bufnr, map)
+        -- NB every close->reopen hop is vim.schedule()d: opening the
+        -- next picker in the same tick lets the tail of the trigger
+        -- key leak into the new prompt (the "stray G" bug)
+        actions.select_default:replace(function()
+          local e = action_state.get_selected_entry()
+          local q = action_state.get_current_line()
+          actions.close(prompt_bufnr)
+          if e and e.value.header then
+            return -- group headers aren't openable
+          end
+          if e then
+            vim.schedule(function()
+              M.pick_reply(buf, e.value.src, { scope = all_scope, query = q })
+            end)
+          end
+        end)
+        local toggle = function()
+          local q = action_state.get_current_line()
+          actions.close(prompt_bufnr)
+          vim.schedule(function()
+            M.pick_session(buf, not all_scope, q, flat)
+          end)
+        end
+        map("i", "<C-a>", toggle)
+        map("n", "<C-a>", toggle)
+        local treeflat = function()
+          local q = action_state.get_current_line()
+          actions.close(prompt_bufnr)
+          vim.schedule(function()
+            M.pick_session(buf, all_scope, q, not flat)
+          end)
+        end
+        map("i", "<C-t>", treeflat)
+        map("n", "<C-t>", treeflat)
+        local deep = function()
+          local q = action_state.get_current_line()
+          actions.close(prompt_bufnr)
+          vim.schedule(function()
+            M.pick_deep(buf, all_scope, { query = q })
+          end)
+        end
+        map("i", "<C-g>", deep)
+        map("n", "<C-g>", deep)
+        map_clear_first_cc(map, prompt_bufnr)
+        return true
+      end,
+    })
+    :find()
+end
+
+-- ── deep content search: fuzzy over EVERY turn's full text ─────────
+
+-- flat cross-session turn corpus for `all_scope`; optionally
+-- pre-filtered by `pat` (case-insensitive substring). claude side
+-- parses each session's jsonl (grepper-narrowed when `pat` given);
+-- opencode side is one `--dump`/`--grep` extractor spawn.
+local function deep_rows(all_scope, pat)
+  local rows = {}
+  local needle = pat and pat:lower() or nil
+  -- opencode
+  local extra = pat and { "--grep", pat } or { "--dump" }
+  if all_scope then
+    extra[#extra + 1] = "--all-dirs"
+  end
+  for _, ses in ipairs(oc_json(extra, vim.g.claude_reply_oc_dump_cmd) or {}) do
+    local total = #ses.turns
+    for i, t in ipairs(ses.turns) do
+      rows[#rows + 1] = {
+        provider = "opencode",
+        title = (ses.title and ses.title ~= "") and ses.title or (ses.id or "?"):sub(1, 12),
+        proj = proj_label(ses.directory or ""),
+        idx = i,
+        total = total,
+        text = t.text,
+      }
+    end
+  end
+  -- claude: with a pattern, narrow candidate files first via the
+  -- configured grepper (g:claude_reply_grepper; rg when available)
+  local csessions = claude_sessions(all_scope)
+  if needle and #csessions > 0 then
+    local grepper = vim.g.claude_reply_grepper
+      or (vim.fn.executable("rg") == 1 and "rg" or "grep")
+    local cmd = { grepper, "-l", "-i" }
+    if grepper ~= "rg" then
+      cmd[#cmd + 1] = "-a"
+    end
+    cmd[#cmd + 1] = "--"
+    cmd[#cmd + 1] = pat
+    for _, s in ipairs(csessions) do
+      cmd[#cmd + 1] = s.path
+    end
+    local matched = {}
+    for _, p in ipairs(vim.fn.systemlist(cmd)) do
+      matched[p] = true
+    end
+    local kept = {}
+    for _, s in ipairs(csessions) do
+      if matched[s.path] then
+        kept[#kept + 1] = s
+      end
+    end
+    csessions = kept
+  end
+  for _, s in ipairs(csessions) do
+    local turns = fetch_turns(nil, { provider = "claude", path = s.path, title = s.title })
+    if turns then
+      local total = #turns
+      for i, t in ipairs(turns) do
+        if not needle or t.text:lower():find(needle, 1, true) then
+          rows[#rows + 1] = {
+            provider = "claude",
+            title = s.title,
+            proj = s.proj,
+            idx = i,
+            total = total,
+            text = t.text,
+          }
+        end
+      end
+    end
+  end
+  return rows
+end
+
+-- turn-level fuzzy picker across ALL scoped sessions: the `ordinal`
+-- carries each turn's FULL text, so typing fuzzes reply CONTENT
+-- cross-project/cross-harness. opts = { query=<prefill>, pat=<plain
+-- substring pre-filter (from :ClaudeReplyGrep)> }.
+function M.pick_deep(buf, all_scope, opts)
+  buf = buf or vim.api.nvim_get_current_buf()
+  opts = opts or {}
+  local rows = deep_rows(all_scope, opts.pat)
+  if #rows == 0 then
+    warn(opts.pat and ("no replies match '" .. opts.pat .. "'") or "no replies found")
+    return
+  end
+  local items = {}
+  for _, r in ipairs(rows) do
+    local badge = r.provider == "opencode" and "oc" or "cc"
+    local segs = {
+      { "[" .. badge .. "]", badge_hl(r.provider) },
+      { " " .. vim.fn.strcharpart(r.title or "?", 0, 24), "ClaudeReplyProj" },
+      { (" #%d/%d"):format(r.idx, r.total), "ClaudeReplyDate" },
+      { "  " .. first_line(r.text) },
+    }
+    local text = ""
+    for _, seg in ipairs(segs) do
+      text = text .. seg[1]
+    end
+    items[#items + 1] = { row = r, segs = segs, label = text }
+  end
+  local scope_tag = all_scope and "⟦ALL⟧" or "⟦pwd⟧"
+  local title = scope_tag
+    .. " deep reply search"
+    .. (opts.pat and (" /" .. opts.pat .. "/") or "")
+    .. " · <CR> page · <C-q> quote · <C-o> dialogs"
+
+  local has_telescope, pickers = pcall(require, "telescope.pickers")
+  if not has_telescope then
+    vim.ui.select(items, {
+      prompt = title,
+      format_item = function(it)
+        return it.label
+      end,
+    }, function(choice)
+      if choice then
+        local r = choice.row
+        M.set_reference(buf, r.text, r.idx, r.total, r.title)
+      end
+    end)
+    return
+  end
+
+  local finders = require("telescope.finders")
+  local tconf = require("telescope.config").values
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+  local previewers = require("telescope.previewers")
+
+  pickers
+    .new({}, {
+      prompt_title = title,
+      default_text = opts.query,
+      finder = finders.new_table({
+        results = items,
+        entry_maker = function(it)
+          return {
+            value = it,
+            display = function()
+              return hl_display(it.segs)
+            end,
+            -- deep: full turn text drives the fuzzy match
+            ordinal = it.label .. " " .. it.row.text,
+          }
+        end,
+      }),
+      sorter = tconf.generic_sorter({}),
+      previewer = previewers.new_buffer_previewer({
+        title = "reply",
+        define_preview = function(self, entry)
+          vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(entry.value.row.text, "\n", { plain = true }))
           pcall(function()
             vim.bo[self.state.bufnr].syntax = "markdown"
           end)
@@ -1346,19 +1728,44 @@ function M.pick_session(buf, all_scope)
           local e = action_state.get_selected_entry()
           actions.close(prompt_bufnr)
           if e then
-            M.pick_reply(buf, e.value.src, all_scope)
+            local r = e.value.row
+            M.set_reference(buf, r.text, r.idx, r.total, r.title)
           end
         end)
-        local toggle = function()
+        local quote = function()
+          local e = action_state.get_selected_entry()
           actions.close(prompt_bufnr)
-          M.pick_session(buf, not all_scope)
+          if e then
+            M.pull_section(buf, vim.split(e.value.row.text, "\n", { plain = true }))
+          end
         end
-        map("i", "<C-a>", toggle)
-        map("n", "<C-a>", toggle)
+        map("i", "<C-q>", quote)
+        map("n", "<C-q>", quote)
+        local back = function()
+          local q = action_state.get_current_line()
+          actions.close(prompt_bufnr)
+          vim.schedule(function()
+            M.pick_session(buf, all_scope, q)
+          end)
+        end
+        map("i", "<C-o>", back)
+        map("n", "<C-o>", back)
+        map_clear_first_cc(map, prompt_bufnr)
         return true
       end,
     })
     :find()
+end
+
+-- :ClaudeReplyGrep {pat} — external-grepper-backed content search
+-- (rg by default, g:claude_reply_grepper to choose); bang == all
+-- projects. results land in the deep picker for further fuzzing.
+function M.grep_replies(buf, pat, all_scope)
+  if not pat or pat == "" then
+    warn("grep: give me a pattern")
+    return
+  end
+  M.pick_deep(buf, all_scope or false, { pat = pat })
 end
 
 -- ── per-buffer setup + autocmd ─────────────────────────────────────
@@ -1398,6 +1805,11 @@ end
 
 function M.setup_autocmds()
   local grp = vim.api.nvim_create_augroup("ClaudeReply", { clear = true })
+  define_hls()
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = grp,
+    callback = define_hls,
+  })
   vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
     group = grp,
     pattern = "claude-prompt-*.md",
