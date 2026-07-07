@@ -263,12 +263,17 @@ Picker ergonomics (all our pickers):
 ## Deep content search (`<C-g>` / `:ClaudeReplyGrep`)
 
 To find "that reply about X" ACROSS dialogs and projects:
-- **`<C-g>`** in the dialog picker switches to **deep mode**: one flat
-  fuzzy list of EVERY turn of every scoped dialog, where the match
-  `ordinal` carries each turn's **full text** — typing fuzzes reply
-  *content* cross-project/cross-harness (your typed query carries
-  over). `<CR>` pages the turn, `<C-q>` quotes it, `<C-o>` returns to
-  the dialog list.
+- **`<C-g>`** (from the dialog OR turn picker) switches to **deep
+  mode**: one flat fuzzy list of every **paragraph** of every scoped
+  turn — typing fuzzes reply *content* cross-project/cross-harness
+  (your typed query carries over). `<CR>` pages the matched
+  paragraph's whole turn, `<C-q>` quotes **exactly the matched
+  passage**, `<C-o>` returns to the dialog list.
+  Paragraph granularity isn't just UX: **fzf-native only matches
+  within ~the first 1KB of an item** — whole turns as ordinals
+  degenerate to an unrankable flat score (the "only dialog names
+  match" bug, verified with a scorer harness). Paragraph rows keep
+  every ordinal inside the match window.
 - **`:ClaudeReplyGrep {pat}`** (bang `!` = all projects) pre-filters
   the corpus with a real grepper first — `g:claude_reply_grepper`
   (default `rg` when installed, else `grep`) narrows claude jsonl

@@ -1158,13 +1158,27 @@ local function fmt_date(ts)
   return os.date("%m-%d %H:%M", ts)
 end
 
--- pretty project label from a claude slug dir or an opencode
--- directory path: "-home-goodboy-repos-lns" / "/home/goodboy/repos/lns"
--- -> "repos/lns"
-local function proj_label(s)
-  s = s:gsub("^" .. vim.pesc(vim.env.HOME or ""), ""):gsub("^[-/]home[-/][^-/]+[-/]?", "")
-  s = s:gsub("^[-/]+", ""):gsub("-", "/")
+-- pretty project label from a REAL path: "/home/goodboy/repos/lns" ->
+-- "repos/lns". no character mangling — dots/dashes in real dir names
+-- survive intact.
+local function path_label(p)
+  p = (p or ""):gsub("^" .. vim.pesc(vim.env.HOME or "") .. "/?", "")
+  return (p == "") and "~" or p
+end
+
+-- LAST-RESORT label from a claude slug dir name
+-- ("-home-goodboy-repos-lns"): the slug maps EVERY non-alphanumeric
+-- char to '-', so '.'/'-'/'/' are indistinguishable — prefer the real
+-- "cwd" harvested from the jsonl (see claude_sessions) whenever
+-- available.
+local function slug_label(s)
+  s = s:gsub("^[-/]home[-/][^-/]+[-/]?", ""):gsub("^[-/]+", ""):gsub("-", "/")
   return (s == "") and "~" or s
+end
+
+-- back-compat alias used by opencode rows (real dirs) + scope tags
+local function proj_label(p)
+  return path_label(p)
 end
 
 -- claude sessions: *.jsonl under the cwd slug dir (or, all_scope, the
@@ -1192,7 +1206,7 @@ local function claude_sessions(all_scope)
   local files = {}
   for _, dir in ipairs(dirs) do
     for _, ent in ipairs(list_transcripts(dir)) do
-      files[#files + 1] = { path = ent.path, ts = ent.mtime, proj = proj_label(vim.fn.fnamemodify(dir, ":t")) }
+      files[#files + 1] = { path = ent.path, ts = ent.mtime, slug = vim.fn.fnamemodify(dir, ":t") }
     end
   end
   table.sort(files, function(a, b)
@@ -1212,8 +1226,15 @@ local function claude_sessions(all_scope)
     paths[#paths + 1] = f.path
   end
   local titles = {}
-  local function harvest(pattern, tbl)
-    local cmd = { "grep", "-aoHE", pattern }
+  local function harvest(pattern, tbl, first_only)
+    local cmd = { "grep", "-aoHE" }
+    if first_only then
+      -- stop at the first matching LINE per file — for keys present
+      -- on every entry (e.g. "cwd") a full scan would emit thousands
+      -- of match lines per transcript
+      cmd[#cmd + 1] = "-m1"
+    end
+    cmd[#cmd + 1] = pattern
     vim.list_extend(cmd, paths)
     for _, line in ipairs(vim.fn.systemlist(cmd)) do
       local p, val = line:match('^(.-):"[^"]+":"(.*)"$')
@@ -1225,6 +1246,12 @@ local function claude_sessions(all_scope)
   harvest('"(customTitle|aiTitle)":"[^"]*"', titles)
   local prompts = {}
   harvest('"lastPrompt":"[^"]*"', prompts)
+  -- the REAL session cwd (jsonl entries carry it) — the slug dir name
+  -- is lossy ('.'/'-'/'/' all become '-'), so labels built from it
+  -- (e.g. "repos/ai/skillz") mismatch real-path labels
+  -- ("repos/ai.skillz"). slug_label only as last resort.
+  local cwds = {}
+  harvest('"cwd":"[^"]*"', cwds, true)
   local out = {}
   for _, f in ipairs(files) do
     local title = titles[f.path] or prompts[f.path]
@@ -1234,7 +1261,7 @@ local function claude_sessions(all_scope)
       path = f.path,
       title = title,
       ts = f.ts,
-      proj = f.proj,
+      proj = cwds[f.path] and path_label(cwds[f.path]) or slug_label(f.slug),
     }
   end
   return out
@@ -1278,6 +1305,10 @@ function M.pick_reply(buf, src, nav)
     return
   end
   local label = src and src.title or nil
+  -- when drilled in from the dialog picker, show WHICH project the
+  -- source dialog lives in (may differ from the compose buffer's cwd
+  -- after an ⟦ALL⟧-scope pick)
+  local proj_tag = (src and src.proj) and ("⟦" .. src.proj .. "⟧ ") or ""
   local total = #turns
   local items = {}
   for i = total, 1, -1 do -- newest first in the list
@@ -1293,7 +1324,7 @@ function M.pick_reply(buf, src, nav)
   local has_telescope, pickers = pcall(require, "telescope.pickers")
   if not has_telescope then
     vim.ui.select(items, {
-      prompt = label and ("replies · " .. label) or "prior AI replies",
+      prompt = proj_tag .. (label and ("replies · " .. label) or "prior AI replies"),
       format_item = function(it)
         return it.label
       end,
@@ -1313,7 +1344,8 @@ function M.pick_reply(buf, src, nav)
 
   pickers
     .new({}, {
-      prompt_title = (label and ("replies · " .. label) or "prior AI replies")
+      prompt_title = proj_tag
+        .. (label and ("replies · " .. label) or "prior AI replies")
         .. " · <CR> page · <C-q> quote"
         .. (nav ~= nil and " · <C-o> back" or ""),
       finder = finders.new_table({
@@ -1355,6 +1387,17 @@ function M.pick_reply(buf, src, nav)
         end
         map("i", "<C-q>", quote)
         map("n", "<C-q>", quote)
+        -- parity with the dialog picker: jump to deep content search
+        -- from the turn picker too
+        local deep = function()
+          local q = action_state.get_current_line()
+          actions.close(prompt_bufnr)
+          vim.schedule(function()
+            M.pick_deep(buf, nav and nav.scope or false, { query = q })
+          end)
+        end
+        map("i", "<C-g>", deep)
+        map("n", "<C-g>", deep)
         if nav ~= nil then
           local back = function()
             actions.close(prompt_bufnr)
@@ -1439,6 +1482,9 @@ end
 function M.pick_session(buf, all_scope, default_text, flat)
   buf = buf or vim.api.nvim_get_current_buf()
   all_scope = all_scope or false
+  -- choke-point sanitization: strip any control chars a key-event
+  -- tail may have leaked into a carried-over query
+  default_text = default_text and default_text:gsub("%c", "") or nil
   if flat == nil then
     flat = vim.g.claude_reply_dialogs_grouped == false
   end
@@ -1568,10 +1614,42 @@ end
 
 -- ── deep content search: fuzzy over EVERY turn's full text ─────────
 
--- flat cross-session turn corpus for `all_scope`; optionally
--- pre-filtered by `pat` (case-insensitive substring). claude side
--- parses each session's jsonl (grepper-narrowed when `pat` given);
--- opencode side is one `--dump`/`--grep` extractor spawn.
+-- one row per PARAGRAPH of every turn. WHY paragraphs: fzf-native
+-- only fuzzy-matches within roughly the first 1KB of an item — a
+-- whole multi-KB turn as one ordinal means only its label prefix ever
+-- matches (verified with a scorer harness: long ordinals degenerate
+-- to a flat score). paragraph rows keep ordinals short (real content
+-- matching) AND make <C-q> quote exactly the matched passage; <CR>
+-- still pages the whole parent turn.
+local function explode_paras(rows, meta, turn_text)
+  local para, out = {}, {}
+  local function close()
+    if #para > 0 then
+      out[#out + 1] = table.concat(para, "\n")
+      para = {}
+    end
+  end
+  for _, l in ipairs(vim.split(turn_text, "\n", { plain = true })) do
+    if l:match("^%s*$") then
+      close()
+    else
+      para[#para + 1] = l
+    end
+  end
+  close()
+  for _, p in ipairs(out) do
+    local row = vim.tbl_extend("force", {}, meta)
+    row.text = turn_text
+    row.para = p
+    rows[#rows + 1] = row
+  end
+end
+
+-- flat cross-session PARAGRAPH corpus for `all_scope`; optionally
+-- pre-filtered by `pat` (case-insensitive substring, applied at
+-- paragraph granularity). claude side parses each session's jsonl
+-- (grepper-narrowed when `pat` given); opencode side is one
+-- `--dump`/`--grep` extractor spawn.
 local function deep_rows(all_scope, pat)
   local rows = {}
   local needle = pat and pat:lower() or nil
@@ -1583,14 +1661,13 @@ local function deep_rows(all_scope, pat)
   for _, ses in ipairs(oc_json(extra, vim.g.claude_reply_oc_dump_cmd) or {}) do
     local total = #ses.turns
     for i, t in ipairs(ses.turns) do
-      rows[#rows + 1] = {
+      explode_paras(rows, {
         provider = "opencode",
         title = (ses.title and ses.title ~= "") and ses.title or (ses.id or "?"):sub(1, 12),
         proj = proj_label(ses.directory or ""),
         idx = i,
         total = total,
-        text = t.text,
-      }
+      }, t.text)
     end
   end
   -- claude: with a pattern, narrow candidate files first via the
@@ -1625,18 +1702,26 @@ local function deep_rows(all_scope, pat)
     if turns then
       local total = #turns
       for i, t in ipairs(turns) do
-        if not needle or t.text:lower():find(needle, 1, true) then
-          rows[#rows + 1] = {
-            provider = "claude",
-            title = s.title,
-            proj = s.proj,
-            idx = i,
-            total = total,
-            text = t.text,
-          }
-        end
+        explode_paras(rows, {
+          provider = "claude",
+          title = s.title,
+          proj = s.proj,
+          idx = i,
+          total = total,
+        }, t.text)
       end
     end
+  end
+  -- pat filtering happens at PARAGRAPH granularity: a grep'd turn
+  -- only surfaces the passages that actually contain the pattern
+  if needle then
+    local kept = {}
+    for _, r in ipairs(rows) do
+      if r.para:lower():find(needle, 1, true) then
+        kept[#kept + 1] = r
+      end
+    end
+    rows = kept
   end
   return rows
 end
@@ -1648,6 +1733,9 @@ end
 function M.pick_deep(buf, all_scope, opts)
   buf = buf or vim.api.nvim_get_current_buf()
   opts = opts or {}
+  if opts.query then
+    opts.query = opts.query:gsub("%c", "")
+  end
   local rows = deep_rows(all_scope, opts.pat)
   if #rows == 0 then
     warn(opts.pat and ("no replies match '" .. opts.pat .. "'") or "no replies found")
@@ -1658,9 +1746,10 @@ function M.pick_deep(buf, all_scope, opts)
     local badge = r.provider == "opencode" and "oc" or "cc"
     local segs = {
       { "[" .. badge .. "]", badge_hl(r.provider) },
-      { " " .. vim.fn.strcharpart(r.title or "?", 0, 24), "ClaudeReplyProj" },
+      { " " .. vim.fn.strcharpart(r.title or "?", 0, 24) },
       { (" #%d/%d"):format(r.idx, r.total), "ClaudeReplyDate" },
-      { "  " .. first_line(r.text) },
+      { "  " .. first_line(r.para) },
+      { "  (" .. (r.proj or "?") .. ")", "ClaudeReplyProj" },
     }
     local text = ""
     for _, seg in ipairs(segs) do
@@ -1668,7 +1757,7 @@ function M.pick_deep(buf, all_scope, opts)
     end
     items[#items + 1] = { row = r, segs = segs, label = text }
   end
-  local scope_tag = all_scope and "⟦ALL⟧" or "⟦pwd⟧"
+  local scope_tag = all_scope and "⟦ALL⟧" or ("⟦" .. path_label(vim.fn.getcwd()) .. "⟧")
   local title = scope_tag
     .. " deep reply search"
     .. (opts.pat and (" /" .. opts.pat .. "/") or "")
@@ -1708,14 +1797,17 @@ function M.pick_deep(buf, all_scope, opts)
             display = function()
               return hl_display(it.segs)
             end,
-            -- deep: full turn text drives the fuzzy match
-            ordinal = it.label .. " " .. it.row.text,
+            -- the PARAGRAPH drives the fuzzy match. capped well under
+            -- fzf-native's ~1KB match window — beyond it items
+            -- degenerate to an unrankable flat score (the "only
+            -- dialog names match" bug).
+            ordinal = it.label .. " " .. it.row.para:sub(1, 900),
           }
         end,
       }),
       sorter = tconf.generic_sorter({}),
       previewer = previewers.new_buffer_previewer({
-        title = "reply",
+        title = "reply (matched passage's turn)",
         define_preview = function(self, entry)
           vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(entry.value.row.text, "\n", { plain = true }))
           pcall(function()
@@ -1736,7 +1828,8 @@ function M.pick_deep(buf, all_scope, opts)
           local e = action_state.get_selected_entry()
           actions.close(prompt_bufnr)
           if e then
-            M.pull_section(buf, vim.split(e.value.row.text, "\n", { plain = true }))
+            -- quote exactly the MATCHED PASSAGE, not the whole turn
+            M.pull_section(buf, vim.split(e.value.row.para, "\n", { plain = true }))
           end
         end
         map("i", "<C-q>", quote)
