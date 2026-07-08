@@ -37,7 +37,7 @@ telescope issue search. LOW priority.
 
 ---
 
-## Phase 1 — execute the `ai.reply` factor-out
+## Phase 1 — execute the `ai.reply` factor-out — DONE
 
 > **HANDOFF-READY**: the full self-contained brief for another agent
 > is `plans/claude/ai-reply-factor-out-handoff.md` — house rules,
