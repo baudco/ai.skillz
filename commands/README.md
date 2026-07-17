@@ -40,4 +40,8 @@ companion-hook merge hint. Per-command `DEPLOY.md` covers the rest
 (hook install into `settings.json`).
 
 > Note: `claude-reply` is a Neovim plugin, **not** a slash-command, so
-> `deploy.sh command` does not apply to it — see its `DEPLOY.md`.
+> `deploy.sh command` does not apply to it. See the standalone
+> [`ai.reply` deployment guide][ai-reply-deploy] or the local checkout
+> at `~/repos/ai.reply/DEPLOY.md`.
+
+[ai-reply-deploy]: https://github.com/baudco/ai.reply/blob/main/DEPLOY.md
