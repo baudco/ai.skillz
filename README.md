@@ -1,8 +1,8 @@
 # `ai.skillz`
 
 Reusable AI agent skills for
-[`claude-code`](https://github.com/anthropics/claude-code)
-conforming to the
+[`claude-code`](https://github.com/anthropics/claude-code) and
+[`opencode`](https://github.com/anomalyco/opencode), conforming to the
 [agentskills.io](https://agentskills.io/specification)
 specification.
 
@@ -39,6 +39,10 @@ Two methods are supported:
   `.claude/skills/` to this checkout (dev machines)
 - **Submodule** — `git submodule add` for portable,
   version-pinned deployment (see `scripts/`)
+
+For development in this checkout, `opencode.json` loads
+the canonical `skills/` tree directly and
+`.opencode/commands/commit-msg.md` exposes `/commit-msg`.
 
 ## License
 
