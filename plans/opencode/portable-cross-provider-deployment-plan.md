@@ -16,9 +16,10 @@ path (`/home/goodboy/repos/ai.skillz/skills`). That works for one
 workstation but is not clone-portable. Committing an absolute skill
 symlink has the same problem.
 
-The temporary arrangement remains supported while this plan is
-deferred. Do not migrate existing consumers until the deployment
-contract and fixture tests below are implemented.
+The current absolute `skills.paths` arrangement remains supported
+while this plan is deferred. A near-term direct-link phase can remove
+that config coupling before the provider-neutral source anchor and
+portable submodule work land.
 
 ## Goals
 
@@ -44,7 +45,62 @@ contract and fixture tests below are implemented.
 - Do not remove the existing Claude deployment path until all known
   consumer repos have migrated.
 
-## Target layout
+## Phase 0: direct provider links
+
+The shortest near-term path is to deploy each requested skill directly
+into the provider's default discovery tree:
+
+```text
+.opencode/
+├── commands/
+│   └── commit-msg.md                  # tracked command shim
+└── skills/
+    └── commit-msg/
+        └── SKILL.md -> /local/checkout/ai.skillz/skills/commit-msg/SKILL.md
+```
+
+This mode is deliberately local-only:
+
+- the absolute `SKILL.md` link is gitignored and never committed
+- the thin `.opencode/commands/commit-msg.md` shim is tracked
+- no `opencode.json` mutation is required
+- only explicitly deployed skills become visible to OpenCode
+- existing `.claude` skill state and archives remain untouched
+
+Add an interim provider-aware deploy form:
+
+```text
+deploy.sh <skill> <repo> --provider opencode --method symlink
+```
+
+For generic skills, link the whole canonical skill directory under
+`.opencode/skills/`. For hybrid skills such as `commit-msg` and
+`pr-msg`, create the local provider directory and link only canonical
+files or resource directories so future provider-local state remains
+possible.
+
+Extend `status` to label these links `local-only (absolute)` and report
+whether the provider command shim exists. Extend the gitignore manifest
+so direct local links do not appear as untracked files.
+
+Phase 0 removes the need to rely on OpenCode's compatibility scan of
+`.claude/skills/`. That scan may keep existing repos working, but the
+explicit `.opencode/skills/` deployment makes provider ownership clear
+and avoids coupling OpenCode availability to Claude deployment.
+
+Initial Phase 0 cleanup:
+
+- `lns`: add the direct OpenCode skill link; remove its absolute
+  `skills.paths` only if the whole `ai.skillz` catalog is not intended
+- `taken`: add the direct OpenCode skill link and remove the redundant
+  absolute `skills.paths`
+- `modden`: add the direct OpenCode skill link even though its existing
+  `.claude/skills/commit-msg/` link is currently auto-discovered
+
+Do not commit any of these absolute links. This phase improves provider
+separation and config hygiene, but it does not claim clone portability.
+
+## Long-term target layout
 
 Use a provider-neutral source anchor in every consumer repo:
 
@@ -156,6 +212,8 @@ namespace only when they are genuinely reusable.
    assert exact links, config files, ignores, and status output.
 4. Cover both local-anchor and submodule-anchor modes before changing
    the default deployment path.
+5. Include the direct-link Phase 0 layout as an input migration state,
+   not as the final portable output.
 
 Known initial consumers to inspect include `lns`, `tractor`, `piker`,
 `modden`, `ai.reply`, and `ai.skillz` itself.
@@ -218,6 +276,8 @@ do not create new deployments there.
 
 6. Verify command registration and canonical skill location in the
    resolved OpenCode output.
+7. Upgrade direct absolute provider links to relative anchor links
+   without changing the provider destination or command interface.
 
 ## Phase 4: documentation and validation
 
@@ -246,8 +306,8 @@ Migrate one repo at a time in separate commits. For each target:
 1. Record the pre-migration status and deployed skill state.
 2. Run `deploy.sh migrate <repo> --dry-run` and review its output.
 3. Create `.ai/ai.skillz` using the chosen anchor mode.
-4. Replace absolute provider links with relative links through the
-   anchor.
+4. Replace Phase 0 absolute provider links with relative links through
+   the anchor.
 5. Remove absolute OpenCode `skills.paths` entries after
    `.opencode/skills/` discovery is verified.
 6. Preserve `conf.toml`, message archives, style guides, review
@@ -257,13 +317,13 @@ Migrate one repo at a time in separate commits. For each target:
 
 For `lns` specifically:
 
-- retain the current absolute OpenCode path until this phase
+- remove any absolute `skills.paths` left after Phase 0
 - preserve `.claude/skills/commit-msg/conf.toml` and `msgs/`
-- replace the absolute `SKILL.md` link
-- deploy `.opencode/skills/commit-msg/SKILL.md`
+- replace the Phase 0 absolute OpenCode `SKILL.md` link with an anchor
+  link
 - keep `.opencode/commands/commit-msg.md`
-- remove only the `skills.paths` entry from
-  `.opencode/opencode.json`, preserving instructions and permissions
+- preserve unrelated `.opencode/opencode.json` instructions and
+  permissions
 
 ## Persisted-state follow-up
 
@@ -286,16 +346,18 @@ compatibility window.
 
 Exercise at least these cases in temporary repositories:
 
-1. Fresh local anchor with Claude only.
-2. Fresh local anchor with OpenCode only.
-3. Fresh local anchor with both providers.
-4. Fresh submodule anchor with both providers.
-5. Existing hybrid `commit-msg` state and archives.
-6. Existing `.claude/ai.skillz` submodule migration.
-7. Existing absolute OpenCode `skills.paths` migration.
-8. Existing unrelated `opencode.json` fields and permissions.
-9. Broken anchor and broken provider links.
-10. Dirty target worktree with unrelated staged and unstaged files.
+1. Fresh direct-link deployment with OpenCode only.
+2. Direct-link deployment with an existing Claude skill.
+3. Direct-link replacement of an absolute OpenCode `skills.paths`.
+4. Fresh local anchor with Claude only.
+5. Fresh local anchor with OpenCode only.
+6. Fresh local anchor with both providers.
+7. Fresh submodule anchor with both providers.
+8. Existing hybrid `commit-msg` state and archives.
+9. Existing `.claude/ai.skillz` submodule migration.
+10. Existing unrelated `opencode.json` fields and permissions.
+11. Broken direct links, anchors, and provider links.
+12. Dirty target worktree with unrelated staged and unstaged files.
 
 Required checks:
 
