@@ -9,7 +9,7 @@ compatibility: >
   context integration.
 metadata:
   author: goodboy
-  version: "0.1"
+  version: "0.2"
 argument-hint: "[optional-scope-or-description]"
 disable-model-invocation: true
 allowed-tools:
@@ -49,6 +49,37 @@ Always use:
 
 (equivalently `--edit --file <file>`). Non-negotiable: the
 human reviews every message at the editor step.
+
+## Batch every message in a multi-commit plan
+
+When proposing or executing a logical multi-commit plan, do
+NOT make the human invoke `/commit-msg` after each commit.
+Before returning the plan:
+
+1. Materialize each planned commit boundary in the index,
+   one at a time.
+2. Run the normal staged-diff analysis and checks for that
+   exact boundary.
+3. Generate and archive a distinct message for every commit
+   under `.claude/skills/commit-msg/msgs/`.
+4. Restore the index to the boundary that was staged when
+   the skill was invoked (normally the first planned commit).
+5. Return one complete command sequence in a single fenced
+   block using the user's configured `$SHELL` syntax.
+
+The command block MUST include, in execution order:
+
+- exact staging/unstaging commands for each boundary
+- staged file/diff checks before each commit
+- any required lint/test commands
+- `git commit --edit --file
+  .claude/skills/commit-msg/msgs/<generated-file>` for each
+  commit
+
+Use each archived message path directly. Do not use
+`.claude/git_commit_msg_LATEST.md` in a multi-commit sequence,
+because later message generation overwrites it. Do not merely
+list subjects or tell the human to rerun `/commit-msg`.
 
 ## Scope: commit messages only
 
