@@ -10,7 +10,7 @@ compatibility: >
   context integration.
 metadata:
   author: goodboy
-  version: "0.3"
+  version: "0.4"
 argument-hint: "[commit plan|optional-scope-or-description]"
 allowed-tools:
   - Bash(git *)
@@ -79,6 +79,24 @@ each commit. Before returning the plan:
 5. Return one complete command sequence in a single fenced
    block using the user's configured `$SHELL` syntax.
 
+### `$SHELL` rendering is mandatory
+
+Before rendering the command sequence, determine the user's configured
+shell from `$SHELL` and use its basename as the Markdown fence language
+and command syntax. Examples: `/bin/zsh` -> `zsh`, `/bin/bash` ->
+`bash`, `/usr/bin/fish` -> `fish`, and `/usr/bin/xonsh` -> `xonsh`.
+
+The returned sequence MUST use one explicitly labelled fence: three
+backticks immediately followed by the shell basename. For example,
+when `$SHELL` is `xonsh`, the fence info string MUST be `xonsh`, and
+every assignment, conditional, loop, quoting form, and command
+separator must be valid xonsh syntax.
+
+NEVER emit an unlabelled fence. NEVER hardcode `bash` or POSIX shell
+syntax when `$SHELL` names another shell. If `$SHELL` is unavailable
+or its syntax is unknown, ask the human which shell to target instead
+of guessing or returning a mixed-syntax plan.
+
 The command block MUST include, in execution order:
 
 - exact staging/unstaging commands for each boundary
@@ -100,6 +118,8 @@ Before returning a commit plan, verify all of the following:
 - the index matches the boundary staged when the skill was invoked
 - one command block covers every boundary in execution order
 - every rendered commit command includes `--edit`
+- the fence label matches the basename of `$SHELL`
+- every command and control construct is valid for `$SHELL`
 
 If any check is false, the commit plan is incomplete and MUST NOT be
 returned as finished.
