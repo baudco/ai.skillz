@@ -1,17 +1,17 @@
 ---
 name: commit-msg
 description: >
-  Generate git commit messages following project style.
-  Use when user wants to create a commit or asks for a
-  commit message.
+  Generate git commit messages and complete multi-commit
+  plans following project style. Use when user wants to
+  create a commit, asks for a commit message, or says
+  "commit plan" or "multi-commit plan".
 compatibility: >
   Requires git CLI. Optional: gh CLI for review
   context integration.
 metadata:
   author: goodboy
-  version: "0.2"
-argument-hint: "[optional-scope-or-description]"
-disable-model-invocation: true
+  version: "0.3"
+argument-hint: "[commit plan|optional-scope-or-description]"
 allowed-tools:
   - Bash(git *)
   - Bash(gh *)
@@ -50,11 +50,23 @@ Always use:
 (equivalently `--edit --file <file>`). Non-negotiable: the
 human reviews every message at the editor step.
 
-## Batch every message in a multi-commit plan
+## "COMMIT PLAN": batch files + messages in a multi-commit format
 
-When proposing or executing a logical multi-commit plan, do
-NOT make the human invoke `/commit-msg` after each commit.
-Before returning the plan:
+The literal phrase **"commit plan"** (case-insensitive) is a mandatory
+trigger for this section. When the human uses it, these instructions
+take precedence over the ordinary single-commit workflow below. Treat
+it as an explicit request for a complete, ready-to-run multi-commit
+package, not merely a proposal of boundaries or subjects.
+
+Follow every numbered step in this section exactly. Do not abbreviate
+the workflow, defer message generation, tell the human to invoke
+`/commit-msg` again per boundary, or return only subjects or suggested
+commands. If a boundary cannot be materialized safely, stop and report
+the exact blocker instead of silently degrading to a partial plan.
+
+When the user ASKS FOR (or any time the AI-agent proposes) a logical
+multi-commit plan, do NOT make the human invoke `/commit-msg` after
+each commit. Before returning the plan:
 
 1. Materialize each planned commit boundary in the index,
    one at a time.
@@ -80,6 +92,17 @@ Use each archived message path directly. Do not use
 `.claude/git_commit_msg_LATEST.md` in a multi-commit sequence,
 because later message generation overwrites it. Do not merely
 list subjects or tell the human to rerun `/commit-msg`.
+
+Before returning a commit plan, verify all of the following:
+
+- every planned commit has its own archived message file
+- every message was generated from that commit's exact staged diff
+- the index matches the boundary staged when the skill was invoked
+- one command block covers every boundary in execution order
+- every rendered commit command includes `--edit`
+
+If any check is false, the commit plan is incomplete and MUST NOT be
+returned as finished.
 
 ## Scope: commit messages only
 
