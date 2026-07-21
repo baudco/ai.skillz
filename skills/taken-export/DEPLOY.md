@@ -42,7 +42,7 @@ loaded at session startup.
 - A task-state ownership skill reinforces the mandatory human authority
   boundary.
 
-The skill still supports chat-only manual previews when none of these
+The skill still supports chat-only copy/paste handoffs when none of these
 optional tools are installed.
 
 ## Export Directory

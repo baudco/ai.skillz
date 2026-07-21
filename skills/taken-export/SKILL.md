@@ -2,16 +2,16 @@
 name: taken-export
 description: >
   Export repository work as Taken-compatible Org headlines and
-  checkbox subtasks for manual review, artifact handoff, or explicitly
-  authorized insertion into current.org. Use when a repository
-  supervisor is asked for Taken tasks, Org TODOs, follow-up lists, or a
-  current.org submission.
+  checkbox subtasks, defaulting to copy/paste with optional explicitly
+  authorized insertion into current.org or artifact export. Use when a
+  repository supervisor is asked to render Taken tasks, export Org
+  TODOs, prepare follow-up lists, or submit work to current.org.
 compatibility: >
   Requires repository file access. Optional: git for source identity,
   gish or forge CLIs for issue/PR context, and tkn for target linting.
 metadata:
   author: goodboy
-  version: "0.1"
+  version: "0.3"
 ---
 
 # Taken Export
@@ -34,9 +34,9 @@ Persistent task state belongs to the human.
 - New proposals use `TODO` headlines and unchecked `[ ]` checkboxes.
 - Do not infer `WIP`, `WAIT`, `DONE`, `NOPE`, `[x]`, `[X]`, `[-]`, or
   `[~]` from implementation, test, review, merge, or CI status.
-- Preview and export modes never modify `current.org`.
-- Apply mode requires an explicit request to insert or submit the
-  proposed items to a named corpus or file.
+- Copy/paste and export modes never modify `current.org`.
+- Apply mode requires either an explicit initial request or an affirmative
+  response to the exact auto-update question defined below.
 - Never run `tkn roll`, `tkn lint --write`, `git commit`, `git push`, or
   a forge mutation as part of export or apply.
 
@@ -45,20 +45,38 @@ and follow it before inspecting or editing its task files.
 
 ## Modes
 
-Choose the least-authority mode that satisfies the request.
+Default to Copy/Paste. Do not ask the requester to choose a handoff mode.
+Use Export only for an explicit artifact request and Apply only for an
+explicit apply request or an affirmative auto-update answer.
 
-### Preview
+### Copy/Paste
 
-Use when the human asks to "list", "propose", "draft", or "show" Taken
-tasks. Return a fenced `org` fragment in chat. Preview never writes an
-artifact; if persistence becomes useful or requested, switch to Export mode
-and write the complete Org/manifest pair.
+Use when the human asks to "render", "copy/paste", "list", "propose",
+"draft", or "show" Taken tasks, or requests a handoff without asking for
+a persisted artifact. Return one insertion-ready fenced `org` fragment in
+chat. Do not write an artifact or manifest, and do not modify the target.
+
+The fence contains only the children to paste beneath the resolved target,
+at the correct headline depth. Do not mix explanations, placeholders, or
+source notes into the copyable block. If target ambiguity or a stale source
+makes safe rendering impossible, ask or warn before returning the fragment.
+
+After rendering, ask whether the requester wants to auto-update their
+`current.org` with that exact fragment. Name the resolved corpus path and
+target headline in the question, and offer these choices:
+
+1. `Copy/paste only` (recommended and least authority).
+2. `Auto-update current.org` (authorizes Apply for that fragment only).
+
+This is the only proactive handoff-mode question. If the corpus or target
+cannot be resolved uniquely, do not offer auto-update and do not guess;
+leave copy/paste as the final handoff.
 
 ### Export
 
-Use when the human asks to "export", "prepare for Taken", "hand off",
-or requests machine-readable output. Write an Org fragment and JSON
-manifest under the active worktree's configured export directory,
+Use when the human explicitly asks to "export", write an "artifact", or
+requests a persisted or machine-readable handoff. Write an Org fragment and
+JSON manifest under the active worktree's configured export directory,
 defaulting to:
 
 ```text
@@ -70,9 +88,10 @@ Do not stage the artifacts or add ignore rules implicitly.
 ### Apply
 
 Use only when the human explicitly asks to "apply", "insert", "submit",
-or "add" the export to a specific `current.org` corpus. Validate the
-fresh target, show or inspect the exact insertion, and preserve all
-existing task markers.
+or "add" the export to a specific `current.org` corpus, or selects
+`Auto-update current.org` for the exact rendered fragment. Validate the
+fresh target, show or inspect the exact insertion, and preserve all existing
+task markers.
 
 Apply may consume an existing export artifact or use a candidate rendered
 earlier in the same session. A direct same-session apply does not require
@@ -198,13 +217,20 @@ Follow these rules:
 Keep source provenance, dedupe keys, and snapshot metadata in the JSON
 manifest instead of inventing Org properties.
 
-### 6. Return Or Write The Export
+### 6. Return Or Write The Handoff
 
-For preview mode, return:
+For copy/paste mode:
 
-1. the proposed Org fragment;
-2. a short source/deduplication summary;
-3. any unresolved target ambiguity.
+1. Resolve target ambiguity before rendering.
+2. Return exactly one fenced `org` block containing the complete fragment.
+3. Include no manifest, hash, artifact path, or commentary in the block.
+4. Write no files and leave `current.org` untouched.
+5. When the corpus and target resolve uniquely, ask whether to auto-update
+   them with the exact fragment using the choices defined above.
+
+The fenced Org block is the handoff. Omit an operational report unless an
+unresolved risk must be disclosed outside the block. The structured
+auto-update question is separate from the copyable content.
 
 For export mode:
 
@@ -214,9 +240,9 @@ For export mode:
 4. re-read both files and validate their agreement;
 5. report paths and checks not run.
 
-V1 artifact manifests always use `mode: "export"`. Preview writes no
-manifest. Apply consumes an immutable export manifest and reports the
-result separately; it does not rewrite the source manifest as a receipt.
+V1 artifact manifests always use `mode: "export"`. Copy/paste writes no
+manifest. Apply consumes an immutable export manifest and reports the result
+separately; it does not rewrite the source manifest as a receipt.
 
 Use a filesystem-safe export ID:
 
@@ -228,24 +254,28 @@ Use a filesystem-safe export ID:
 
 Before editing `current.org`:
 
-1. Re-read the target file immediately before mutation.
-2. Verify the target `ID` or full ancestor path resolves exactly once.
-3. For an artifact apply, verify the exact Org fragment bytes match
+1. Confirm authorization names the exact fragment, corpus path, and target.
+   An affirmative auto-update answer authorizes only the fragment shown in
+   the immediately preceding copy/paste handoff. Re-rendered or changed
+   content requires a new answer.
+2. Re-read the target file immediately before mutation.
+3. Verify the target `ID` or full ancestor path resolves exactly once.
+4. For an artifact apply, verify the exact Org fragment bytes match
    `org.sha256` and the canonical `target.corpus` path is the requested apply
    destination.
-4. For an artifact apply, require a non-null `target.expected_sha256` and
+5. For an artifact apply, require a non-null `target.expected_sha256` and
    compare it with the fresh target file SHA-256. For direct same-session
    apply, record the hash before rendering and verify it again immediately
    before mutation. Stop on an absent or differing guard and regenerate or
    ask the human.
-5. Search the target subtree for matching forge URLs, dedupe keys, and
+6. Search the target subtree for matching forge URLs, dedupe keys, and
    semantically equivalent tasks.
-6. Present or inspect the exact additions; do not replace the subtree.
-7. Insert only approved new headlines and checkbox items.
-8. Preserve every existing headline state, checkbox marker, property,
+7. Present or inspect the exact additions; do not replace the subtree.
+8. Insert only approved new headlines and checkbox items.
+9. Preserve every existing headline state, checkbox marker, property,
    ordering choice, and unrelated edit.
-9. Run non-writing `tkn lint` when available.
-10. Run `git diff --check` and report the target diff.
+10. Run non-writing `tkn lint` when available.
+11. Run `git diff --check` and report the target diff.
 
 Do not mutate the export manifest during apply. A future receipt format
 may record successful insertion; `taken-export/v1` records intent only.
@@ -255,7 +285,7 @@ because exported children were inserted.
 
 ### 8. Report The Handoff
 
-Report:
+For export and apply modes, report:
 
 - mode used;
 - source repository, branch/worktree, and `HEAD`;
@@ -266,6 +296,10 @@ Report:
 - validation commands and results;
 - unresolved risks or stale references;
 - whether `current.org` was untouched or explicitly modified.
+
+For copy/paste mode, return the fenced Org handoff, then ask the auto-update
+question when the corpus and target resolve uniquely. Do not add an
+operational report unless a blocking or unresolved risk requires it.
 
 Do not commit, push, roll, or mutate forge state unless the human makes
 a separate explicit request granting that authority.
