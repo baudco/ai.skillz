@@ -2,16 +2,17 @@
 name: commit-msg
 description: >
   Generate git commit messages and complete multi-commit
-  plans following project style. Use when user wants to
-  create a commit, asks for a commit message, or says
-  "commit plan" or "multi-commit plan".
+  or local-merge plans following project style. Use when
+  user wants to create a commit, asks for a commit message,
+  or says "commit plan", "multi-commit plan", or "merge
+  plan".
 compatibility: >
   Requires git CLI. Optional: gh CLI for review
   context integration.
 metadata:
   author: goodboy
-  version: "0.4"
-argument-hint: "[commit plan|optional-scope-or-description]"
+  version: "0.5"
+argument-hint: "[commit plan|merge plan|optional-scope-or-description]"
 allowed-tools:
   - Bash(git *)
   - Bash(gh *)
@@ -49,6 +50,51 @@ Always use:
 
 (equivalently `--edit --file <file>`). Non-negotiable: the
 human reviews every message at the editor step.
+
+## "MERGE PLAN": make a local non-FF merge
+
+The literal phrase **"merge plan"** (case-insensitive) is a mandatory
+trigger for this section. Use it to prepare a real merge commit locally,
+without relying on a git service PR/MR merge button. This section takes
+precedence over the ordinary staged-change workflow below: a merge plan
+normally starts with an empty index.
+
+Before returning a merge plan:
+
+1. Confirm the currently checked-out branch is the intended destination
+   branch and identify the local source branch or commit to merge. Ask if
+   either side is ambiguous.
+2. Record the destination and source commit IDs, then inspect their log,
+   diff, and merge base.
+3. Require a clean tracked worktree and index. Untracked files may remain,
+   but warn if the source tree would overwrite any of them. NEVER add
+   `reset --hard`, `clean`, or an automatic stash to a merge plan unless
+   the human explicitly requests that destructive/stateful step.
+4. Generate and archive a merge message using the normal message-file
+   locations in step 4. Prefer the service-independent subject:
+
+       Merge branch '<source>' into <destination>
+
+   Include a review URL or PR/MR number only when the human supplies one
+   or asks to preserve that provenance.
+5. Return this command sequence, with the concrete branch names, message
+   path, and required checks/tests filled in:
+
+       git merge --no-ff --no-commit <source>
+       git diff --cached --check
+       git diff --cached --stat
+       <required lint/test commands>
+       git commit --edit --file <generated-message-file>
+
+The `--no-commit` pause is mandatory: it lets the human inspect and test
+the exact merge result. The final `--edit` is also mandatory so the merge
+message is reviewed before submission. If the merge reports conflicts,
+stop before the checks/commit, resolve and stage every conflict, then
+resume the sequence. Do not include a push unless the human requests it.
+
+A request for a "merge plan" asks for the ready-to-run plan and message,
+not execution. Run the merge or commit only when the human explicitly
+asks to execute it.
 
 ## "COMMIT PLAN": batch files + messages in a multi-commit format
 
