@@ -313,6 +313,8 @@ cmd_deploy() {
     local skill_dst="$target/.claude/skills/$skill_name"
     local deploy_md="$skill_src/DEPLOY.md"
 
+    mkdir -p "$(dirname "$skill_dst")"
+
     echo "Deploying '$skill_name' via $method method..."
 
     case "$skill_name" in
