@@ -2,19 +2,18 @@
 
 ## TODO: adopt the `/commit-msg` base + per-repo override model
 
-Today `/run-tests` is **per-repo**: each repo generates its own
-`SKILL.md` from `templates/run-tests/SKILL.md.j2` (see `DEPLOY.md` —
-"there is no generic SKILL.md"); `references/tractor-example.md` is
-the worked example. This duplicates the generic tractor-runtime
-guidance into every consumer and has already drifted (modden's copy
-is the tractor example dumped verbatim, never specialized).
+The legacy `/run-tests` deployment is **per-repo**: each repo generates its
+own full `SKILL.md` from `templates/run-tests/SKILL.md.j2` and uses the
+Tractor document as its worked example. This duplicates generic runtime
+guidance into every consumer and has already drifted (Modden's copy is the
+Tractor skill verbatim, never specialized).
 
-Goal: unify with `/commit-msg`'s architecture —
+Target architecture: unify with `/commit-msg`'s model —
 
 - a **generic base** `skills/run-tests/SKILL.md` holding only the
-  universally-true tractor-runtime guidance: `uv` venv detection,
-  stale-registry / zombie-actor cleanup (`:1616`), the
-  pytest-capture-pipe hang, `tractor-reap`, last-failed JSON peek;
+  cross-repo workflow: `uv` / worktree venv detection, conditional
+  stale-registry and zombie-actor cleanup, pytest capture-pipe hang
+  diagnosis, optional `tractor-reap`, and last-failed JSON inspection;
 - which **loads a per-repo override** `test-harness-reference.md`
   from `<repo>/.claude/skills/run-tests/` for project specifics
   (venv name, test layout, change->test map, custom flags,
@@ -44,8 +43,7 @@ factor. Its per-repo `test-harness-reference.md` should cover:
   `'doggy'`->`'dev_skygpu'` runtime "swap" that was a symlinked
   fixture (fixed in modden `af043a7`).
 
-Until the factor lands there is no modden-local skill to hold it, so
-the modden fixture-hygiene lesson lives in the author's auto-memory
-(`feedback_check_fixture_source_first`) + this roadmap ONLY; it must
-NOT be added to the shared tractor skill (verified: a first attempt
-accidentally did, and was reverted).
+The canonical reference example records this fixture-hygiene lesson without
+adding it to Tractor's local override. Consumer migration still must replace
+Modden's whole-directory symlink with a canonical `SKILL.md` link and a
+tracked local `test-harness-reference.md`.

@@ -147,6 +147,25 @@ ensure_gitignore() {
     echo "  .gitignore: added ${#patterns[@]} pattern(s) for $skill"
 }
 
+# Add one method-specific local-link pattern without putting it in the
+# cross-method manifest, where it would also hide portable relative links.
+ensure_gitignore_pattern() {
+    local pattern="$1" target="$2" label="$3"
+    local gitignore="$target/.gitignore"
+
+    touch "$gitignore"
+    grep -qFx "$pattern" "$gitignore" 2>/dev/null && return 0
+
+    if [ -s "$gitignore" ]; then
+        local last_line
+        last_line="$(tail -n1 "$gitignore")"
+        [ -z "$last_line" ] || echo "" >> "$gitignore"
+    fi
+    echo "# ai.skillz/$label local link" >> "$gitignore"
+    echo "$pattern" >> "$gitignore"
+    echo "  .gitignore: added local-link pattern for $label"
+}
+
 # -------------------------------------------------------------------
 # init — add ai.skillz as a git submodule
 # -------------------------------------------------------------------
@@ -309,6 +328,10 @@ cmd_deploy() {
 
     # Auto-detect method when not specified
     [ -z "$method" ] && method="$(detect_method "$target")"
+    case "$method" in
+        symlink|submodule) ;;
+        *) die "invalid deployment method '$method' (expected symlink or submodule)" ;;
+    esac
 
     local skill_dst="$target/.claude/skills/$skill_name"
     local deploy_md="$skill_src/DEPLOY.md"
@@ -356,13 +379,83 @@ cmd_deploy() {
             echo "  Linked SKILL.md + references/ + scripts/, created msgs/"
             ;;
 
-        # -------------------------------------------------------
-        # template-only: no symlinks, just instructions
-        # -------------------------------------------------------
         run-tests)
-            echo "Note: $skill_name is template-only (no generic SKILL.md)."
-            echo "See $deploy_md for setup instructions."
-            return 0
+            local run_tests_src="$skill_src/SKILL.md"
+            if [ "$method" = "submodule" ]; then
+                run_tests_src="$target/.claude/ai.skillz/skills/run-tests/SKILL.md"
+            fi
+            [ -f "$run_tests_src" ] \
+                || die "run-tests source not found at $run_tests_src"
+
+            local run_tests_skill="$skill_dst/SKILL.md"
+            local harness_ref="$skill_dst/test-harness-reference.md"
+
+            # Validate local state before replacing any link. Do not inspect
+            # paths through a legacy whole-directory symlink.
+            if [ ! -L "$skill_dst" ] && [ -d "$skill_dst" ]; then
+                if [ -e "$run_tests_skill" ] \
+                    && [ ! -L "$run_tests_skill" ]; then
+                    die "local run-tests/SKILL.md exists; extract project-specific guidance into test-harness-reference.md before deploying"
+                fi
+                if [ -e "$harness_ref" ] || [ -L "$harness_ref" ]; then
+                    if [ ! -f "$harness_ref" ] || [ -L "$harness_ref" ]; then
+                        die "test-harness-reference.md must be a regular local file"
+                    fi
+                fi
+            fi
+
+            # Older deployments may link this whole directory to another
+            # repository. Unlink it before creating local override state so
+            # we never write through the link into that repository.
+            if [ -L "$skill_dst" ]; then
+                echo "  Replacing legacy whole-directory symlink"
+                rm "$skill_dst"
+            elif [ -e "$skill_dst" ] && [ ! -d "$skill_dst" ]; then
+                die "$skill_dst exists and is not a directory"
+            fi
+
+            mkdir -p "$skill_dst"
+
+            if [ "$method" = "submodule" ]; then
+                ln -sfn "../../ai.skillz/skills/run-tests/SKILL.md" \
+                    "$run_tests_skill"
+            else
+                ln -sfn "$skill_src/SKILL.md" "$run_tests_skill"
+            fi
+            echo "  Linked canonical SKILL.md"
+
+            if [ -f "$harness_ref" ]; then
+                echo "  Preserved test-harness-reference.md"
+            else
+                local harness_template="$SKILLZ_ROOT/templates/run-tests/SKILL.md.j2"
+                if [ "$method" = "submodule" ]; then
+                    harness_template="$target/.claude/ai.skillz/templates/run-tests/SKILL.md.j2"
+                fi
+                echo ""
+                echo "Next step: bootstrap and render the local harness reference:"
+                echo "  cp $harness_template \\"
+                echo "    $harness_ref"
+                echo "  Replace every {{ ... }} marker before using it."
+            fi
+
+            local local_link_pattern=".claude/skills/run-tests/SKILL.md"
+            if [ "$method" = "symlink" ]; then
+                ensure_gitignore_pattern \
+                    "$local_link_pattern" "$target" "run-tests"
+            elif grep -qFx "$local_link_pattern" \
+                "$target/.gitignore" 2>/dev/null; then
+                echo "  WARNING: remove $local_link_pattern from .gitignore"
+                echo "           before tracking the relative submodule link"
+            fi
+
+            if grep -qFx ".claude/skills/run-tests" \
+                "$target/.gitignore" 2>/dev/null \
+                || grep -qFx ".claude/skills/run-tests/" \
+                    "$target/.gitignore" 2>/dev/null; then
+                echo "  WARNING: a whole-directory ignore hides the local"
+                echo "           test-harness-reference.md; narrow it to"
+                echo "           $local_link_pattern"
+            fi
             ;;
 
         # -------------------------------------------------------

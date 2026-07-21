@@ -21,7 +21,7 @@ generalized for cross-repo deployment.
 | `pr-msg` | PR description generation |
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
-| `run-tests` | Test runner (template-based) |
+| `run-tests` | Cross-repo test workflow with local harness overrides |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
 | `plan-io` | Plan file conventions |
@@ -42,8 +42,9 @@ Two methods are supported:
   version-pinned deployment (see `scripts/`)
 
 For development in this checkout, `opencode.json` loads
-the canonical `skills/` tree directly and
-`.opencode/commands/commit-msg.md` exposes `/commit-msg`.
+the canonical `skills/` tree directly and tracked shims under
+`.opencode/commands/` expose `/commit-msg`, `/run-tests`, and
+`/taken-export`.
 
 ## License
 
