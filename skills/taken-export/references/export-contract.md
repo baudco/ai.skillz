@@ -5,6 +5,19 @@ basename. The Org file is optimized for human review and insertion. The
 manifest carries source identity, target intent, deduplication evidence,
 and stale-write guards.
 
+## Copy/Paste Handoffs
+
+A copy/paste handoff uses the same Org rendering invariants but is not an
+artifact export. It returns one fenced Org fragment in chat and creates no
+manifest, path, content hash, or apply receipt. The fragment contains only
+children of the resolved target at the correct headline depth.
+
+Copy/paste is the default mode. When the corpus and target resolve uniquely,
+the exporter asks whether to auto-update `current.org` with that exact
+fragment. An affirmative answer authorizes Apply only for the named corpus,
+target, and unchanged fragment. A copy/paste answer or later human insertion
+is not Apply mode: the agent neither edits the corpus nor infers acceptance.
+
 ## Paths
 
 Default worktree-local location:
@@ -113,8 +126,8 @@ hashes, worker state, or forge response payloads.
 ## Field Rules
 
 - `schema` is exactly `taken-export/v1`.
-- `mode` is exactly `export`. Preview mode writes no artifact. Apply mode
-  consumes an immutable export and does not rewrite it.
+- `mode` is exactly `export`. Copy/paste mode writes no artifact. Apply
+  mode consumes an immutable export and does not rewrite it.
 - `source.head` uses the full object ID when available.
 - `source.dirty` records observation only; exporters never clean source
   state.

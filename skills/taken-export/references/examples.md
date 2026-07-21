@@ -1,15 +1,15 @@
 # Taken Export Examples
 
-## Manual Preview
+## Copy/Paste Handoff
 
 Request:
 
 ```text
-Propose Taken tasks for the deferred work in this plan under
-tractor/subinterpreters.
+Render copy/paste-ready Taken tasks for the deferred work in this plan
+under tractor/subinterpreters.
 ```
 
-Response shape:
+Response:
 
 ```org
 *** TODO subinterpreter follow-ups
@@ -23,7 +23,22 @@ Response shape:
   https://github.com/example/msgspec/issues/123
 ```
 
-The preview does not write files or touch the corpus.
+The response contains only the fenced Org fragment. It does not write an
+artifact, manifest, or target corpus.
+
+When the corpus and target resolve uniquely, follow the block with a
+structured question equivalent to:
+
+```text
+Auto-update /home/goodboy/repos/lns/taken/current.org under
+tractor/subinterpreters with this exact fragment?
+
+Copy/paste only (recommended)
+Auto-update current.org
+```
+
+Selecting auto-update authorizes only that fragment and destination. The
+copy/paste choice ends the handoff without modifying files.
 
 ## Forge Follow-Ups With Deduplication
 
