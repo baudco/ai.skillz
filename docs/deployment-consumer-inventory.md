@@ -4,6 +4,11 @@ This is a read-only snapshot of known `ai.skillz` consumers observed on
 2026-07-23. No deployment, migration, configuration edit, staging, or
 other mutation was performed in any consumer repository.
 
+The observations below predate the integrated `run-tests` hybrid skill and
+OpenCode `run-tests` / `taken-export` command manifest entries. Statements
+that those assets were template-only or unsupported describe the audited
+consumer state at that time, not the current deployment manifest.
+
 The audit inspected each repository's current worktree and branch, Git
 status, `.ai/ai.skillz` and legacy `.claude/ai.skillz` anchors, provider
 skill and command trees, standard OpenCode config paths, absolute links,

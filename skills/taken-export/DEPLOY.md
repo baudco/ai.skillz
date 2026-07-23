@@ -6,22 +6,32 @@ runtime state inside its skill directory.
 ## Deployment
 
 ```bash
-# Local: .ai/ai.skillz is an ignored link to a developer checkout.
-bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
-# Portable: .ai/ai.skillz is a version-pinned submodule.
-bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
-
+# Local: provider links point directly to this checkout and stay ignored.
 bash /path/to/ai.skillz/scripts/deploy.sh taken-export <repo> \
-  --provider <claude|opencode|all>
+  --provider <claude|opencode|all> --method symlink
+
+# Portable: initialize a version-pinned anchor and use relative links.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
+bash /path/to/ai.skillz/scripts/deploy.sh taken-export <repo> \
+  --provider <claude|opencode|all> --method submodule
 ```
 
 Provider destinations are `.claude/skills/taken-export` and
-`.opencode/skills/taken-export`. Both are relative whole-directory links
-through the provider-neutral `.ai/ai.skillz` anchor.
+`.opencode/skills/taken-export`. Local mode creates ignored absolute links;
+portable mode creates trackable relative links through `.ai/ai.skillz`.
 
-Track provider links. In submodule mode, also track `.gitmodules` and
-the anchor gitlink. In local mode, the absolute anchor stays ignored.
-Nothing is staged unless `--stage` is explicitly supplied.
+OpenCode also needs its command shim:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh command taken-export <repo> \
+  --provider opencode --method symlink
+# Use --method submodule after portable initialization.
+```
+
+The canonical shim is tracked at
+`providers/opencode/commands/taken-export.md`. Local provider links stay
+ignored. In submodule mode, track the relative links, `.gitmodules`, and the
+anchor gitlink. Nothing is staged unless `--stage` is explicitly supplied.
 
 Quit and restart OpenCode after deploying or updating the skill. It
 uses default `.opencode/skills/` discovery; deployment does not mutate
@@ -59,5 +69,6 @@ The default artifact location is worktree-local:
 .ai/taken/exports/
 ```
 
-Decide per repository whether exports are ephemeral, ignored, or durable.
-Deployment does not add ignore rules and the skill does not stage exports.
+Deployment ignores this directory by default. Remove that pattern only when
+exports are intentionally durable repository artifacts. The skill itself
+does not stage exports or change ignore policy during an export.

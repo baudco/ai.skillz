@@ -17,13 +17,12 @@ bash /path/to/ai.skillz/scripts/deploy.sh py-codestyle <repo> \
 ```
 
 The provider destinations are `.claude/skills/py-codestyle` and
-`.opencode/skills/py-codestyle`. Both are relative whole-directory links
-to `.ai/ai.skillz/skills/py-codestyle`.
+`.opencode/skills/py-codestyle`. Local mode uses ignored absolute links;
+submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
-Track the provider links. With `--method submodule`, also track
-`.gitmodules` and the `.ai/ai.skillz` gitlink. With `--method symlink`,
-the absolute anchor is ignored. Nothing is staged unless `--stage` is
-explicitly supplied.
+Track provider links, `.gitmodules`, and the `.ai/ai.skillz` gitlink only with
+`--method submodule`. Local provider links remain ignored. Nothing is staged
+unless `--stage` is explicitly supplied.
 
 Quit and restart OpenCode after deployment or update. Its default
 `.opencode/skills/` discovery requires no `opencode.json` or

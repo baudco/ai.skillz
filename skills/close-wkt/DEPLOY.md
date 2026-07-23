@@ -13,13 +13,13 @@ bash /path/to/ai.skillz/scripts/deploy.sh close-wkt <repo> \
   --provider <claude|opencode|all>
 ```
 
-The local method creates an ignored `.ai/ai.skillz` anchor symlink. The
-submodule method creates a tracked, version-pinned anchor. Relative
-provider links are created at `.claude/skills/close-wkt` and
-`.opencode/skills/close-wkt`.
+Provider links are created at `.claude/skills/close-wkt` and
+`.opencode/skills/close-wkt`. Local mode uses ignored absolute links;
+submodule mode uses trackable relative links through a version-pinned
+`.ai/ai.skillz` anchor.
 
-Track provider links and, in submodule mode, `.gitmodules` plus the
-anchor gitlink. Without `--stage`, deployment does not stage files. It
+Track provider links, `.gitmodules`, and the anchor gitlink only in submodule
+mode. Without `--stage`, deployment does not stage files. It
 does not alter existing worktree state. Quit and restart OpenCode after
 deployment or update;
 default discovery requires no `opencode.json` or `opencode.jsonc`
