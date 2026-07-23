@@ -14,6 +14,7 @@ Session.vim
 .claude/skills/pr-msg/pr_msg_LATEST.md
 skills/pr-msg/msgs/
 skills/pr-msg/pr_msg_LATEST.md
+.ai/taken/exports/
 
 # open-wkt worktrees + convenience symlink
 .claude/wkts/
