@@ -323,8 +323,17 @@ preflight_gitignore() {
             "$target"/*) ;;
             *) die "refusing .gitignore symlink outside repository: $resolved" ;;
         esac
+        die "refusing symlinked .gitignore because Git does not follow it: $target/.gitignore"
     fi
     validate_ignore_markers "$target/.gitignore"
+}
+
+preflight_gitmodules() {
+    local target="$1"
+    [ ! -L "$target/.gitmodules" ] \
+        || die "refusing symlinked .gitmodules: $target/.gitmodules"
+    [ ! -e "$target/.gitmodules" ] || [ -f "$target/.gitmodules" ] \
+        || die ".gitmodules is not a regular file: $target/.gitmodules"
 }
 
 preflight_anchor_parent() {
@@ -352,7 +361,7 @@ preflight_directory_chain() {
                 "$target"/*) ;;
                 *) die "refusing provider parent symlink outside repository: $current -> $resolved" ;;
             esac
-            [ -d "$current" ] || die "provider destination parent is not a directory: $current"
+            die "refusing symlinked provider parent: $current -> $resolved"
         elif [ -e "$current" ] && [ ! -d "$current" ]; then
             die "provider destination parent is not a directory: $current"
         fi
@@ -416,11 +425,10 @@ set_ignore_block() {
     elif [ ! -e "$gitignore" ] && [ ! -s "$temp" ]; then
         rm -f "$temp"
     else
-        : > "$gitignore"
-        while IFS= read -r line || [ -n "$line" ]; do
-            printf '%s\n' "$line" >> "$gitignore"
-        done < "$temp"
-        rm -f "$temp"
+        if [ -e "$gitignore" ]; then
+            chmod --reference="$gitignore" "$temp"
+        fi
+        mv -f "$temp" "$gitignore"
         record_ignore_change "$id"
         [ "${IGNORE_QUIET:-no}" = yes ] \
             || printf '  Updated .gitignore block: %s\n' "$id"
@@ -429,6 +437,13 @@ set_ignore_block() {
 
 ensure_anchor_ignore() {
     set_ignore_block "$1" anchor:symlink "/$ANCHOR_REL"
+    require_effective_ignore "$1" "$ANCHOR_REL"
+}
+
+require_effective_ignore() {
+    local target="$1" relative="$2"
+    git -C "$target" check-ignore -q --no-index -- "$relative" \
+        || die "managed local path is not effectively ignored: $relative"
 }
 
 ensure_runtime_ignores() {
@@ -448,8 +463,34 @@ ensure_runtime_ignores() {
         [ -n "$line" ] || continue
         patterns+=("$line")
     done < "$PATTERNS_CONF"
-    [ ${#patterns[@]} -eq 0 ] \
-        || set_ignore_block "$target" "runtime:$skill" "${patterns[@]}"
+    if [ ${#patterns[@]} -gt 0 ]; then
+        set_ignore_block "$target" "runtime:$skill" "${patterns[@]}"
+        local pattern
+        for pattern in "${patterns[@]}"; do
+            require_effective_ignore "$target" "${pattern#/}"
+        done
+    fi
+}
+
+preflight_runtime_ignores() {
+    local skill="$1" target="$2" section="" line pattern
+    local patterns=()
+    [ -f "$PATTERNS_CONF" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [[ "$line" == \#* ]] && continue
+        if [[ "$line" =~ ^\[([^]]+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+            continue
+        fi
+        [ "$section" = "$skill" ] && [ -n "$line" ] || continue
+        patterns+=("$line")
+    done < "$PATTERNS_CONF"
+    for pattern in "${patterns[@]}"; do
+        require_planned_ignore "$target" "runtime:$skill" \
+            "${pattern#/}" "${patterns[@]}"
+    done
 }
 
 direct_ignore_paths() {
@@ -468,7 +509,7 @@ direct_ignore_paths() {
 }
 
 inspect_anchor() {
-    local target="$1" anchor="$1/$ANCHOR_REL"
+    local target="$1" anchor="$1/$ANCHOR_REL" entry
     ANCHOR_MODE=missing
     ANCHOR_HEALTH=missing
     ANCHOR_SOURCE=""
@@ -480,15 +521,22 @@ inspect_anchor() {
         else
             ANCHOR_HEALTH=broken
         fi
-    elif [ -e "$anchor" ]; then
-        if [ -f "$anchor/.git" ] \
-            && git -C "$target" config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null \
-                | while read -r _ path; do [ "$path" = "$ANCHOR_REL" ] && exit 0; done
-        then
+    else
+        entry="$(git -C "$target" ls-files -s -- "$ANCHOR_REL")"
+        if get_submodule_registration "$target" "$ANCHOR_REL"; then
             ANCHOR_MODE=submodule
-            ANCHOR_HEALTH=healthy
-            ANCHOR_SOURCE="$anchor"
-        else
+            if [ -f "$anchor/.git" ] \
+                && git -C "$anchor" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                ANCHOR_HEALTH=healthy
+                ANCHOR_SOURCE="$anchor"
+            elif [[ "$entry" = 160000\ * ]]; then
+                ANCHOR_HEALTH=uninitialized
+            else
+                ANCHOR_MODE=invalid
+                ANCHOR_HEALTH=invalid
+                ANCHOR_SOURCE="$anchor"
+            fi
+        elif [ -e "$anchor" ]; then
             ANCHOR_MODE=invalid
             ANCHOR_HEALTH=invalid
             ANCHOR_SOURCE="$anchor"
@@ -628,8 +676,13 @@ select_deployment_source() {
         DEPLOY_METHOD=symlink
         SOURCE_ROOT="$SKILLZ_ROOT"
     elif [ "$method" = symlink ]; then
-        [ "$ANCHOR_HEALTH" != broken ] && [ "$ANCHOR_HEALTH" != invalid ] \
-            || die "refusing deployment with $ANCHOR_HEALTH anchor"
+        if [ "$ANCHOR_HEALTH" = healthy ]; then
+            [ "$ANCHOR_MODE" = symlink ] \
+                || die "anchor method is $ANCHOR_MODE, not symlink"
+        else
+            [ "$ANCHOR_HEALTH" = missing ] \
+                || die "refusing deployment with $ANCHOR_HEALTH anchor"
+        fi
         DEPLOY_DIRECT=yes
         DEPLOY_METHOD=symlink
         if [ "$ANCHOR_MODE" = symlink ] && [ "$ANCHOR_HEALTH" = healthy ]; then
@@ -716,6 +769,43 @@ require_migration_path_trackable() {
         || die "portable provider destination is ignored outside its managed block; narrow the ignore rule before migration: $relative"
 }
 
+require_planned_ignore() {
+    local target="$1" id="$2" relative="$3"
+    shift 3
+    local patterns=("$@")
+    local temp_dir git_dir parent current="" component
+    local old_record="${RECORD_IGNORE_CHANGES:-yes}"
+    local old_quiet="${IGNORE_QUIET:-no}"
+    temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/ai-skillz-ignore-check.XXXXXX")"
+    if [ -f "$target/.gitignore" ]; then
+        cp "$target/.gitignore" "$temp_dir/.gitignore"
+    else
+        : > "$temp_dir/.gitignore"
+    fi
+    parent="$(dirname "$relative")"
+    IFS='/' read -ra IGNORE_PARENT_COMPONENTS <<< "$parent"
+    for component in "${IGNORE_PARENT_COMPONENTS[@]}"; do
+        [ "$component" != . ] || continue
+        current="${current:+$current/}$component"
+        mkdir -p "$temp_dir/$current"
+        if [ -f "$target/$current/.gitignore" ]; then
+            cp "$target/$current/.gitignore" "$temp_dir/$current/.gitignore"
+        fi
+    done
+    RECORD_IGNORE_CHANGES=no
+    IGNORE_QUIET=yes
+    set_ignore_block "$temp_dir" "$id" "${patterns[@]}"
+    RECORD_IGNORE_CHANGES="$old_record"
+    IGNORE_QUIET="$old_quiet"
+    git_dir="$(git -C "$target" rev-parse --absolute-git-dir)"
+    if ! git --git-dir="$git_dir" --work-tree="$temp_dir" \
+        check-ignore -q --no-index -- "$relative"; then
+        rm -rf "$temp_dir"
+        die "managed local path would not be effectively ignored: $relative"
+    fi
+    rm -rf "$temp_dir"
+}
+
 recognized_legacy_run_tests_link() {
     recognized_source_root "$1" run-tests "" \
         && [ -f "$RECOGNIZED_ROOT/deploy-manifest.conf" ] \
@@ -730,6 +820,15 @@ preflight_skill_provider() {
     preflight_directory_chain "$target" "$PROVIDER_ROOT/skills"
     source_root="$SOURCE_ROOT/skills/$skill"
     destination="$target/$PROVIDER_ROOT/skills/$skill"
+    preflight_runtime_ignores "$skill" "$target"
+    if [ "$DEPLOY_DIRECT" = yes ]; then
+        direct_ignore_paths "$provider" "$skill" "$SKILL_SHAPE" "$SKILL_ASSETS"
+        local pattern
+        for pattern in "${DIRECT_PATTERNS[@]}"; do
+            require_planned_ignore "$target" "direct:symlink:$provider:$skill" \
+                "${pattern#/}" "${DIRECT_PATTERNS[@]}"
+        done
+    fi
     [ "$SKILL_SHAPE" != template ] || return 0
     [ -d "$source_root" ] || die "manifest skill source missing: $source_root"
     if [ "$SKILL_SHAPE" = generic ]; then
@@ -848,6 +947,10 @@ deploy_skill_provider() {
         direct_ignore_paths "$provider" "$skill" "$SKILL_SHAPE" "$SKILL_ASSETS"
         set_ignore_block "$target" "direct:symlink:$provider:$skill" \
             "${DIRECT_PATTERNS[@]}"
+        local pattern
+        for pattern in "${DIRECT_PATTERNS[@]}"; do
+            require_effective_ignore "$target" "${pattern#/}"
+        done
     else
         set_ignore_block "$target" "direct:symlink:$provider:$skill"
     fi
@@ -973,6 +1076,38 @@ add_submodule_without_staging() {
     rm -f "$temp_index"
 }
 
+rollback_new_submodule() {
+    local target="$1" backup="$2" had_gitmodules="$3" name="" modules_path
+    if get_submodule_registration "$target" "$ANCHOR_REL"; then
+        name="$SUBMODULE_NAME"
+        git -C "$target" submodule deinit -f -- "$ANCHOR_REL" >/dev/null 2>&1 \
+            || true
+    fi
+    rm -rf "$target/$ANCHOR_REL"
+    rmdir "$target/.ai" >/dev/null 2>&1 || true
+    if [ -n "$name" ]; then
+        modules_path="$(git -C "$target" rev-parse --git-path "modules/$name")"
+        case "$modules_path" in /*) ;; *) modules_path="$target/$modules_path" ;; esac
+        rm -rf "$modules_path"
+        git -C "$target" config --remove-section "submodule.$name" \
+            >/dev/null 2>&1 || true
+    fi
+    if [ "$had_gitmodules" = yes ]; then
+        cp "$backup" "$target/.gitmodules"
+    else
+        rm -f "$target/.gitmodules"
+    fi
+}
+
+rollback_initialized_submodule() {
+    local target="$1" modules_path="$2" modules_existed="$3"
+    git -C "$target" submodule deinit -f -- "$ANCHOR_REL" >/dev/null 2>&1 \
+        || true
+    if [ "$modules_existed" = no ] && [ -n "$modules_path" ]; then
+        rm -rf "$modules_path"
+    fi
+}
+
 stage_submodule_registration() {
     local target="$1" path="$2" entry mode temp_dir blob
     get_submodule_registration "$target" "$path" \
@@ -998,7 +1133,8 @@ stage_submodule_registration() {
 
 cmd_init() {
     local target_arg="" method=submodule url="$DEFAULT_URL" ref="" stage=no
-    local url_set=no ref_set=no
+    local url_set=no ref_set=no initialized_existing=no
+    local module_gitdir="" module_gitdir_existed=no
     while [ $# -gt 0 ]; do
         case "$1" in
             --method) need_value "$@"; method="$2"; shift 2 ;;
@@ -1019,8 +1155,35 @@ cmd_init() {
     fi
     canonical_repo "$target_arg"
     preflight_gitignore "$TARGET"
+    preflight_gitmodules "$TARGET"
     preflight_anchor_parent "$TARGET"
+    if [ "$method" = symlink ]; then
+        require_planned_ignore "$TARGET" anchor:symlink "$ANCHOR_REL" \
+            "/$ANCHOR_REL"
+    fi
     inspect_anchor "$TARGET"
+    if [ "$ANCHOR_HEALTH" = uninitialized ]; then
+        [ "$method" = submodule ] \
+            || die "existing anchor uses submodule, not $method"
+        local registered_url="$SUBMODULE_URL"
+        if [ "$url_set" = yes ] && [ "$registered_url" != "$url" ]; then
+            die "existing submodule URL is '$registered_url', not requested '$url'"
+        fi
+        module_gitdir="$(git -C "$TARGET" rev-parse \
+            --git-path "modules/$SUBMODULE_NAME")"
+        case "$module_gitdir" in /*) ;; *) module_gitdir="$TARGET/$module_gitdir" ;; esac
+        [ ! -e "$module_gitdir" ] || module_gitdir_existed=yes
+        if ! git -c protocol.file.allow=always -C "$TARGET" \
+            submodule update --init -- "$ANCHOR_REL"; then
+            rollback_initialized_submodule "$TARGET" "$module_gitdir" \
+                "$module_gitdir_existed"
+            die "failed to initialize submodule at $ANCHOR_REL"
+        fi
+        initialized_existing=yes
+        inspect_anchor "$TARGET"
+        [ "$ANCHOR_HEALTH" = healthy ] \
+            || die "initialized submodule is not healthy: $ANCHOR_REL"
+    fi
     if [ "$ANCHOR_HEALTH" = healthy ]; then
         [ "$ANCHOR_MODE" = "$method" ] \
             || die "existing anchor uses $ANCHOR_MODE, not $method"
@@ -1041,7 +1204,13 @@ cmd_init() {
             if [ "$ref_set" = yes ]; then
                 [ -z "$(git -C "$TARGET/$ANCHOR_REL" status --porcelain)" ] \
                     || die "refusing to checkout --ref in dirty submodule"
-                git -C "$TARGET/$ANCHOR_REL" checkout "$ref"
+                if ! git -C "$TARGET/$ANCHOR_REL" checkout "$ref"; then
+                    if [ "$initialized_existing" = yes ]; then
+                        rollback_initialized_submodule "$TARGET" "$module_gitdir" \
+                            "$module_gitdir_existed"
+                    fi
+                    die "submodule ref not found: $ref"
+                fi
             fi
             set_ignore_block "$TARGET" anchor:symlink
         fi
@@ -1054,12 +1223,26 @@ cmd_init() {
             ln -s "$SKILLZ_ROOT" "$TARGET/$ANCHOR_REL"
             ensure_anchor_ignore "$TARGET"
         else
-            set_ignore_block "$TARGET" anchor:symlink
-            add_submodule_without_staging "$TARGET" "$url" \
-                || die "failed to add submodule at $ANCHOR_REL"
-            if [ "$ref_set" = yes ]; then
-                git -C "$TARGET/$ANCHOR_REL" checkout "$ref"
+            local gitmodules_backup had_gitmodules=no
+            gitmodules_backup="$(mktemp "${TMPDIR:-/tmp}/ai-skillz-gitmodules.XXXXXX")"
+            if [ -f "$TARGET/.gitmodules" ]; then
+                cp "$TARGET/.gitmodules" "$gitmodules_backup"
+                had_gitmodules=yes
             fi
+            if ! add_submodule_without_staging "$TARGET" "$url"; then
+                rollback_new_submodule "$TARGET" "$gitmodules_backup" "$had_gitmodules"
+                rm -f "$gitmodules_backup"
+                die "failed to add submodule at $ANCHOR_REL"
+            fi
+            if [ "$ref_set" = yes ]; then
+                if ! git -C "$TARGET/$ANCHOR_REL" checkout "$ref"; then
+                    rollback_new_submodule "$TARGET" "$gitmodules_backup" "$had_gitmodules"
+                    rm -f "$gitmodules_backup"
+                    die "submodule ref not found: $ref"
+                fi
+            fi
+            rm -f "$gitmodules_backup"
+            set_ignore_block "$TARGET" anchor:symlink
         fi
         printf 'Created %s anchor at %s\n' "$method" "$TARGET/$ANCHOR_REL"
     fi
@@ -1228,6 +1411,8 @@ deploy_command_provider() {
         [ "$global" = yes ] \
             || set_ignore_block "$target" "direct:symlink:$provider:command:$name" \
                 "/$PROVIDER_ROOT/commands/$name.md"
+        [ "$global" = yes ] \
+            || require_effective_ignore "$target" "$PROVIDER_ROOT/commands/$name.md"
     else
         if [ -f "$destination" ] && [ ! -L "$destination" ]; then
             is_known_command_copy "$destination" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
@@ -1333,6 +1518,7 @@ deploy_command() {
             skill_deployment_healthy "$TARGET" "$job_provider" "$COMMAND_SKILL" \
                 || die "command '$job_name' requires healthy $job_provider skill '$COMMAND_SKILL'"
         fi
+        [ "$global" = yes ] || preflight_runtime_ignores "$job_name" "$TARGET"
         provider_root "$job_provider"
         if [ "$global" = yes ]; then
             destination="$HOME/.claude/commands/$job_name.md"
@@ -1340,6 +1526,10 @@ deploy_command() {
             preflight_directory_chain "$TARGET" "$PROVIDER_ROOT/commands"
             destination="$TARGET/$PROVIDER_ROOT/commands/$job_name.md"
             if [ "$direct" = yes ]; then
+                require_planned_ignore "$TARGET" \
+                    "direct:symlink:$job_provider:command:$job_name" \
+                    "$PROVIDER_ROOT/commands/$job_name.md" \
+                    "/$PROVIDER_ROOT/commands/$job_name.md"
                 require_local_path_untracked "$TARGET" \
                     "$PROVIDER_ROOT/commands/$job_name.md"
             else
@@ -1395,8 +1585,7 @@ link_description() {
         fi
         legacy_root="${resolved%%/skills/*}"
         if [ -n "$resolved" ] \
-            && { [ -f "$legacy_root/deploy-manifest.conf" ] \
-                || [ -e "$legacy_root/.git" ]; }; then
+            && [ -f "$legacy_root/deploy-manifest.conf" ]; then
             LINK_DESCRIPTION="legacy (relative) -> $value"
         else
             LINK_DESCRIPTION="unexpected relative -> $value"
@@ -1443,6 +1632,61 @@ hybrid_runtime_state_only() {
     return 0
 }
 
+run_tests_harness_only() {
+    local path="$1" entry found=no
+    for entry in "$path"/* "$path"/.[!.]* "$path"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        [ "$(basename "$entry")" = test-harness-reference.md ] \
+            && [ -f "$entry" ] && [ ! -L "$entry" ] \
+            || return 1
+        found=yes
+    done
+    [ "$found" = yes ]
+}
+
+record_status_direct_root() {
+    local candidate="$1"
+    if [ -z "${STATUS_DIRECT_ROOT:-}" ]; then
+        STATUS_DIRECT_ROOT="$candidate"
+        return 0
+    fi
+    [ "$STATUS_DIRECT_ROOT" = "$candidate" ]
+}
+
+runtime_owner_enabled() {
+    local target="$1" name="$2"
+    [ -e "$target/.claude/skills/$name" ] \
+        || [ -L "$target/.claude/skills/$name" ] \
+        || [ -e "$target/.opencode/skills/$name" ] \
+        || [ -L "$target/.opencode/skills/$name" ] \
+        || [ -e "$target/.claude/commands/$name.md" ] \
+        || [ -L "$target/.claude/commands/$name.md" ] \
+        || [ -e "$target/.opencode/commands/$name.md" ] \
+        || [ -L "$target/.opencode/commands/$name.md" ]
+}
+
+status_runtime_ignores() {
+    local target="$1" section="" line relative
+    [ -f "$PATTERNS_CONF" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [[ "$line" == \#* ]] && continue
+        if [[ "$line" =~ ^\[([^]]+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+            continue
+        fi
+        [ -n "$section" ] && [ -n "$line" ] \
+            && runtime_owner_enabled "$target" "$section" || continue
+        relative="${line#/}"
+        if ! git -C "$target" check-ignore -q --no-index -- "$relative"; then
+            printf 'Runtime %-24s %s [UNHEALTHY:not ignored]\n' \
+                "$section" "$relative"
+            STATUS_UNHEALTHY=1
+        fi
+    done < "$PATTERNS_CONF"
+}
+
 status_provider() {
     local target="$1" provider="$2"
     provider_root "$provider"
@@ -1487,13 +1731,18 @@ status_provider() {
                 printf ' [UNHEALTHY:not sourced from anchor]'
                 STATUS_UNHEALTHY=1
             fi
+            if [ "$LINK_HEALTH" = healthy ]; then
+                if ! recognized_source_root "$path" "$name" ""; then
+                    printf ' [UNHEALTHY:unrecognized source]'
+                    STATUS_UNHEALTHY=1
+                elif ! record_status_direct_root "$RECOGNIZED_ROOT"; then
+                    printf ' [UNHEALTHY:mixed source roots]'
+                    STATUS_UNHEALTHY=1
+                fi
+            fi
             if [[ "$(readlink "$path" 2>/dev/null || true)" = /* ]]; then
                 if [ "$TRACKING" != ignored ]; then
                     printf ' [UNHEALTHY:absolute link not ignored]'
-                    STATUS_UNHEALTHY=1
-                fi
-                if ! recognized_source_root "$path" "$name" ""; then
-                    printf ' [UNHEALTHY:unrecognized source]'
                     STATUS_UNHEALTHY=1
                 fi
             fi
@@ -1513,7 +1762,9 @@ status_provider() {
                 fi
             done
             if [ "$canonical_asset_present" = no ] && [ "$provider" = claude ] \
-                && hybrid_runtime_state_only "$path" "$name"; then
+                && { hybrid_runtime_state_only "$path" "$name" \
+                    || { [ "$name" = run-tests ] \
+                        && run_tests_harness_only "$path"; }; }; then
                 printf '  skill %-24s runtime-state-only (not deployed) [healthy]\n' "$name"
                 continue
             fi
@@ -1535,14 +1786,18 @@ status_provider() {
                     printf ' [UNHEALTHY:not sourced from anchor]'
                     STATUS_UNHEALTHY=1
                 fi
+                if [ "$LINK_HEALTH" = healthy ]; then
+                    if ! recognized_source_root "$path/$asset" "$name" "$asset"; then
+                        printf ' [UNHEALTHY:unrecognized source]'
+                        STATUS_UNHEALTHY=1
+                    elif ! record_status_direct_root "$RECOGNIZED_ROOT"; then
+                        printf ' [UNHEALTHY:mixed source roots]'
+                        STATUS_UNHEALTHY=1
+                    fi
+                fi
                 if [[ "$(readlink "$path/$asset" 2>/dev/null || true)" = /* ]] \
                     && [ "$TRACKING" != ignored ]; then
                     printf ' [UNHEALTHY:absolute link not ignored]'
-                    STATUS_UNHEALTHY=1
-                fi
-                if [[ "$(readlink "$path/$asset" 2>/dev/null || true)" = /* ]] \
-                    && ! recognized_source_root "$path/$asset" "$name" "$asset"; then
-                    printf ' [UNHEALTHY:unrecognized source]'
                     STATUS_UNHEALTHY=1
                 fi
                 printf '\n'
@@ -1580,14 +1835,19 @@ status_provider() {
                 printf ' [UNHEALTHY:not sourced from anchor]'
                 STATUS_UNHEALTHY=1
             fi
+            if [ "$LINK_HEALTH" = healthy ]; then
+                if ! recognized_command_root "$command_path" "$provider" "$name" \
+                    "$source"; then
+                    printf ' [UNHEALTHY:unrecognized source]'
+                    STATUS_UNHEALTHY=1
+                elif ! record_status_direct_root "$RECOGNIZED_ROOT"; then
+                    printf ' [UNHEALTHY:mixed source roots]'
+                    STATUS_UNHEALTHY=1
+                fi
+            fi
             if [[ "$(readlink "$command_path" 2>/dev/null || true)" = /* ]] \
                 && [ "$TRACKING" != ignored ]; then
                 printf ' [UNHEALTHY:absolute link not ignored]'
-                STATUS_UNHEALTHY=1
-            fi
-            if [[ "$(readlink "$command_path" 2>/dev/null || true)" = /* ]] \
-                && ! recognized_command_root "$command_path" "$source"; then
-                printf ' [UNHEALTHY:unrecognized source]'
                 STATUS_UNHEALTHY=1
             fi
             printf '\n'
@@ -1742,6 +2002,7 @@ cmd_status() {
     [ -n "$target_arg" ] || die "missing <target-repo>"
     canonical_repo "$target_arg"
     STATUS_UNHEALTHY=0
+    STATUS_DIRECT_ROOT=""
     inspect_anchor "$TARGET"
     if [ "$ANCHOR_HEALTH" = healthy ]; then
         SOURCE_ROOT="$ANCHOR_SOURCE"
@@ -1773,12 +2034,57 @@ cmd_status() {
     for selected_provider in "${PROVIDERS[@]}"; do
         status_provider "$TARGET" "$selected_provider"
     done
+    status_runtime_ignores "$TARGET"
     local config
     for config in .opencode/opencode.json .opencode/opencode.jsonc opencode.json opencode.jsonc; do
         [ -f "$TARGET/$config" ] || continue
         inspect_opencode_config "$TARGET" "$config"
     done
     [ "$STATUS_UNHEALTHY" -eq 0 ] || return 1
+}
+
+manifest_has_skill() {
+    local root="$1" wanted="$2" asset="$3"
+    local kind name shape assets rest expected_shape="" expected_assets=""
+    [ -f "$root/deploy-manifest.conf" ] || return 1
+    while IFS='|' read -r kind name shape assets rest; do
+        [ "$kind" = skill ] && [ "$name" = "$wanted" ] || continue
+        expected_shape="$shape"
+        expected_assets="$assets"
+        break
+    done < "$MANIFEST"
+    [ -n "$expected_shape" ] || return 1
+    while IFS='|' read -r kind name shape assets rest; do
+        [ "$kind" = skill ] && [ "$name" = "$wanted" ] \
+            && [ "$shape" = "$expected_shape" ] \
+            && [ "$assets" = "$expected_assets" ] || continue
+        [ -z "$asset" ] && return 0
+        case ",$assets," in *",$asset,"*) return 0 ;; esac
+    done < "$root/deploy-manifest.conf"
+    return 1
+}
+
+manifest_has_command() {
+    local root="$1" wanted_provider="$2" wanted_name="$3" wanted_source="$4"
+    local kind provider name source mode dependency rest
+    local expected_mode="" expected_dependency=""
+    [ -f "$root/deploy-manifest.conf" ] || return 1
+    while IFS='|' read -r kind provider name source mode dependency rest; do
+        [ "$kind" = command ] && [ "$provider" = "$wanted_provider" ] \
+            && [ "$name" = "$wanted_name" ] && [ "$source" = "$wanted_source" ] \
+            || continue
+        expected_mode="$mode"
+        expected_dependency="$dependency"
+        break
+    done < "$MANIFEST"
+    [ -n "$expected_mode" ] || return 1
+    while IFS='|' read -r kind provider name source mode dependency rest; do
+        [ "$kind" = command ] && [ "$provider" = "$wanted_provider" ] \
+            && [ "$name" = "$wanted_name" ] && [ "$source" = "$wanted_source" ] \
+            && [ "$mode" = "$expected_mode" ] \
+            && [ "$dependency" = "$expected_dependency" ] && return 0
+    done < "$root/deploy-manifest.conf"
+    return 1
 }
 
 recognized_source_root() {
@@ -1792,12 +2098,11 @@ recognized_source_root() {
     [ -n "$asset" ] && suffix="$suffix/$asset"
     [[ "$resolved" = *"$suffix" ]] || return 1
     RECOGNIZED_ROOT="${resolved%$suffix}"
-    [ -f "$RECOGNIZED_ROOT/deploy-manifest.conf" ] \
-        || [ -e "$RECOGNIZED_ROOT/.git" ] || return 1
+    manifest_has_skill "$RECOGNIZED_ROOT" "$skill" "$asset"
 }
 
 recognized_command_root() {
-    local link_path="$1" source="$2" resolved suffix
+    local link_path="$1" provider="$2" name="$3" source="$4" resolved suffix
     RECOGNIZED_ROOT=""
     [ -L "$link_path" ] || return 1
     resolve_existing_path "$link_path" || return 1
@@ -1806,8 +2111,7 @@ recognized_command_root() {
     suffix="/$source"
     [[ "$resolved" = *"$suffix" ]] || return 1
     RECOGNIZED_ROOT="${resolved%$suffix}"
-    [ -f "$RECOGNIZED_ROOT/deploy-manifest.conf" ] \
-        || [ -e "$RECOGNIZED_ROOT/.git" ] || return 1
+    manifest_has_command "$RECOGNIZED_ROOT" "$provider" "$name" "$source"
 }
 
 migration_root_allowed() {
@@ -1828,6 +2132,48 @@ migration_action() {
     else
         printf '%s\n' "$*"
     fi
+}
+
+reconcile_migration_ignore() {
+    local target="$1" index="$2" id
+    id="${MIGRATE_IGNORE_IDS[$index]}"
+    local i pattern provider name has_patterns=no
+    local patterns=()
+    i=0
+    while [ "$i" -lt "${#MIGRATE_IGNORE_IDS[@]}" ]; do
+        if [ "${MIGRATE_IGNORE_IDS[$i]}" = "$id" ] \
+            && [ -n "${MIGRATE_IGNORE_PATTERNS[$i]}" ]; then
+            has_patterns=yes
+            break
+        fi
+        i=$((i + 1))
+    done
+    if [ "$has_patterns" = yes ]; then
+        case "$id" in
+            direct:symlink:*:command:*)
+                provider="${id#direct:symlink:}"
+                provider="${provider%%:*}"
+                name="${id##*:command:}"
+                provider_root "$provider"
+                patterns+=("/$PROVIDER_ROOT/commands/$name.md")
+                ;;
+            direct:symlink:*:*)
+                provider="${id#direct:symlink:}"
+                provider="${provider%%:*}"
+                name="${id##*:}"
+                get_skill_record "$name" \
+                    || die "migration skill disappeared from manifest: $name"
+                direct_ignore_paths "$provider" "$name" "$SKILL_SHAPE" \
+                    "$SKILL_ASSETS"
+                patterns=("${DIRECT_PATTERNS[@]}")
+                ;;
+            *) die "unexpected migration ignore id: $id" ;;
+        esac
+    fi
+    set_ignore_block "$target" "$id" "${patterns[@]}"
+    for pattern in "${patterns[@]}"; do
+        require_effective_ignore "$target" "${pattern#/}"
+    done
 }
 
 get_submodule_registration() {
@@ -1923,6 +2269,7 @@ cmd_migrate() {
     [ -n "$target_arg" ] || die "missing <target-repo>"
     canonical_repo "$target_arg"
     preflight_gitignore "$TARGET"
+    preflight_gitmodules "$TARGET"
     preflight_anchor_parent "$TARGET"
     preflight_provider_base "$TARGET" claude
     preflight_provider_base "$TARGET" opencode
@@ -1974,7 +2321,8 @@ cmd_migrate() {
                 [ "$kind" = command ] || continue
                 provider_root "$command_provider"
                 path="$TARGET/$PROVIDER_ROOT/commands/$command_name.md"
-                if recognized_command_root "$path" "$command_source"; then
+                if recognized_command_root "$path" "$command_provider" \
+                    "$command_name" "$command_source"; then
                     inferred_root="$RECOGNIZED_ROOT"
                     break
                 fi
@@ -1997,6 +2345,10 @@ cmd_migrate() {
         || { [ "$ANCHOR_HEALTH" = healthy ] && [ "$ANCHOR_MODE" = submodule ]; }; then
         MIGRATE_DIRECT=no
     fi
+    if [ "$anchor_action" = local ]; then
+        require_planned_ignore "$TARGET" anchor:symlink "$ANCHOR_REL" \
+            "/$ANCHOR_REL"
+    fi
     MIGRATE_PATHS=()
     MIGRATE_TARGETS=()
     MIGRATE_SOURCES=()
@@ -2018,10 +2370,14 @@ cmd_migrate() {
             path="$TARGET/$PROVIDER_ROOT/skills/$skill"
             if [ "$shape" = generic ]; then
                 [ -e "$path" ] || [ -L "$path" ] || continue
+                preflight_runtime_ignores "$skill" "$TARGET"
                 [ -L "$path" ] \
                     || die "migration conflict at provider destination: $path"
                 ignore_id="direct:symlink:$provider:$skill"
                 if [ "$MIGRATE_DIRECT" = yes ]; then
+                    require_planned_ignore "$TARGET" "$ignore_id" \
+                        "$PROVIDER_ROOT/skills/$skill" \
+                        "/$PROVIDER_ROOT/skills/$skill"
                     require_local_path_untracked "$TARGET" \
                         "$PROVIDER_ROOT/skills/$skill"
                 else
@@ -2057,6 +2413,7 @@ cmd_migrate() {
                 fi
             else
                 [ -e "$path" ] || [ -L "$path" ] || continue
+                preflight_runtime_ignores "$skill" "$TARGET"
                 [ -d "$path" ] && [ ! -L "$path" ] \
                     || die "migration conflict at hybrid destination: $path"
                 IFS=',' read -ra ASSET_LIST <<< "$assets"
@@ -2071,6 +2428,9 @@ cmd_migrate() {
                 for asset in "${ASSET_LIST[@]}"; do
                     ignore_id="direct:symlink:$provider:$skill"
                     if [ "$MIGRATE_DIRECT" = yes ]; then
+                        require_planned_ignore "$TARGET" "$ignore_id" \
+                            "$PROVIDER_ROOT/skills/$skill/$asset" \
+                            "/$PROVIDER_ROOT/skills/$skill/$asset"
                         require_local_path_untracked "$TARGET" \
                             "$PROVIDER_ROOT/skills/$skill/$asset"
                     else
@@ -2118,16 +2478,27 @@ cmd_migrate() {
         provider_root "$command_provider"
         destination="$TARGET/$PROVIDER_ROOT/commands/$command_name.md"
         [ -e "$destination" ] || [ -L "$destination" ] || continue
+        preflight_runtime_ignores "$command_name" "$TARGET"
         ignore_id="direct:symlink:$command_provider:command:$command_name"
+        [ -e "$planned_source/$command_source" ] \
+            || die "migration command source missing: $planned_source/$command_source"
         if [ "$MIGRATE_DIRECT" = yes ]; then
+            require_planned_ignore "$TARGET" "$ignore_id" \
+                "$PROVIDER_ROOT/commands/$command_name.md" \
+                "/$PROVIDER_ROOT/commands/$command_name.md"
+            if git_path_tracked "$TARGET" \
+                "$PROVIDER_ROOT/commands/$command_name.md" \
+                && [ -f "$destination" ] && [ ! -L "$destination" ] \
+                && is_known_command_copy "$destination" "$planned_source" \
+                    "$command_source"; then
+                die "tracked canonical command copy must be untracked before local link migration: $PROVIDER_ROOT/commands/$command_name.md"
+            fi
             require_local_path_untracked "$TARGET" \
                 "$PROVIDER_ROOT/commands/$command_name.md"
         else
             require_migration_path_trackable "$TARGET" \
                 "$PROVIDER_ROOT/commands/$command_name.md" "$ignore_id"
         fi
-        [ -e "$planned_source/$command_source" ] \
-            || die "migration command source missing: $planned_source/$command_source"
         if [ ! -L "$destination" ]; then
             if [ -f "$destination" ] \
                 && is_known_command_copy "$destination" "$planned_source" "$command_source"; then
@@ -2161,7 +2532,8 @@ cmd_migrate() {
             fi
             die "migration conflict at command destination: $destination"
         fi
-        recognized_command_root "$destination" "$command_source" \
+        recognized_command_root "$destination" "$command_provider" \
+            "$command_name" "$command_source" \
             || die "unrecognized or broken migration command link: $destination"
         migration_root_allowed "$RECOGNIZED_ROOT" \
             || die "migration links use mixed source roots: $RECOGNIZED_ROOT, ${MIGRATE_LEGACY_ROOT:-none}, and $planned_source"
@@ -2255,12 +2627,7 @@ cmd_migrate() {
             [ -e "${MIGRATE_SOURCES[$i]}" ] \
                 || die "migration source disappeared: ${MIGRATE_SOURCES[$i]}"
             ln -sfn "${MIGRATE_TARGETS[$i]}" "${MIGRATE_PATHS[$i]}"
-            if [ -n "${MIGRATE_IGNORE_PATTERNS[$i]}" ]; then
-                set_ignore_block "$TARGET" "${MIGRATE_IGNORE_IDS[$i]}" \
-                    "${MIGRATE_IGNORE_PATTERNS[$i]}"
-            else
-                set_ignore_block "$TARGET" "${MIGRATE_IGNORE_IDS[$i]}"
-            fi
+            reconcile_migration_ignore "$TARGET" "$i"
             ensure_runtime_ignores "${MIGRATE_RUNTIME[$i]}" "$TARGET"
             record_managed_path "${MIGRATE_PATHS[$i]#$TARGET/}"
             i=$((i + 1))
@@ -2304,6 +2671,11 @@ cmd_gitignore() {
     canonical_repo "$target_arg"
     preflight_gitignore "$TARGET"
     local provider kind name shape assets rest
+    inspect_anchor "$TARGET"
+    if [ "$ANCHOR_MODE" = symlink ] && [ "$ANCHOR_HEALTH" = healthy ]; then
+        require_planned_ignore "$TARGET" anchor:symlink "$ANCHOR_REL" \
+            "/$ANCHOR_REL"
+    fi
     if [ -n "$skill" ]; then
         validate_name "$skill" skill
         if ! get_skill_record "$skill" \
@@ -2311,13 +2683,27 @@ cmd_gitignore() {
             && ! get_command_record opencode "$skill"; then
             die "skill or command '$skill' is not in the deployment manifest"
         fi
+        preflight_runtime_ignores "$skill" "$TARGET"
         ensure_runtime_ignores "$skill" "$TARGET"
     else
         while IFS='|' read -r kind name shape assets rest; do
             [ "$kind" = skill ] || continue
-            ensure_runtime_ignores "$name" "$TARGET"
+            preflight_runtime_ignores "$name" "$TARGET"
         done < "$MANIFEST"
         local command_provider command_source command_mode command_dependency seen='|'
+        while IFS='|' read -r kind command_provider name command_source command_mode \
+            command_dependency rest; do
+            [ "$kind" = command ] || continue
+            case "$seen" in *"|$name|"*) continue ;; esac
+            seen="$seen$name|"
+            preflight_runtime_ignores "$name" "$TARGET"
+        done < "$MANIFEST"
+
+        while IFS='|' read -r kind name shape assets rest; do
+            [ "$kind" = skill ] || continue
+            ensure_runtime_ignores "$name" "$TARGET"
+        done < "$MANIFEST"
+        seen='|'
         while IFS='|' read -r kind command_provider name command_source command_mode \
             command_dependency rest; do
             [ "$kind" = command ] || continue
@@ -2326,9 +2712,9 @@ cmd_gitignore() {
             ensure_runtime_ignores "$name" "$TARGET"
         done < "$MANIFEST"
     fi
-    inspect_anchor "$TARGET"
-    [ "$ANCHOR_MODE" = symlink ] && [ "$ANCHOR_HEALTH" = healthy ] \
-        && ensure_anchor_ignore "$TARGET"
+    if [ "$ANCHOR_MODE" = symlink ] && [ "$ANCHOR_HEALTH" = healthy ]; then
+        ensure_anchor_ignore "$TARGET"
+    fi
     printf 'Updated bounded ai.skillz ignore blocks in %s/.gitignore\n' "$TARGET"
 }
 

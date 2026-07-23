@@ -7,6 +7,7 @@ Session.vim
 # per-deployment skill state
 .claude/git_commit_msg_LATEST.md
 .claude/review_context.md
+.claude/review_regression.md
 .claude/skills/commit-msg/conf.toml
 .claude/skills/commit-msg/msgs/
 .claude/skills/commit-msg/SKILL.md
