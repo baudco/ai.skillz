@@ -64,10 +64,10 @@ No audited consumer currently qualifies as `migrated`.
   absolute skill-catalog deployment.
 - Hybrid local state: `.claude/skills/commit-msg/conf.toml` and `msgs/`
   are present and untracked/ignored. Migration must preserve them.
-- Status result: the provider links are recognized as local-only
-  absolute links. The command copy is tracked and content-healthy, but
-  status remains unhealthy until its OpenCode skill dependency is
-  anchor-relative and healthy.
+- Status result at audit time: the provider links were recognized as
+  local-only absolute links and the tracked command matched the then-current
+  canonical copy. The current manifest deploys that command as an ignored
+  local link, so the tracked copy must be deliberately untracked first.
 
 Recommended local-anchor migration, not yet performed:
 
@@ -77,8 +77,10 @@ REPO=/home/goodboy/repos/lns
 bash "$SKILLZ/scripts/deploy.sh" status "$REPO" --provider all
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO" --dry-run
 # After reviewing the dry run and dirty worktree:
+# This stages only the intentional removal of the old tracked command copy.
+git -C "$REPO" rm --cached -- .opencode/commands/commit-msg.md
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO"
-bash "$SKILLZ/scripts/deploy.sh" commit-msg "$REPO" --provider opencode
+bash "$SKILLZ/scripts/deploy.sh" commit-msg "$REPO" --provider all
 bash "$SKILLZ/scripts/deploy.sh" command commit-msg "$REPO" --provider opencode
 bash "$SKILLZ/scripts/validate-deployment.sh" "$REPO"
 ```
@@ -97,9 +99,9 @@ bash "$SKILLZ/scripts/validate-deployment.sh" "$REPO"
   hybrid absolute links for `commit-msg` and `pr-msg`; tracked local
   `run-tests` and `conc-anal` directories.
 - OpenCode skills: an absolute, ignored `taken-export` link.
-- Commands: no manifest command. An untracked OpenCode `taken-export`
-  command link exists, but `taken-export` is not a command in the
-  deployment manifest and must be reviewed separately.
+- Commands: no command was recognized by the manifest at audit time. The
+  untracked OpenCode `taken-export` command link now has a canonical manifest
+  entry and can be replaced after reviewing its source.
 - OpenCode config: no standard project `opencode.json` or
   `opencode.jsonc` was found.
 - Hybrid local state: tracked `commit-msg/style-guide-reference.md`;
@@ -116,13 +118,19 @@ SKILLZ=/home/goodboy/repos/ai.skillz
 REPO=/home/goodboy/repos/tractor
 bash "$SKILLZ/scripts/deploy.sh" status "$REPO" --provider all
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO" --dry-run
-# After reviewing the dry run and dirty worktree:
+# First extract the tracked run-tests SKILL.md project guidance into
+# .claude/skills/run-tests/test-harness-reference.md, then deliberately
+# remove the old tracked SKILL.md. After reviewing those changes:
+git -C "$REPO" rm -- .claude/skills/run-tests/SKILL.md
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO"
+bash "$SKILLZ/scripts/deploy.sh" run-tests "$REPO" --provider all
+bash "$SKILLZ/scripts/deploy.sh" command run-tests "$REPO" --provider opencode
 bash "$SKILLZ/scripts/validate-deployment.sh" "$REPO"
 ```
 
-Review the unsupported `.opencode/commands/taken-export.md` separately;
-the deploy script has no command operation for it.
+Review the existing `.opencode/commands/taken-export.md`, then refresh it
+through `deploy.sh command taken-export ... --provider opencode` once its
+matching skill is healthy.
 
 ## `piker`
 
@@ -156,9 +164,14 @@ bash "$SKILLZ/scripts/deploy.sh" status "$REPO" --provider all
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO" --dry-run
 # First decide whether the tracked Claude commit-msg SKILL.md remains
 # project-owned or is replaced by the canonical hybrid link.
-# After that reviewed manual decision:
+# Also decide whether the tracked OpenCode command is replaced by the
+# canonical shim; if so, remove that tracked file before deployment.
+# When canonical ownership is selected for both:
+git -C "$REPO" rm -- .claude/skills/commit-msg/SKILL.md
+git -C "$REPO" rm -- .opencode/commands/commit-msg.md
+# After those reviewed manual decisions:
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO"
-bash "$SKILLZ/scripts/deploy.sh" commit-msg "$REPO" --provider opencode
+bash "$SKILLZ/scripts/deploy.sh" commit-msg "$REPO" --provider all
 bash "$SKILLZ/scripts/deploy.sh" command commit-msg "$REPO" --provider opencode
 bash "$SKILLZ/scripts/validate-deployment.sh" "$REPO"
 ```
@@ -179,8 +192,9 @@ bash "$SKILLZ/scripts/validate-deployment.sh" "$REPO"
   generated skill rather than a modden-owned generated file.
 - OpenCode skills: absolute `commit-msg` and `taken-export` links plus a
   tracked relative link from `modden-layout-engine` to its Claude skill.
-- Commands: untracked absolute `commit-msg` and unsupported
-  `taken-export` OpenCode command links. The legacy Claude
+- Commands at audit time: untracked absolute `commit-msg` and then-unsupported
+  `taken-export` OpenCode command links. Both now have manifest operations.
+  The legacy Claude
   `.claude/commands/branch-in-term.md` link is broken and does not match
   the manifest's `branch-in-new-terminal` name.
 - OpenCode config: no standard project config was found.
@@ -188,9 +202,9 @@ bash "$SKILLZ/scripts/validate-deployment.sh" "$REPO"
   local commit configuration/messages; local `pr-msg/msgs/` and latest
   draft. These must survive any source relinking.
 - Status result: unhealthy because tracked `gish` is project-local,
-  `run-tests` is not a valid generated local template, the OpenCode
-  command copy differs from the provider asset, and legacy/unsupported
-  commands need manual disposition.
+  `run-tests` points to another consumer's skill, the OpenCode command copy
+  differs from the provider asset, and legacy commands need manual
+  disposition.
 
 Recommended inspection and post-decision commands, not yet performed:
 
@@ -199,12 +213,18 @@ SKILLZ=/home/goodboy/repos/ai.skillz
 REPO=/home/goodboy/repos/modden
 bash "$SKILLZ/scripts/deploy.sh" status "$REPO" --provider all
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO" --dry-run
-# First reconcile project-owned gish, generate a modden-local run-tests
-# skill, and decide how to handle broken/unsupported command links.
+# First reconcile project-owned gish, extract Modden test guidance into
+# test-harness-reference.md, manually unlink the Tractor-owned run-tests
+# directory link, and review legacy command links.
+test -L "$REPO/.claude/skills/run-tests"
+rm "$REPO/.claude/skills/run-tests"
 # After those reviewed manual decisions:
 bash "$SKILLZ/scripts/deploy.sh" migrate "$REPO"
 bash "$SKILLZ/scripts/deploy.sh" commit-msg "$REPO" --provider opencode
 bash "$SKILLZ/scripts/deploy.sh" command commit-msg "$REPO" --provider opencode
+bash "$SKILLZ/scripts/deploy.sh" run-tests "$REPO" --provider all
+bash "$SKILLZ/scripts/deploy.sh" command run-tests "$REPO" --provider opencode
+bash "$SKILLZ/scripts/deploy.sh" command taken-export "$REPO" --provider opencode
 bash "$SKILLZ/scripts/validate-deployment.sh" "$REPO"
 ```
 

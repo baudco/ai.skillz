@@ -13,7 +13,6 @@ metadata:
   author: goodboy
   version: "0.1"
 argument-hint: "[skill-names or skill-paths]"
-disable-model-invocation: true
 allowed-tools:
   - Read
   - Grep
@@ -51,32 +50,43 @@ process:
 Skills can live in multiple scopes:
 - Global: `~/.claude/skills/`
 - Repo-local: `<repo>/.claude/skills/`
+- OpenCode-local: `<repo>/.opencode/skills/`
+- Configured relative OpenCode `skills.paths`
 - Sibling repos: `~/repos/<other>/.claude/skills/`
 
-When the dependency graph (step 0) references a
-skill that doesn't exist in the current repo's
-`.claude/skills/`, scan for it in:
+When the dependency graph references a skill that
+isn't discoverable in the current provider, scan:
 
 1. The user's global `~/.claude/skills/`
-2. Sibling repos' `.claude/skills/` dirs
+2. The repository's `.claude/skills/` and
+   `.opencode/skills/` directories
+3. Configured `skills.paths` from project OpenCode
+   configuration; flag absolute paths as unportable
+   after recognizing their discovery role
+4. Sibling repos' `.claude/skills/` dirs
    (glob `~/repos/*/.claude/skills/`)
 
 For each missing dependency found elsewhere:
 
 - Tell the user which skill is missing and where
   it was found.
-- Prompt whether to symlink it into the current
-  repo's `.claude/skills/`:
-  ```
-  ln -s <source-path> \
-    .claude/skills/<skill-name>
-  ```
+- If it is canonical `ai.skillz` content, propose
+  `scripts/deploy.sh <skill> <repo> --provider
+  <claude|opencode|all>` rather than an unmanaged
+  provider link.
 - If the skill is repo-specific (e.g. contains
   project-specific test mappings), note that the
   symlink brings in another project's config and
   the user may want to fork instead.
-- If the skill is generic / global, a symlink is
-  the right default.
+- Do not expose a sibling repository's project-owned
+  skill as if it were a canonical dependency.
+
+Never link another consumer repository's complete
+`run-tests` skill. Deploy the canonical `ai.skillz`
+base and create a repository-owned
+`test-harness-reference.md` instead. Another
+repository's test commands, environments, mappings,
+and known outcomes are not portable dependencies.
 
 Also flag the reverse: skills in the current
 repo that reference other skills by name but
@@ -212,8 +222,9 @@ waiting for the user to invoke
 After completing a skill change, immediately:
 
 1. Glob for all `SKILL.md` files in
-   `~/.claude/skills/` and the repo's
-   `.claude/skills/`.
+   `~/.claude/skills/`, the repo's `.claude/skills/`
+   and `.opencode/skills/`, and configured OpenCode
+   `skills.paths`.
 2. Identify which skills reference or are
    referenced by the one that just changed.
 3. Run steps 0-6 on the affected subset.

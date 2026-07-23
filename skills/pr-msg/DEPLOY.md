@@ -13,21 +13,21 @@ bash /path/to/ai.skillz/scripts/deploy.sh pr-msg <repo> \
   --provider <claude|opencode|all>
 ```
 
-Both methods use the provider-neutral `.ai/ai.skillz` source anchor.
-Deployment creates `.claude/skills/pr-msg/` and/or
-`.opencode/skills/pr-msg/` as local hybrid directories. `SKILL.md`,
-`references/`, and `scripts/` are relative links through the anchor;
-the directories themselves are not replaced.
+Both methods select source content through `.ai/ai.skillz`. Deployment
+creates `.claude/skills/pr-msg/` and/or `.opencode/skills/pr-msg/` as local
+hybrid directories. Local mode uses ignored absolute links for `SKILL.md`,
+`references/`, and `scripts/`; submodule mode uses trackable relative links
+through the anchor. The directories themselves are not replaced.
 
 The existing persisted runtime contract remains under
 `.claude/skills/pr-msg/`, including `msgs/` and `pr_msg_LATEST.md`.
 These generated files stay local and ignored. Migration preserves them
 byte-for-byte rather than moving them into `.ai` or `.opencode`.
 
-Track the canonical provider links. Submodule mode also tracks
-`.gitmodules` and the `.ai/ai.skillz` gitlink; local mode ignores the
-absolute anchor. Nothing is staged unless `--stage` is explicitly
-supplied.
+Track the canonical provider links only in submodule mode, along with
+`.gitmodules` and the `.ai/ai.skillz` gitlink. Local mode ignores its
+absolute provider links and anchor. Nothing is staged unless `--stage` is
+explicitly supplied.
 
 Quit and restart OpenCode after deployment or update. Default
 `.opencode/skills/` discovery needs no `opencode.json` or

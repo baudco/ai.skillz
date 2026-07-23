@@ -32,11 +32,11 @@ bash /path/to/ai.skillz/scripts/deploy.sh command \
   branch-in-new-terminal <repo> --provider claude
 ```
 
-This creates `.claude/commands/branch-in-new-terminal.md` as a relative
-link through `.ai/ai.skillz`. Track the command link. For submodule
-deployment, also track `.gitmodules` and the `.ai/ai.skillz` gitlink;
-for local deployment, the absolute anchor is ignored. The script does
-not stage files unless `--stage` is explicitly supplied.
+Local deployment creates an ignored absolute
+`.claude/commands/branch-in-new-terminal.md` link. Submodule deployment
+creates a trackable relative link through `.ai/ai.skillz`; track that link,
+`.gitmodules`, and the anchor gitlink. The script does not stage files unless
+`--stage` is explicitly supplied.
 
 There is no OpenCode implementation of this Claude session-forking
 command. Do not deploy it with `--provider opencode`. Restart Claude
@@ -103,8 +103,9 @@ bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
 bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
-`migrate` moves legacy source links through `.ai/ai.skillz` but leaves
-the manual hook configuration and per-machine session stash intact.
+`migrate` normalizes legacy source links to ignored absolute links for a
+local checkout or anchor-relative links for a submodule, while leaving the
+manual hook configuration and per-machine session stash intact.
 `update` advances a submodule anchor; update a local source checkout
 directly. These commands do not edit OpenCode configuration.
 The validator checks status, committed absolute provider links, and the

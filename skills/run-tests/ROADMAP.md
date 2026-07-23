@@ -1,19 +1,27 @@
 # `/run-tests` — roadmap
 
+## Current implementation
+
+`run-tests` now uses the shared `skills/run-tests/SKILL.md` base plus a
+repository-owned `.claude/skills/run-tests/test-harness-reference.md`.
+Runtime cleanup is conditional on repository evidence; the base does not
+assume a fixed `:1616` registry. The task-state marker below is preserved for
+human acceptance and historical context.
+
 ## TODO: adopt the `/commit-msg` base + per-repo override model
 
-Today `/run-tests` is **per-repo**: each repo generates its own
+Before the integrated deployment, `/run-tests` was **per-repo**: each repo generated its own
 `SKILL.md` from `templates/run-tests/SKILL.md.j2` (see `DEPLOY.md` —
 "there is no generic SKILL.md"); `references/tractor-example.md` is
 the worked example. This duplicates the generic tractor-runtime
 guidance into every consumer and has already drifted (modden's copy
 is the tractor example dumped verbatim, never specialized).
 
-Goal: unify with `/commit-msg`'s architecture —
+The implemented design unified it with `/commit-msg`'s architecture:
 
-- a **generic base** `skills/run-tests/SKILL.md` holding only the
-  universally-true tractor-runtime guidance: `uv` venv detection,
-  stale-registry / zombie-actor cleanup (`:1616`), the
+- a **generic base** `skills/run-tests/SKILL.md` holding shared safety and
+  conditional tractor-runtime guidance: `uv` venv detection,
+  evidence-scoped stale-registry / zombie-actor cleanup, the
   pytest-capture-pipe hang, `tractor-reap`, last-failed JSON peek;
 - which **loads a per-repo override** `test-harness-reference.md`
   from `<repo>/.claude/skills/run-tests/` for project specifics
@@ -44,8 +52,7 @@ factor. Its per-repo `test-harness-reference.md` should cover:
   `'doggy'`->`'dev_skygpu'` runtime "swap" that was a symlinked
   fixture (fixed in modden `af043a7`).
 
-Until the factor lands there is no modden-local skill to hold it, so
-the modden fixture-hygiene lesson lives in the author's auto-memory
-(`feedback_check_fixture_source_first`) + this roadmap ONLY; it must
-NOT be added to the shared tractor skill (verified: a first attempt
-accidentally did, and was reverted).
+The factor now provides a worked Modden harness example at
+`references/modden-example.md`; Modden still needs to adopt a repository-owned
+copy during migration. The guidance must not be added to the shared Tractor
+reference (a first attempt accidentally did so and was reverted).
