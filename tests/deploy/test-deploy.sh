@@ -99,8 +99,10 @@ prepare_source_repo() {
     git -C "$SOURCE_WORK" config user.email fixture@example.com
     git -C "$SOURCE_WORK" config user.name Fixture
     mkdir -p "$SOURCE_WORK/providers/opencode/commands" "$SOURCE_WORK/tests/deploy"
-    cp "$ROOT/providers/opencode/commands/commit-msg.md" \
-        "$SOURCE_WORK/providers/opencode/commands/commit-msg.md"
+    cp "$ROOT/providers/opencode/commands/"*.md \
+        "$SOURCE_WORK/providers/opencode/commands/"
+    cp "$ROOT/skills/run-tests/SKILL.md" \
+        "$SOURCE_WORK/skills/run-tests/SKILL.md"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
     cp "$ROOT/scripts/deploy.sh" "$SOURCE_WORK/scripts/deploy.sh"
@@ -108,10 +110,17 @@ prepare_source_repo() {
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     chmod +x "$SOURCE_WORK/scripts/deploy.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
+    mkdir -p "$SOURCE_WORK/.opencode/commands"
+    for command in commit-msg run-tests taken-export; do
+        rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
+        ln -s "../../providers/opencode/commands/$command.md" \
+            "$SOURCE_WORK/.opencode/commands/$command.md"
+    done
     git -C "$SOURCE_WORK" add deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
-        providers/opencode/commands/commit-msg.md
-    git -C "$SOURCE_WORK" commit -qm 'fixture deployment source'
+        providers/opencode/commands skills/run-tests/SKILL.md \
+        .opencode/commands
+    git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
     SOURCE_URL="file://$SOURCE_WORK"
 }
 
@@ -120,9 +129,9 @@ test_local_anchor_and_anchor_authority() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     bash "$DEPLOY" py-codestyle "$REPO" --provider all >/dev/null
     assert_eq "$(readlink "$REPO/.claude/skills/py-codestyle")" \
-        '../../.ai/ai.skillz/skills/py-codestyle'
+        "$ROOT/skills/py-codestyle"
     assert_eq "$(readlink "$REPO/.opencode/skills/py-codestyle")" \
-        '../../.ai/ai.skillz/skills/py-codestyle'
+        "$ROOT/skills/py-codestyle"
 
     local alternate="$TMP_ROOT/alternate-source"
     git clone -q "$SOURCE_WORK" "$alternate"
@@ -154,7 +163,7 @@ test_subdirectory_resolves_repository_root() {
     pass 'subdirectory targets canonicalize to git repository root'
 }
 
-test_submodule_and_portable_default_url() {
+test_submodule_and_default_url() {
     new_repo submodule
     local before
     before="$(index_tree "$REPO")"
@@ -164,23 +173,9 @@ test_submodule_and_portable_default_url() {
     assert_eq "$(readlink "$REPO/.opencode/skills/py-codestyle")" \
         '../../.ai/ai.skillz/skills/py-codestyle'
 
-    local parent="$TMP_ROOT/portable-default"
-    mkdir -p "$parent"
-    git clone -q --bare "$SOURCE_WORK" "$parent/ai.skillz.git"
-    REPO="$parent/consumer"
-    mkdir -p "$REPO"
-    git -C "$REPO" init -q
-    git -C "$REPO" config user.email fixture@example.com
-    git -C "$REPO" config user.name Fixture
-    git -C "$REPO" remote add origin "file://$parent/consumer.git"
-    printf base > "$REPO/base"
-    git -C "$REPO" add base
-    git -C "$REPO" commit -qm fixture
-    bash "$DEPLOY" init "$REPO" --method submodule >/dev/null
-    assert_eq "$(git -C "$REPO" config -f .gitmodules \
-        --get-regexp '^submodule\..*\.url$' | while read -r _ value; do printf '%s' "$value"; done)" \
-        '../ai.skillz.git'
-    pass 'submodule deployment is unstaged and default URL is portable'
+    assert_contains "$(bash "$DEPLOY" --help)" \
+        'https://github.com/baudco/ai.skillz.git'
+    pass 'submodule deployment is unstaged and advertises the canonical default URL'
 }
 
 test_init_stage_preserves_gitmodules_index() {
@@ -251,8 +246,8 @@ test_exact_staging_and_index_preservation() {
     assert_eq "$(index_entry "$REPO" unrelated.txt)" "$unrelated_before"
     [ -z "$(index_entry "$REPO" .claude/skills/commit-msg/user-state.txt)" ] \
         || fail 'user runtime state was staged'
-    git -C "$REPO" ls-files -s -- .claude/skills/commit-msg/SKILL.md \
-        | grep -q '^120000 ' || fail 'canonical hybrid link was not staged'
+    [ -z "$(index_entry "$REPO" .claude/skills/commit-msg/SKILL.md)" ] \
+        || fail 'local-only canonical hybrid link was staged'
     git -C "$REPO" show :.gitignore | grep -q '# BEGIN ai.skillz: runtime:commit-msg' \
         || fail 'tool-owned ignore block was not staged'
     git -C "$REPO" show :.gitignore | grep -q unstaged-ignore-user-line \
@@ -274,13 +269,44 @@ test_managed_replacement_safety() {
     assert_fails bash "$DEPLOY" command commit-msg "$REPO" --provider opencode
     assert_eq "$(<"$REPO/.opencode/commands/commit-msg.md")" 'user command'
 
+    new_repo recognized-command-copy
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    mkdir -p "$REPO/.opencode/commands"
+    cp "$ROOT/providers/opencode/commands/commit-msg.md" \
+        "$REPO/.opencode/commands/commit-msg.md"
+    bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
+    [ -L "$REPO/.opencode/commands/commit-msg.md" ] \
+        || fail 'recognized canonical command copy was not converted to a link'
+
+    local history_source="$TMP_ROOT/historical-command-source"
+    local historical_copy="$TMP_ROOT/historical-command.md"
+    git clone -q "$SOURCE_WORK" "$history_source"
+    git -C "$history_source" config user.email fixture@example.com
+    git -C "$history_source" config user.name Fixture
+    cp "$history_source/providers/opencode/commands/commit-msg.md" \
+        "$historical_copy"
+    printf '\nnew canonical revision\n' \
+        >> "$history_source/providers/opencode/commands/commit-msg.md"
+    git -C "$history_source" add providers/opencode/commands/commit-msg.md
+    git -C "$history_source" commit -qm 'update command history fixture'
+    new_repo historical-command-copy
+    mkdir -p "$REPO/.ai"
+    ln -s "$history_source" "$REPO/.ai/ai.skillz"
+    printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    mkdir -p "$REPO/.opencode/commands"
+    cp "$historical_copy" "$REPO/.opencode/commands/commit-msg.md"
+    bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
+    [ -L "$REPO/.opencode/commands/commit-msg.md" ] \
+        || fail 'historical canonical command copy was not converted to a link'
+
     new_repo recognized-transition
     bash "$DEPLOY" py-codestyle "$REPO" >/dev/null
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     bash "$DEPLOY" py-codestyle "$REPO" >/dev/null
     assert_eq "$(readlink "$REPO/.claude/skills/py-codestyle")" \
-        '../../.ai/ai.skillz/skills/py-codestyle'
-    pass 'only positively recognized links and copied commands are replaceable'
+        "$ROOT/skills/py-codestyle"
+    pass 'only positively recognized provider links are replaceable'
 }
 
 test_provider_all_skill_preflight() {
@@ -444,12 +470,18 @@ test_status_health_templates_and_source_symlink() {
     assert_fails bash "$DEPLOY" status "$REPO"
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'broken ->'
 
-    new_repo template-status
-    mkdir -p "$REPO/.claude/skills/run-tests"
-    printf '%s\n' '---' 'name: run-tests' 'description: local' '---' \
-        > "$REPO/.claude/skills/run-tests/SKILL.md"
+    new_repo run-tests-status
+    bash "$DEPLOY" run-tests "$REPO" --provider claude --method symlink \
+        >/dev/null
+    local harness="$REPO/.claude/skills/run-tests/test-harness-reference.md"
+    printf 'consumer-owned harness\n' > "$harness"
+    local harness_before
+    harness_before="$(file_digest "$harness")"
+    bash "$DEPLOY" run-tests "$REPO" --provider claude --method symlink \
+        >/dev/null
+    assert_eq "$(file_digest "$harness")" "$harness_before"
     assert_contains "$(bash "$DEPLOY" status "$REPO" --provider claude)" \
-        'local template [healthy]'
+        'skill run-tests                SKILL.md: local-only (absolute)'
 
     local source_repo="$TMP_ROOT/source-status"
     git clone -q "$SOURCE_WORK" "$source_repo"
@@ -472,7 +504,116 @@ test_status_health_templates_and_source_symlink() {
         "$source_repo/.claude/skills/commit-msg/SKILL.md"
     assert_fails bash "$source_repo/scripts/deploy.sh" status "$source_repo"
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'broken ->'
-    pass 'status catches broken links and accepts templates/source-repo command links'
+    pass 'status catches broken links and accepts hybrid/source-repo command links'
+}
+
+test_run_tests_hybrid_migration_safety() {
+    local legacy_root="$TMP_ROOT/legacy-ai-skillz"
+    local legacy_source legacy_before
+    git clone -q "$SOURCE_WORK" "$legacy_root"
+    legacy_source="$legacy_root/skills/run-tests"
+    legacy_before="$(file_digest "$legacy_source/SKILL.md")"
+
+    new_repo run-tests-legacy-link
+    mkdir -p "$REPO/.claude/skills"
+    ln -s "$legacy_source" "$REPO/.claude/skills/run-tests"
+    bash "$DEPLOY" run-tests "$REPO" --provider claude --method symlink \
+        >/dev/null
+    [ ! -L "$REPO/.claude/skills/run-tests" ] \
+        || fail 'legacy run-tests directory link was not replaced'
+    assert_eq "$(file_digest "$legacy_source/SKILL.md")" "$legacy_before"
+    [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
+        || fail 'canonical run-tests SKILL.md link was not installed'
+
+    new_repo run-tests-local-skill
+    mkdir -p "$REPO/.claude/skills/run-tests"
+    printf 'project-owned skill\n' > "$REPO/.claude/skills/run-tests/SKILL.md"
+    assert_fails bash "$DEPLOY" run-tests "$REPO" --provider claude \
+        --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'local run-tests/SKILL.md exists'
+
+    new_repo run-tests-unrecognized-link
+    local arbitrary="$TMP_ROOT/user-integration/.claude/skills/run-tests"
+    mkdir -p "$arbitrary" "$REPO/.claude/skills"
+    printf '%s\n' '---' 'name: run-tests' '---' > "$arbitrary/SKILL.md"
+    ln -s "$arbitrary" "$REPO/.claude/skills/run-tests"
+    assert_fails bash "$DEPLOY" run-tests "$REPO" --provider claude \
+        --method symlink
+    [ -L "$REPO/.claude/skills/run-tests" ] \
+        || fail 'unrecognized run-tests directory link was removed'
+
+    new_repo run-tests-unrelated-git-link
+    local unrelated_git="$TMP_ROOT/unrelated-run-tests-repo"
+    mkdir -p "$unrelated_git/skills/run-tests" "$REPO/.claude/skills"
+    git -C "$unrelated_git" init -q
+    printf '%s\n' '---' 'name: run-tests' '---' \
+        > "$unrelated_git/skills/run-tests/SKILL.md"
+    ln -s "$unrelated_git/skills/run-tests" \
+        "$REPO/.claude/skills/run-tests"
+    assert_fails bash "$DEPLOY" run-tests "$REPO" --provider claude \
+        --method symlink
+    [ -L "$REPO/.claude/skills/run-tests" ] \
+        || fail 'unrelated Git run-tests directory link was removed'
+
+    new_repo run-tests-command
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode --method symlink \
+        >/dev/null
+    bash "$DEPLOY" command run-tests "$REPO" --provider opencode \
+        --method symlink >/dev/null
+    assert_eq "$(readlink "$REPO/.opencode/commands/run-tests.md")" \
+        "$ROOT/providers/opencode/commands/run-tests.md"
+    git -C "$REPO" check-ignore -q -- .opencode/commands/run-tests.md \
+        || fail 'local run-tests command link was not ignored'
+    pass 'run-tests hybrid migration preserves local state and rejects project-owned bases'
+}
+
+test_local_tracking_and_portable_ignore_preflight() {
+    new_repo tracked-local-link
+    mkdir -p "$REPO/.opencode/skills"
+    ln -s "$ROOT/skills/taken-export" "$REPO/.opencode/skills/taken-export"
+    git -C "$REPO" add .opencode/skills/taken-export
+    assert_fails bash "$DEPLOY" taken-export "$REPO" --provider opencode \
+        --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'local provider destination is tracked'
+
+    new_repo ignored-portable-link
+    bash "$DEPLOY" init "$REPO" --method submodule --url "$SOURCE_URL" >/dev/null
+    printf '/.opencode/skills/\n' >> "$REPO/.gitignore"
+    assert_fails bash "$DEPLOY" taken-export "$REPO" --provider opencode \
+        --method submodule
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'portable provider destination is ignored'
+    [ ! -e "$REPO/.opencode/skills/taken-export" ] \
+        || fail 'ignored portable destination was created'
+
+    mkdir -p "$REPO/.opencode/skills"
+    ln -s '../../.ai/ai.skillz/skills/taken-export' \
+        "$REPO/.opencode/skills/taken-export"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'portable link ignored'
+
+    new_repo tracked-local-migration
+    mkdir -p "$REPO/.opencode/skills"
+    ln -s "$ROOT/skills/taken-export" "$REPO/.opencode/skills/taken-export"
+    git -C "$REPO" add .opencode/skills/taken-export
+    assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'local provider destination is tracked'
+
+    new_repo ignored-portable-migration
+    bash "$DEPLOY" taken-export "$REPO" --provider opencode \
+        --method symlink >/dev/null
+    printf '/skills/\n' > "$REPO/.opencode/.gitignore"
+    bash "$DEPLOY" init "$REPO" --method submodule --url "$SOURCE_URL" >/dev/null
+    local before
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'portable provider destination is ignored outside its managed block'
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    pass 'local tracked links and ignored portable links are rejected before mutation'
 }
 
 test_gitignore_integrity_and_inventory() {
@@ -522,8 +663,47 @@ test_direct_migration_dry_run() {
     assert_eq "$real_actions" "$dry_actions"
     assert_eq "$(file_digest "$REPO/.opencode/opencode.json")" "$config_before"
     assert_eq "$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")" \
-        '../../../.ai/ai.skillz/skills/commit-msg/SKILL.md'
+        "$ROOT/skills/commit-msg/SKILL.md"
     pass 'direct migration dry-run exactly predicts real actions without mutation'
+}
+
+test_direct_to_submodule_migration() {
+    new_repo direct-to-submodule
+    bash "$DEPLOY" taken-export "$REPO" --provider all --method symlink \
+        >/dev/null
+    bash "$DEPLOY" command taken-export "$REPO" --provider opencode \
+        --method symlink >/dev/null
+    rm "$REPO/.opencode/commands/taken-export.md"
+    cp "$ROOT/providers/opencode/commands/taken-export.md" \
+        "$REPO/.opencode/commands/taken-export.md"
+    bash "$DEPLOY" run-tests "$REPO" --provider claude --method symlink \
+        >/dev/null
+    local harness="$REPO/.claude/skills/run-tests/test-harness-reference.md"
+    printf 'portable migration harness\n' > "$harness"
+    local harness_before
+    harness_before="$(file_digest "$harness")"
+    bash "$DEPLOY" init "$REPO" --method submodule --url "$SOURCE_URL" \
+        >/dev/null
+
+    local before dry
+    before="$(tree_digest "$REPO")"
+    dry="$(bash "$DEPLOY" migrate "$REPO" --dry-run)"
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    assert_contains "$dry" \
+        'Would relink .opencode/commands/taken-export.md -> ../../.ai/ai.skillz/providers/opencode/commands/taken-export.md'
+    bash "$DEPLOY" migrate "$REPO" >/dev/null
+    assert_eq "$(readlink "$REPO/.claude/skills/taken-export")" \
+        '../../.ai/ai.skillz/skills/taken-export'
+    assert_eq "$(readlink "$REPO/.opencode/commands/taken-export.md")" \
+        '../../.ai/ai.skillz/providers/opencode/commands/taken-export.md'
+    assert_eq "$(file_digest "$harness")" "$harness_before"
+    assert_eq "$(readlink "$REPO/.claude/skills/run-tests/SKILL.md")" \
+        '../../../.ai/ai.skillz/skills/run-tests/SKILL.md'
+    git -C "$REPO" check-ignore -q -- .opencode/commands/taken-export.md \
+        && fail 'migrated portable command link remains ignored'
+    bash "$DEPLOY" status "$REPO" --provider all >/dev/null \
+        || fail 'direct-to-submodule migration produced unhealthy status'
+    pass 'one recognized direct source migrates to an initialized portable submodule'
 }
 
 test_migration_full_preflight_zero_mutation() {
@@ -543,6 +723,19 @@ test_migration_full_preflight_zero_mutation() {
     assert_fails bash "$DEPLOY" migrate "$REPO"
     assert_eq "$(tree_digest "$REPO")" "$before"
     [ ! -e "$REPO/.ai" ] || fail 'mixed-root migration created anchor'
+
+    new_repo mixed-submodule-migration
+    bash "$DEPLOY" init "$REPO" --method submodule --url "$SOURCE_URL" \
+        >/dev/null
+    mkdir -p "$REPO/.claude/skills" "$REPO/.opencode/skills"
+    ln -s "$SOURCE_WORK/skills/py-codestyle" \
+        "$REPO/.claude/skills/py-codestyle"
+    ln -s "$second_source/skills/py-codestyle" \
+        "$REPO/.opencode/skills/py-codestyle"
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'mixed source roots'
+    assert_eq "$(tree_digest "$REPO")" "$before"
 
     new_repo partial-migration
     mkdir -p "$REPO/.claude/skills/pr-msg"
@@ -568,33 +761,33 @@ test_migration_full_preflight_zero_mutation() {
     pass 'migration fully preflights mixed roots and missing assets with zero mutation'
 }
 
-test_migration_refreshes_historical_command_copy() {
-    local source="$TMP_ROOT/stale-command-source"
+test_migration_preserves_managed_command_link() {
+    local source="$TMP_ROOT/managed-command-source"
     git clone -q "$SOURCE_WORK" "$source"
     git -C "$source" config user.email fixture@example.com
     git -C "$source" config user.name Fixture
-    new_repo stale-command-migration
+    new_repo managed-command-migration
     mkdir -p "$REPO/.ai"
     ln -s "$source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
-    local stale_digest dry
-    stale_digest="$(file_digest "$REPO/.opencode/commands/commit-msg.md")"
+    local initial_digest dry
+    initial_digest="$(file_digest "$REPO/.opencode/commands/commit-msg.md")"
     printf '\nselected-anchor-revision\n' \
         >> "$source/providers/opencode/commands/commit-msg.md"
     git -C "$source" add providers/opencode/commands/commit-msg.md
     git -C "$source" commit -qm 'update command fixture'
     dry="$(bash "$DEPLOY" migrate "$REPO" --dry-run)"
-    assert_contains "$dry" \
-        'Would refresh managed copy .opencode/commands/commit-msg.md from selected anchor'
-    assert_eq "$(file_digest "$REPO/.opencode/commands/commit-msg.md")" "$stale_digest"
+    assert_contains "$dry" 'Would make no provider link changes'
+    [ "$(file_digest "$REPO/.opencode/commands/commit-msg.md")" != "$initial_digest" ] \
+        || fail 'managed command link did not follow selected anchor revision'
     bash "$DEPLOY" migrate "$REPO" >/dev/null
     grep -q selected-anchor-revision "$REPO/.opencode/commands/commit-msg.md" \
-        || fail 'migration did not refresh copied command from selected anchor'
+        || fail 'managed command link lost selected anchor content'
     bash "$DEPLOY" status "$REPO" --provider opencode >/dev/null \
-        || fail 'status is unhealthy after copied-command refresh'
-    pass 'migration refreshes recognized historical command copies from selected anchor'
+        || fail 'status is unhealthy after managed-command migration'
+    pass 'migration preserves managed command links that follow selected anchor revisions'
 }
 
 add_legacy_submodule() {
@@ -716,7 +909,7 @@ test_init_option_consistency() {
     pass 'existing and new anchors consistently apply or reject --url/--ref combinations'
 }
 
-test_managed_command_copy_update() {
+test_command_link_modes_and_updates() {
     local update_source="$TMP_ROOT/update-source"
     git clone -q "$SOURCE_WORK" "$update_source"
     git -C "$update_source" config user.email fixture@example.com
@@ -727,13 +920,26 @@ test_managed_command_copy_update() {
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
+    assert_eq "$(readlink "$REPO/.opencode/commands/commit-msg.md")" \
+        "$update_source/providers/opencode/commands/commit-msg.md"
     printf '\nmanaged-v2\n' >> "$update_source/providers/opencode/commands/commit-msg.md"
     git -C "$update_source" add providers/opencode/commands/commit-msg.md
     git -C "$update_source" commit -qm v2
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     grep -q managed-v2 "$REPO/.opencode/commands/commit-msg.md" \
-        || fail 'recognized historical command copy was not updated'
-    pass 'recognized historical command copies update while user files remain protected'
+        || fail 'managed command link did not follow source update'
+
+    new_repo portable-command
+    bash "$DEPLOY" init "$REPO" --method submodule --url "$SOURCE_URL" >/dev/null
+    bash "$DEPLOY" taken-export "$REPO" --provider opencode \
+        --method submodule >/dev/null
+    bash "$DEPLOY" command taken-export "$REPO" --provider opencode \
+        --method submodule >/dev/null
+    assert_eq "$(readlink "$REPO/.opencode/commands/taken-export.md")" \
+        '../../.ai/ai.skillz/providers/opencode/commands/taken-export.md'
+    git -C "$REPO" check-ignore -q -- .opencode/commands/taken-export.md \
+        && fail 'portable command link was ignored'
+    pass 'local command links follow source updates and portable links remain trackable'
 }
 
 test_update_behavior_and_broken_anchor() {
@@ -823,8 +1029,9 @@ test_all_templates_invalid_args_and_idempotence() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
-    assert_contains "$output" 'Result: 28 deployed, 2 template skipped'
-    [ ! -e "$REPO/.claude/skills/run-tests" ] || fail 'template destination created'
+    assert_contains "$output" 'Result: 30 deployed, 0 template skipped'
+    [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
+        || fail 'run-tests hybrid destination was not created'
     before="$(tree_digest "$REPO")"
     bash "$DEPLOY" all "$REPO" --provider all >/dev/null
     after="$(tree_digest "$REPO")"
@@ -833,7 +1040,7 @@ test_all_templates_invalid_args_and_idempotence() {
     assert_fails bash "$DEPLOY" py-codestyle "$REPO" --provider vscode
     assert_fails bash "$DEPLOY" py-codestyle "$REPO" --method copy
     assert_fails bash "$DEPLOY" py-codestyle "$REPO" --provider
-    pass 'all skips templates, remains idempotent, and validates names/options strictly'
+    pass 'all deploys hybrid skills, remains idempotent, and validates names/options strictly'
 }
 
 test_opencode_debug_if_available() {
@@ -859,7 +1066,7 @@ test_opencode_debug_if_available() {
 prepare_source_repo
 test_local_anchor_and_anchor_authority
 test_subdirectory_resolves_repository_root
-test_submodule_and_portable_default_url
+test_submodule_and_default_url
 test_init_stage_preserves_gitmodules_index
 test_phase0_and_global_compatibility
 test_exact_staging_and_index_preservation
@@ -872,14 +1079,17 @@ test_missing_anchor_assets_and_command_preflight
 test_runtime_ignores_and_state_preservation
 test_command_dependency_all_and_hooks
 test_status_health_templates_and_source_symlink
+test_run_tests_hybrid_migration_safety
+test_local_tracking_and_portable_ignore_preflight
 test_gitignore_integrity_and_inventory
 test_direct_migration_dry_run
+test_direct_to_submodule_migration
 test_migration_full_preflight_zero_mutation
-test_migration_refreshes_historical_command_copy
+test_migration_preserves_managed_command_link
 test_legacy_submodule_relocation
 test_json_skills_paths_inspection
 test_init_option_consistency
-test_managed_command_copy_update
+test_command_link_modes_and_updates
 test_update_behavior_and_broken_anchor
 test_deployment_validator_failures
 test_all_templates_invalid_args_and_idempotence

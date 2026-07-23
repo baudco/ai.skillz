@@ -82,14 +82,19 @@ while IFS='|' read -r kind provider name source mode dependency rest; do
     fi
 done < "$MANIFEST"
 
-if [ "$TARGET" = "$ROOT" ] && [ -e "$ROOT/.opencode/commands/commit-msg.md" ]; then
-    if [ ! -L "$ROOT/.opencode/commands/commit-msg.md" ] \
-        || [ "$(readlink "$ROOT/.opencode/commands/commit-msg.md")" \
-            != '../../providers/opencode/commands/commit-msg.md' ] \
-        || [ ! -e "$ROOT/.opencode/commands/commit-msg.md" ]; then
-        printf 'ERROR: self-hosted OpenCode command link is not canonical\n' >&2
-        errors=$((errors + 1))
-    fi
+if [ "$TARGET" = "$ROOT" ]; then
+    while IFS='|' read -r kind provider name source mode dependency rest; do
+        [ "$kind" = command ] && [ "$provider" = opencode ] || continue
+        command_path="$ROOT/.opencode/commands/$name.md"
+        expected="../../$source"
+        if [ ! -L "$command_path" ] \
+            || [ "$(readlink "$command_path" 2>/dev/null || true)" != "$expected" ] \
+            || [ ! -e "$command_path" ]; then
+            printf 'ERROR: self-hosted OpenCode command link is not canonical: %s\n' \
+                "$name" >&2
+            errors=$((errors + 1))
+        fi
+    done < "$MANIFEST"
 fi
 
 index_entries="$(git -C "$TARGET" ls-files -s)"
