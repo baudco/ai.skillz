@@ -440,9 +440,46 @@ ensure_anchor_ignore() {
     require_effective_ignore "$1" "$ANCHOR_REL"
 }
 
+path_effectively_ignored() {
+    local target="$1" relative="$2"
+    if git -C "$target" check-ignore -q --no-index -- "$relative" \
+        2>/dev/null; then
+        return 0
+    fi
+
+    local temp_dir git_dir parent current="" component redirected=no
+    temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/ai-skillz-ignore-check.XXXXXX")"
+    if [ -f "$target/.gitignore" ]; then
+        cp "$target/.gitignore" "$temp_dir/.gitignore"
+    else
+        : > "$temp_dir/.gitignore"
+    fi
+    parent="$(dirname "$relative")"
+    IFS='/' read -ra IGNORE_PARENT_COMPONENTS <<< "$parent"
+    for component in "${IGNORE_PARENT_COMPONENTS[@]}"; do
+        [ "$component" != . ] || continue
+        current="${current:+$current/}$component"
+        mkdir -p "$temp_dir/$current"
+        if [ "$redirected" = no ] && [ -L "$target/$current" ]; then
+            redirected=yes
+        elif [ "$redirected" = no ] \
+            && [ -f "$target/$current/.gitignore" ]; then
+            cp "$target/$current/.gitignore" "$temp_dir/$current/.gitignore"
+        fi
+    done
+    git_dir="$(git -C "$target" rev-parse --absolute-git-dir)"
+    if git --git-dir="$git_dir" --work-tree="$temp_dir" \
+        check-ignore -q --no-index -- "$relative"; then
+        rm -rf "$temp_dir"
+        return 0
+    fi
+    rm -rf "$temp_dir"
+    return 1
+}
+
 require_effective_ignore() {
     local target="$1" relative="$2"
-    git -C "$target" check-ignore -q --no-index -- "$relative" \
+    path_effectively_ignored "$target" "$relative" \
         || die "managed local path is not effectively ignored: $relative"
 }
 
@@ -1679,7 +1716,7 @@ status_runtime_ignores() {
         [ -n "$section" ] && [ -n "$line" ] \
             && runtime_owner_enabled "$target" "$section" || continue
         relative="${line#/}"
-        if ! git -C "$target" check-ignore -q --no-index -- "$relative"; then
+        if ! path_effectively_ignored "$target" "$relative"; then
             printf 'Runtime %-24s %s [UNHEALTHY:not ignored]\n' \
                 "$section" "$relative"
             STATUS_UNHEALTHY=1

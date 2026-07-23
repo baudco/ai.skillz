@@ -513,6 +513,16 @@ test_runtime_ignores_and_state_preservation() {
     assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
     assert_contains "$(<"$TMP_ROOT/failure.out")" \
         'UNHEALTHY:not ignored'
+
+    new_repo runtime-through-legacy-link
+    local legacy_skill="$TMP_ROOT/runtime-legacy-commit-msg"
+    mkdir -p "$legacy_skill" "$REPO/.claude/skills"
+    ln -s "$legacy_skill" "$REPO/.claude/skills/commit-msg"
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    local output
+    output="$(bash "$DEPLOY" status "$REPO" --provider opencode 2>&1)"
+    assert_not_contains "$output" 'beyond a symbolic link'
+    assert_not_contains "$output" 'UNHEALTHY:not ignored'
     pass 'OpenCode deployment preserves and ignores canonical .claude runtime state'
 }
 
