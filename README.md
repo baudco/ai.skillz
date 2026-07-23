@@ -21,7 +21,7 @@ generalized for cross-repo deployment.
 | `pr-msg` | PR description generation |
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
-| `run-tests` | Test runner (template-based) |
+| `run-tests` | Shared test workflow with repository-owned harness guidance |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
 | `plan-io` | Plan file conventions |
@@ -33,9 +33,9 @@ generalized for cross-repo deployment.
 
 ## Deployment
 
-Deployment uses a provider-neutral source anchor at
-`<repo>/.ai/ai.skillz`. Provider discovery trees contain only relative
-links back to that anchor:
+Portable deployment uses a provider-neutral source anchor at
+`<repo>/.ai/ai.skillz`. Provider discovery trees use relative links to that
+anchor in portable mode and ignored absolute links in local mode:
 
 | Provider | Skills | Commands |
 |----------|--------|----------|
@@ -56,36 +56,35 @@ bash /path/to/ai.skillz/scripts/deploy.sh <skill> <repo> \
 ```
 
 `--provider claude` writes `.claude` links, `--provider opencode`
-writes `.opencode` links, and `--provider all` writes both. The relative
-provider links have the same layout for local and submodule anchors;
-only the anchor type changes. Nothing is staged unless `--stage` is
-explicitly supplied, and the script never commits.
+writes `.opencode` links, and `--provider all` writes both. Local symlink
+deployment creates ignored absolute provider links. Submodule deployment
+creates trackable relative links through the anchor. Nothing is staged unless
+`--stage` is explicitly supplied, and the script never commits.
 
 Skill and command deployment defaults to `--provider claude`, `init`
 defaults to `--method submodule`, and `status` defaults to
-`--provider all`. New deployments should initialize an anchor
-explicitly. When no anchor exists, an omitted method or
-`--method symlink` retains ignored Phase-0 absolute-link compatibility;
-use `--direct` to make that legacy choice explicit.
+`--provider all`. Portable deployments initialize an anchor explicitly.
+When no anchor exists, an omitted method or `--method symlink` uses ignored
+absolute links; `--direct` remains an explicit compatibility alias.
 
 Generic skills are linked as whole directories. Hybrid skills such as
 `commit-msg` and `pr-msg` keep local directories for generated state and
 link only canonical files and resources. Existing runtime paths under
 `.claude/` remain in place; source deployment does not migrate or delete
 message archives, configuration, review context, or worktree state.
-`run-tests` is template-only and must be generated locally rather than
-linked.
+`run-tests` is hybrid: its canonical `SKILL.md` is linked while each
+repository owns `test-harness-reference.md`.
 
 ### Commands
 
 Provider-specific reusable assets live under `providers/`. For example,
 the canonical OpenCode `/commit-msg` shim is
-`providers/opencode/commands/commit-msg.md`; deployment copies it to
-`.opencode/commands/commit-msg.md`. Track provider command files so a
-clone receives the command definition. This repository uses a tracked
-relative link from `.opencode/commands/commit-msg.md` to the canonical
-provider asset. The local `.ai/ai.skillz` anchor itself remains ignored,
-while a submodule anchor and its `.gitmodules` entry are tracked.
+`providers/opencode/commands/commit-msg.md`; Taken and Run shims use the same
+layout. Local deployment links `.opencode/commands/<name>.md` directly to the
+canonical provider asset and ignores that absolute link. Portable deployment
+uses a trackable relative link through `.ai/ai.skillz`. This repository
+self-hosts with tracked relative links from `.opencode/commands/` to
+`providers/opencode/commands/`.
 
 ```bash
 # The command dependency is enforced: deploy the OpenCode skill first.

@@ -12,14 +12,13 @@ bash /path/to/ai.skillz/scripts/deploy.sh yt-url-lookup <repo> \
   --provider <claude|opencode|all>
 ```
 
-The local method creates an ignored `.ai/ai.skillz` symlink to a local
-checkout. The portable method creates a version-pinned submodule there.
-Provider links are relative and target the same canonical directory:
-`.claude/skills/yt-url-lookup` and
-`.opencode/skills/yt-url-lookup`.
+Provider links are created at `.claude/skills/yt-url-lookup` and
+`.opencode/skills/yt-url-lookup`. Local mode uses ignored absolute links;
+submodule mode uses trackable relative links through a version-pinned
+`.ai/ai.skillz` anchor.
 
-Track provider links and, in submodule mode, `.gitmodules` plus the
-anchor gitlink. Nothing is staged unless `--stage` is explicitly
+Track provider links, `.gitmodules`, and the anchor gitlink only in submodule
+mode. Nothing is staged unless `--stage` is explicitly
 supplied. Quit and restart OpenCode after deployment or update. Default
 `.opencode/skills/`
 discovery requires no `opencode.json` or `opencode.jsonc` mutation.

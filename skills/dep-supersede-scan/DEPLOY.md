@@ -13,13 +13,12 @@ bash /path/to/ai.skillz/scripts/deploy.sh dep-supersede-scan <repo> \
   --provider <claude|opencode|all>
 ```
 
-The provider-neutral source anchor is `.ai/ai.skillz`. Local mode uses
-an ignored absolute anchor symlink; submodule mode uses a tracked,
-version-pinned anchor. Relative provider links are created at
+Local mode creates ignored absolute provider links at
 `.claude/skills/dep-supersede-scan` and
-`.opencode/skills/dep-supersede-scan`.
+`.opencode/skills/dep-supersede-scan`. Submodule mode creates trackable
+relative links through a version-pinned `.ai/ai.skillz` anchor.
 
-Track provider links and the submodule artifacts when applicable. The
+Track provider links and submodule artifacts only in portable mode. The
 script stages only when `--stage` is explicitly supplied. Quit and
 restart OpenCode after deployment or update; no `opencode.json` or
 `opencode.jsonc` edit is performed.

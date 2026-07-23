@@ -15,13 +15,13 @@ bash /path/to/ai.skillz/scripts/deploy.sh open-wkt <repo> \
   --provider <claude|opencode|all>
 ```
 
-`.ai/ai.skillz` is the shared source anchor. The provider destinations
-are `.claude/skills/open-wkt` and `.opencode/skills/open-wkt`, linked
-relatively to the same canonical skill.
+The provider destinations are `.claude/skills/open-wkt` and
+`.opencode/skills/open-wkt`. Local mode uses ignored absolute links;
+submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
-Track provider links. In submodule mode, also track `.gitmodules` and
-the anchor gitlink; in local mode, ignore the absolute anchor. The
-script stages only when `--stage` is explicitly supplied. Quit and
+Track provider links, `.gitmodules`, and the anchor gitlink only in submodule
+mode. Local provider links remain ignored. The script stages only when
+`--stage` is explicitly supplied. Quit and
 restart OpenCode after deployment or update; no `opencode.json` or
 `opencode.jsonc` mutation is required or performed.
 

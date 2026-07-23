@@ -15,12 +15,12 @@ bash /path/to/ai.skillz/scripts/deploy.sh resolve-conflicts <repo> \
 ```
 
 The provider destinations are `.claude/skills/resolve-conflicts` and
-`.opencode/skills/resolve-conflicts`. Both are relative links through
-the provider-neutral `.ai/ai.skillz` anchor.
+`.opencode/skills/resolve-conflicts`. Local mode uses ignored absolute links;
+submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
-Track provider links; for submodule mode, also track `.gitmodules` and
-the anchor gitlink. The local anchor is ignored, and deployment stages
-only when `--stage` is explicitly supplied. Quit and restart OpenCode
+Track provider links, `.gitmodules`, and the anchor gitlink only in submodule
+mode. Local provider links remain ignored, and deployment stages only when
+`--stage` is explicitly supplied. Quit and restart OpenCode
 after deployment or update.
 Default `.opencode/skills/` discovery needs no `opencode.json` or
 `opencode.jsonc` mutation.

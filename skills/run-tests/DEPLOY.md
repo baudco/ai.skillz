@@ -1,90 +1,128 @@
 # Deploying `/run-tests`
 
-This skill requires per-project customization. There is no canonical
-`skills/run-tests/SKILL.md` to link, so skill deployment is intentionally
-template-only.
+`run-tests` uses a shared base plus a repository-owned harness reference:
 
-The local and submodule methods apply only to locating the source
-template through the provider-neutral `.ai/ai.skillz` anchor:
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
-# or use a portable, version-pinned anchor: --method submodule
+```text
+.claude/skills/run-tests/
+  SKILL.md -> canonical ai.skillz base
+  test-harness-reference.md
 ```
 
-Do not deploy `run-tests` as a source symlink. Generate a local
-`SKILL.md` for each enabled provider destination:
+The base owns execution safety and diagnostics. The local reference owns
+commands, environments, paths, backend matrices, fixtures, mappings, and
+known outcomes.
 
-- Claude Code: `.claude/skills/run-tests/SKILL.md`
-- OpenCode: `.opencode/skills/run-tests/SKILL.md`
+## Deployment Script
 
-When both providers use the same test workflow, generate once and copy
-the resulting project-owned file into both destinations. This is the
-template-only equivalent of `--provider claude|opencode|all`; there is
-no shared skill link to track.
+Deploy ignored absolute development links:
 
-## Quick setup
-
-### 1. Create skill directory
-
-```bash
-mkdir -p .claude/skills/run-tests
-# For OpenCode instead or as well:
-mkdir -p .opencode/skills/run-tests
+```sh
+bash /path/to/ai.skillz/scripts/deploy.sh \
+  run-tests /path/to/repo --provider all --method symlink
 ```
 
-### 2. Generate SKILL.md from template
+Deploy from a repository's `.ai/ai.skillz` submodule:
 
-Use the Jinja2 template at
-`.ai/ai.skillz/templates/run-tests/SKILL.md.j2` as a
-starting point.
-
-Fill in these project-specific sections:
-- `{{ project_name }}` — your project name
-- `{{ test_runner }}` — e.g. `pytest`
-- `{{ test_command }}` — e.g. `python -m pytest`
-- `{{ test_dir }}` — e.g. `tests/`
-- `{{ import_check }}` — import smoke test command
-- `{{ test_layout }}` — your test directory tree
-- `{{ change_test_mapping }}` — module-to-test mapping
-- `{{ known_flaky }}` — known flaky tests
-- `{{ custom_flags }}` — project-specific pytest flags
-
-### 3. Reference example
-
-See `.ai/ai.skillz/skills/run-tests/references/tractor-example.md`
-for a complete, production example from the tractor project.
-
-## What stays local (always)
-
-- `SKILL.md` — entirely project-specific
-
-Track each generated provider `SKILL.md`; it is project configuration,
-not generated runtime state. In submodule mode, also track `.gitmodules`
-and the `.ai/ai.skillz` gitlink. In local mode, ignore the absolute
-anchor. The deployment tooling stages only when `--stage` is explicitly
-supplied.
-
-Quit and restart OpenCode after creating or changing its local
-`SKILL.md`. OpenCode discovers `.opencode/skills/` by default, and the
-deployment tooling does not mutate `opencode.json` or `opencode.jsonc`.
-
-## Maintenance
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
-bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
-bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
-bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
-bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
+```sh
+bash /path/to/ai.skillz/scripts/deploy.sh init /path/to/repo
+bash /path/to/ai.skillz/scripts/deploy.sh \
+  run-tests /path/to/repo --provider all --method submodule
 ```
 
-`status` identifies template-generated local skills. Migration must not
-replace or rewrite them. Updating the anchor updates the source template
-only; regenerate local `SKILL.md` files deliberately after reviewing
-template changes. Use `update` for submodule anchors and update a local
-checkout directly.
+The script links only `SKILL.md`. It preserves an existing
+`test-harness-reference.md` and never creates an unresolved override
+implicitly.
 
-## Prerequisites
+## Bootstrap The Local Reference
 
-- Your project's test runner (e.g. `pytest`)
+Copy the override template:
+
+```sh
+cp /path/to/ai.skillz/templates/run-tests/SKILL.md.j2 \
+  .claude/skills/run-tests/test-harness-reference.md
+```
+
+Replace every `{{ ... }}` marker before invoking `/run-tests`. The canonical
+base rejects an override that still contains Jinja markers.
+
+Template fields:
+
+- `project_name`, `import_name`, `test_root`, `venv_name`
+- `environment_setup`, `base_test_command`
+- `import_check_command`, `collection_check_command`
+- `default_flags`, `custom_flags`
+- `fixture_invariants`, `test_layout`, `change_test_mapping`
+- `quick_check_commands`, `known_outcomes`, `tractor_runtime_notes`
+
+See `references/tractor-example.md` and `references/modden-example.md` for
+complete examples with different harnesses.
+
+## Migration Safety
+
+### Existing local `SKILL.md`
+
+The deploy script refuses to overwrite a regular local `SKILL.md`. Extract
+its project-specific commands and mappings into
+`test-harness-reference.md`, remove or archive the old base, then deploy
+again.
+
+### Existing whole-directory symlink
+
+The deploy script can replace a whole-directory link only when it resolves to
+a recognized `ai.skillz/skills/run-tests` source. Links to another consumer's
+local Run skill are refused because they may be user-owned. Inspect those
+links, extract repository-specific guidance into
+`test-harness-reference.md`, and unlink them manually before deployment. The
+script never writes through the old link.
+
+### Existing local reference
+
+Repeated deployment preserves the reference byte-for-byte and refreshes only
+the canonical `SKILL.md` link.
+
+## OpenCode
+
+OpenCode needs both skill discovery and a slash-command shim:
+
+```sh
+bash /path/to/ai.skillz/scripts/deploy.sh \
+  run-tests /path/to/repo --provider opencode --method symlink
+bash /path/to/ai.skillz/scripts/deploy.sh command run-tests /path/to/repo \
+  --provider opencode --method symlink
+```
+
+Use `--method submodule` for both operations after portable initialization.
+The canonical shim is tracked at `providers/opencode/commands/run-tests.md`.
+Restart OpenCode after deployment; skills and commands are loaded at startup.
+
+## Tracking And Ignore Rules
+
+For absolute development deployment:
+
+- the deploy script ignores the absolute
+  `.claude/skills/run-tests/SKILL.md` link;
+- track `test-harness-reference.md`;
+- ignore absolute OpenCode skill and command links.
+
+For submodule deployment:
+
+- track the relative `SKILL.md` link;
+- track `test-harness-reference.md`;
+- track relative OpenCode skill and command links when used.
+
+The canonical command source remains tracked in `ai.skillz`. Consumer command
+links are local by default; portable relative links are an explicit opt-in.
+
+## Fallback Without An Override
+
+The canonical base can inspect project metadata and run conservative,
+evidence-backed commands without a local reference. It reports that fallback
+and never imports another repository's package names, flags, mappings, or
+known failures.
+
+## Worktrees
+
+An absolute link may need deployment in each worktree. A tracked relative
+submodule link is portable when the submodule is initialized there. In every
+case, the base resolves `test-harness-reference.md` from the active worktree's
+repository root.

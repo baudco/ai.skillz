@@ -13,15 +13,16 @@ bash /path/to/ai.skillz/scripts/deploy.sh prompt-io <repo> \
   --provider <claude|opencode|all>
 ```
 
-The source anchor is `.ai/ai.skillz`. Relative provider links are
-created at `.claude/skills/prompt-io` and/or
-`.opencode/skills/prompt-io`. The active service writes under
+Provider links are created at `.claude/skills/prompt-io` and/or
+`.opencode/skills/prompt-io`. Local mode uses ignored absolute links;
+submodule mode uses trackable relative links through `.ai/ai.skillz`. The
+active service writes under
 `ai/prompt-io/claude/`, `ai/prompt-io/opencode/`, or another matching
 service namespace.
 
-Track provider links and the durable prompt records required by project
-policy. With submodule mode, also track `.gitmodules` and the anchor
-gitlink; with local mode, ignore the absolute anchor. Deployment does
+Always track the durable prompt records required by project policy. Track
+provider links, `.gitmodules`, and the anchor gitlink only in submodule mode;
+local provider links remain ignored. Deployment does
 not modify existing prompt logs and stages only when `--stage` is
 explicitly supplied.
 

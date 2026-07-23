@@ -13,17 +13,15 @@ bash /path/to/ai.skillz/scripts/deploy.sh code-review-changes <repo> \
   --provider <claude|opencode|all>
 ```
 
-The provider-neutral source anchor is `.ai/ai.skillz`. Provider
-destinations are `.claude/skills/code-review-changes` and
-`.opencode/skills/code-review-changes`, both relative links to the same
-canonical directory.
+Provider destinations are `.claude/skills/code-review-changes` and
+`.opencode/skills/code-review-changes`. Local mode uses ignored absolute
+links; submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
 Existing `.claude/review_context.md` and
 `.claude/review_regression.md` files remain local and are never moved or
-overwritten by source deployment or migration. Track provider links;
-submodule mode also tracks `.gitmodules` and the anchor gitlink, while
-local mode ignores the absolute anchor. Nothing is staged unless
-`--stage` is explicitly supplied.
+overwritten by source deployment or migration. Track provider links only in
+submodule mode, together with `.gitmodules` and the anchor gitlink. Nothing is
+staged unless `--stage` is explicitly supplied.
 
 Quit and restart OpenCode after deployment or update. The default
 OpenCode skill directory works without config mutation.

@@ -13,14 +13,13 @@ bash /path/to/ai.skillz/scripts/deploy.sh inter-skill-review <repo> \
   --provider <claude|opencode|all>
 ```
 
-The local method makes `.ai/ai.skillz` an ignored absolute symlink; the
-submodule method makes it a tracked, version-pinned source anchor. The
-provider destinations are `.claude/skills/inter-skill-review` and
-`.opencode/skills/inter-skill-review`, each linked relatively through
-the provider-neutral anchor.
+The provider destinations are `.claude/skills/inter-skill-review` and
+`.opencode/skills/inter-skill-review`. Local mode uses ignored absolute
+links; submodule mode uses trackable relative links through a version-pinned
+`.ai/ai.skillz` anchor.
 
-Track provider links and, for submodule mode, `.gitmodules` plus the
-anchor gitlink. Nothing is staged unless `--stage` is explicitly
+Track provider links, `.gitmodules`, and the anchor gitlink only in submodule
+mode. Nothing is staged unless `--stage` is explicitly
 supplied. Quit and restart OpenCode after deployment or update. No
 `opencode.json` or
 `opencode.jsonc` mutation is needed or performed.

@@ -16,11 +16,11 @@ bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
   --provider <claude|opencode|all>
 ```
 
-The source anchor is always `.ai/ai.skillz`. Deployment creates hybrid
-directories at `.claude/skills/commit-msg/` and/or
-`.opencode/skills/commit-msg/`, with `SKILL.md` linked relatively to the
-same canonical file. It does not replace either directory, so existing
-local files survive migration and redeployment.
+Deployment creates hybrid directories at `.claude/skills/commit-msg/` and/or
+`.opencode/skills/commit-msg/`. Local mode uses ignored absolute `SKILL.md`
+links; submodule mode uses trackable relative links through `.ai/ai.skillz`.
+It does not replace either directory, so existing local files survive
+migration and redeployment.
 
 The workflow's persisted runtime contract remains under `.claude/`:
 
@@ -47,20 +47,21 @@ bash /path/to/ai.skillz/scripts/deploy.sh command commit-msg <repo> \
 The first command is required even if another provider already has the
 skill. Command deployment refuses a missing or unhealthy OpenCode skill.
 
-Track `.opencode/commands/commit-msg.md`; consumer deployment copies it
-from `.ai/ai.skillz/providers/opencode/commands/commit-msg.md`. This
-`ai.skillz` checkout itself uses a tracked relative link to the canonical
-provider asset. There is no corresponding Claude command asset to deploy.
+Local deployment creates an ignored absolute
+`.opencode/commands/commit-msg.md` link. Submodule deployment creates a
+trackable relative link to
+`.ai/ai.skillz/providers/opencode/commands/commit-msg.md`. This `ai.skillz`
+checkout itself uses a tracked relative link to the canonical provider asset.
+There is no corresponding Claude command asset to deploy.
 OpenCode discovers the command and skill through its default project
 directories, so the script does not mutate `opencode.json` or
 `opencode.jsonc`. Quit and restart OpenCode after deployment or update.
 
 ## Tracking
 
-Track provider source links. In submodule mode, also track
-`.gitmodules` and the `.ai/ai.skillz` gitlink. In local mode, ignore the
-absolute anchor. Nothing is staged unless `--stage` is explicitly
-supplied.
+Track provider links, `.gitmodules`, and the `.ai/ai.skillz` gitlink only in
+submodule mode. Local provider links remain ignored. Nothing is staged unless
+`--stage` is explicitly supplied.
 
 ## Post-deploy setup
 

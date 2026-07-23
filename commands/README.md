@@ -23,10 +23,12 @@ commands/<name>/
 |---------|----------|-------------|
 | `branch-in-new-terminal` | Claude Code | Fork the current session and open the branch in a new terminal window (precise-id via `SessionStart` hook, or `--continue` fallback). |
 | `commit-msg` | OpenCode | Load the canonical `commit-msg` skill for staged changes. |
+| `run-tests` | OpenCode | Load the canonical test workflow and repository harness. |
+| `taken-export` | OpenCode | Export repository work as Taken-compatible Org tasks. |
 
-The reusable OpenCode shim is stored at
-`providers/opencode/commands/commit-msg.md`; this checkout's
-`.opencode/commands/commit-msg.md` is a relative link to it.
+Reusable OpenCode shims are stored at
+`providers/opencode/commands/<name>.md`; this checkout's matching
+`.opencode/commands/<name>.md` paths are relative links to them.
 
 ## Deployment
 
@@ -56,13 +58,10 @@ bash /path/to/ai.skillz/scripts/deploy.sh command \
 The deploy script refuses the OpenCode command unless the associated
 `.opencode/skills/commit-msg` deployment is healthy.
 
-Claude command destinations are relative links through `.ai/ai.skillz`
-in both methods. OpenCode's `commit-msg` shim is copied as a regular
-`.opencode/commands/commit-msg.md` file. Track the resulting provider
-command files in consumer repositories. With the local method, the
-anchor is an ignored absolute symlink; with the submodule method, track
-`.gitmodules` and the `.ai/ai.skillz` gitlink as well. Nothing is staged
-unless `--stage` is explicitly supplied.
+Local command deployment uses ignored absolute links. Submodule deployment
+uses trackable relative links through `.ai/ai.skillz`; also track
+`.gitmodules` and the anchor gitlink. Nothing is staged unless `--stage` is
+explicitly supplied.
 
 `--provider claude|opencode|all` selects provider destinations, but a
 command is deployed only where an implementation exists. The Claude

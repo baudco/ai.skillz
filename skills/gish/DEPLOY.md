@@ -15,12 +15,12 @@ bash /path/to/ai.skillz/scripts/deploy.sh gish <repo> \
   --provider <claude|opencode|all>
 ```
 
-`.ai/ai.skillz` is the provider-neutral source anchor. The provider
-destinations are `.claude/skills/gish` and `.opencode/skills/gish`,
-both relative links to the canonical directory.
+The provider destinations are `.claude/skills/gish` and
+`.opencode/skills/gish`. Local mode uses ignored absolute links; submodule
+mode uses trackable relative links through `.ai/ai.skillz`.
 
-Track provider links. Submodule deployments also track `.gitmodules`
-and the anchor gitlink; local deployments ignore the absolute anchor.
+Track provider links, `.gitmodules`, and the anchor gitlink only for
+submodule deployments. Local provider links remain ignored.
 The script stages only when `--stage` is explicitly supplied. Quit and
 restart OpenCode after deploy or update. It uses default discovery and
 does not mutate `opencode.json` or `opencode.jsonc`.
