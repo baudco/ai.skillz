@@ -112,10 +112,12 @@ while read -r mode blob stage path; do
         esac
     fi
     case "$path" in
-        .claude/skills/*/msgs/*|.claude/skills/*/conf.toml|\
+        .claude/skills/*/msgs|.claude/skills/*/msgs/*|\
+        .claude/skills/*/conf.toml|\
         .claude/git_commit_msg_LATEST.md|.claude/skills/pr-msg/pr_msg_LATEST.md|\
         .claude/review_context.md|.claude/review_regression.md|\
-        .claude/wkts/*|.claude/.current_session|claude_wkts)
+        .claude/wkts/*|.claude/.current_session|claude_wkts|\
+        .ai/taken/exports|.ai/taken/exports/*)
             printf 'ERROR: runtime state is staged or tracked: %s\n' "$path" >&2
             errors=$((errors + 1))
             ;;

@@ -105,6 +105,7 @@ prepare_source_repo() {
         "$SOURCE_WORK/skills/run-tests/SKILL.md"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
+    cp "$ROOT/.gitignore" "$SOURCE_WORK/.gitignore"
     cp "$ROOT/scripts/deploy.sh" "$SOURCE_WORK/scripts/deploy.sh"
     cp "$ROOT/scripts/validate-deployment.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
@@ -116,7 +117,7 @@ prepare_source_repo() {
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
     done
-    git -C "$SOURCE_WORK" add deploy-manifest.conf gitignore-patterns.conf \
+    git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
         providers/opencode/commands skills/run-tests/SKILL.md \
         .opencode/commands
@@ -201,6 +202,67 @@ test_init_stage_preserves_gitmodules_index() {
     grep -q '# unstaged-user-line' "$REPO/.gitmodules" \
         || fail 'unstaged .gitmodules content was removed from worktree'
     pass 'init --stage merges only generated submodule section into existing index'
+}
+
+test_submodule_init_boundaries() {
+    new_repo external-gitmodules
+    local external="$TMP_ROOT/external-gitmodules-file" before tree_before
+    printf 'external-user-content\n' > "$external"
+    ln -s "$external" "$REPO/.gitmodules"
+    before="$(file_digest "$external")"
+    tree_before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" init "$REPO" --method submodule \
+        --url "$SOURCE_URL"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'refusing symlinked .gitmodules'
+    assert_eq "$(file_digest "$external")" "$before"
+    assert_eq "$(tree_digest "$REPO")" "$tree_before"
+    [ ! -e "$REPO/.ai" ] || fail 'unsafe .gitmodules preflight created anchor state'
+
+    new_repo invalid-new-submodule-ref
+    tree_before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" init "$REPO" --method submodule \
+        --url "$SOURCE_URL" --ref no-such-ref
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'submodule ref not found'
+    assert_eq "$(tree_digest "$REPO")" "$tree_before"
+    [ ! -e "$REPO/.gitmodules" ] \
+        || fail 'failed ref left .gitmodules behind'
+    [ ! -e "$REPO/.ai" ] || fail 'failed ref left anchor state behind'
+
+    new_repo initialized-submodule-source
+    git -c protocol.file.allow=always -C "$REPO" submodule add -q \
+        "$SOURCE_URL" .ai/ai.skillz
+    git -C "$REPO" commit -qam 'portable fixture'
+    local portable_source="$REPO"
+    local invalid_clone="$TMP_ROOT/uninitialized-invalid-ref"
+    git clone -q "$portable_source" "$invalid_clone"
+    REPO="$invalid_clone"
+    local submodule_key submodule_name modules_path
+    submodule_key="$(git -C "$REPO" config -f .gitmodules \
+        --get-regexp '^submodule\..*\.path$' | while read -r key _; do
+            printf '%s' "$key"
+        done)"
+    submodule_name="${submodule_key#submodule.}"
+    submodule_name="${submodule_name%.path}"
+    modules_path="$(git -C "$REPO" rev-parse --git-path "modules/$submodule_name")"
+    case "$modules_path" in /*) ;; *) modules_path="$REPO/$modules_path" ;; esac
+    [ ! -e "$modules_path" ] || fail 'fixture module repository already exists'
+    assert_fails bash "$DEPLOY" init "$REPO" --method submodule \
+        --ref no-such-ref
+    [ ! -f "$REPO/.ai/ai.skillz/.git" ] \
+        || fail 'failed ref left registered submodule initialized'
+    [ ! -e "$modules_path" ] \
+        || fail 'failed ref left cloned module repository metadata'
+
+    local clone="$TMP_ROOT/uninitialized-submodule-clone"
+    git clone -q "$portable_source" "$clone"
+    REPO="$clone"
+    [ ! -f "$REPO/.ai/ai.skillz/.git" ] \
+        || fail 'fixture submodule initialized unexpectedly'
+    bash "$DEPLOY" init "$REPO" --method submodule >/dev/null
+    [ -f "$REPO/.ai/ai.skillz/.git" ] \
+        || fail 'registered submodule was not initialized'
+    bash "$DEPLOY" status "$REPO" --provider all >/dev/null
+    pass 'submodule init refuses unsafe metadata and initializes registered gitlinks'
 }
 
 test_phase0_and_global_compatibility() {
@@ -380,6 +442,15 @@ test_external_provider_parent_refusal() {
     before="$(tree_digest "$external")"
     assert_fails bash "$DEPLOY" pr-msg "$REPO" --provider opencode
     assert_eq "$(tree_digest "$external")" "$before"
+
+    new_repo internal-provider-parent
+    mkdir -p "$REPO/config/claude"
+    ln -s config/claude "$REPO/.claude"
+    target_before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" commit-msg "$REPO" --provider claude
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'refusing symlinked provider parent'
+    assert_eq "$(tree_digest "$REPO")" "$target_before"
     pass 'external provider roots, type directories, and destination parents refuse without mutation'
 }
 
@@ -435,6 +506,13 @@ test_runtime_ignores_and_state_preservation() {
     assert_eq "$(<"$REPO/.claude/skills/commit-msg/msgs/old.md")" keep
     assert_file_contains "$REPO/.gitignore" '.claude/skills/commit-msg/msgs/'
     assert_not_contains "$(<"$REPO/.gitignore")" '.opencode/skills/commit-msg/msgs/'
+    printf '!/.claude/skills/commit-msg/msgs/\n' >> "$REPO/.gitignore"
+    assert_fails bash "$DEPLOY" commit-msg "$REPO" --provider opencode
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'would not be effectively ignored'
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'UNHEALTHY:not ignored'
     pass 'OpenCode deployment preserves and ignores canonical .claude runtime state'
 }
 
@@ -565,6 +643,13 @@ test_run_tests_hybrid_migration_safety() {
         "$ROOT/providers/opencode/commands/run-tests.md"
     git -C "$REPO" check-ignore -q -- .opencode/commands/run-tests.md \
         || fail 'local run-tests command link was not ignored'
+    mkdir -p "$REPO/.claude/skills/run-tests"
+    printf 'OpenCode-only harness\n' \
+        > "$REPO/.claude/skills/run-tests/test-harness-reference.md"
+    local output
+    output="$(bash "$DEPLOY" status "$REPO" --provider all)"
+    assert_contains "$output" 'runtime-state-only (not deployed) [healthy]'
+    "$ROOT/scripts/validate-deployment.sh" "$REPO" >/dev/null
     pass 'run-tests hybrid migration preserves local state and rejects project-owned bases'
 }
 
@@ -617,28 +702,72 @@ test_local_tracking_and_portable_ignore_preflight() {
 }
 
 test_gitignore_integrity_and_inventory() {
-    new_repo ignore-integrity
+    new_repo symlinked-ignore
     mkdir -p "$REPO/config"
     printf 'user-line\n' > "$REPO/config/ignore"
     chmod 640 "$REPO/config/ignore"
     ln -s config/ignore "$REPO/.gitignore"
-    local mode_before
+    local mode_before before
     mode_before="$(mode_string "$REPO/config/ignore")"
-    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    before="$(file_digest "$REPO/config/ignore")"
+    assert_fails bash "$DEPLOY" init "$REPO" --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'Git does not follow it'
     [ -L "$REPO/.gitignore" ] || fail '.gitignore symlink was replaced'
     assert_eq "$(mode_string "$REPO/config/ignore")" "$mode_before"
-    assert_file_contains "$REPO/config/ignore" user-line
-    bash "$DEPLOY" gitignore "$REPO" >/dev/null
-    assert_file_contains "$REPO/config/ignore" '.claude/.current_session'
-    assert_file_contains "$REPO/config/ignore" '.claude/skills/commit-msg/msgs/'
-    assert_file_contains "$REPO/config/ignore" '.claude/review_regression.md'
-
-    printf '\n# END ai.skillz: bad\n' >> "$REPO/config/ignore"
-    local before
-    before="$(file_digest "$REPO/config/ignore")"
-    assert_fails bash "$DEPLOY" gitignore "$REPO"
     assert_eq "$(file_digest "$REPO/config/ignore")" "$before"
-    pass 'gitignore updates preserve links/modes/user lines and validate all markers'
+
+    new_repo hardlinked-ignore
+    local external="$TMP_ROOT/external-hardlinked-ignore"
+    printf 'external-user-line\n' > "$external"
+    ln "$external" "$REPO/.gitignore"
+    before="$(file_digest "$external")"
+    bash "$DEPLOY" py-codestyle "$REPO" --method symlink >/dev/null
+    assert_eq "$(file_digest "$external")" "$before"
+    [ ! "$REPO/.gitignore" -ef "$external" ] \
+        || fail '.gitignore still shares an external hard-linked inode'
+
+    new_repo ignore-integrity
+    printf 'user-line\n' > "$REPO/.gitignore"
+    chmod 640 "$REPO/.gitignore"
+    mode_before="$(mode_string "$REPO/.gitignore")"
+    bash "$DEPLOY" py-codestyle "$REPO" --method symlink >/dev/null
+    printf '!/.claude/skills/py-codestyle\n' >> "$REPO/.gitignore"
+    rm "$REPO/.claude/skills/py-codestyle"
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" py-codestyle "$REPO" --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'managed local path would not be effectively ignored'
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    printf 'user-line\n' > "$REPO/.gitignore"
+    bash "$DEPLOY" py-codestyle "$REPO" --method symlink >/dev/null
+    git -C "$REPO" check-ignore -q --no-index -- \
+        .claude/skills/py-codestyle \
+        || fail 'managed ignore block was not effective after correction'
+    assert_eq "$(mode_string "$REPO/.gitignore")" "$mode_before"
+    assert_file_contains "$REPO/.gitignore" user-line
+    bash "$DEPLOY" gitignore "$REPO" >/dev/null
+    assert_file_contains "$REPO/.gitignore" '.claude/.current_session'
+    assert_file_contains "$REPO/.gitignore" '.claude/skills/commit-msg/msgs/'
+    assert_file_contains "$REPO/.gitignore" '.claude/review_regression.md'
+
+    printf '\n# END ai.skillz: bad\n' >> "$REPO/.gitignore"
+    before="$(file_digest "$REPO/.gitignore")"
+    assert_fails bash "$DEPLOY" gitignore "$REPO"
+    assert_eq "$(file_digest "$REPO/.gitignore")" "$before"
+
+    new_repo bulk-ignore-preflight
+    printf '%s\n' \
+        '# BEGIN ai.skillz: runtime:taken-export' \
+        '.ai/taken/exports/' \
+        '# END ai.skillz: runtime:taken-export' \
+        '!/.ai/taken/exports/' > "$REPO/.gitignore"
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" gitignore "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'would not be effectively ignored'
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    pass 'gitignore updates reject symlinks, preserve user content, and remain effective'
 }
 
 test_direct_migration_dry_run() {
@@ -664,7 +793,54 @@ test_direct_migration_dry_run() {
     assert_eq "$(file_digest "$REPO/.opencode/opencode.json")" "$config_before"
     assert_eq "$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")" \
         "$ROOT/skills/commit-msg/SKILL.md"
+
+    new_repo migration-ignore-preflight
+    bash "$DEPLOY" py-codestyle "$REPO" --method symlink >/dev/null
+    printf '!/.claude/skills/py-codestyle\n' >> "$REPO/.gitignore"
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" migrate "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'would not be effectively ignored'
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    [ ! -e "$REPO/.ai" ] \
+        || fail 'failed migration ignore preflight created an anchor'
     pass 'direct migration dry-run exactly predicts real actions without mutation'
+}
+
+test_multi_asset_migration_ignore() {
+    new_repo multi-asset-migration
+    mkdir -p "$REPO/.claude/skills/pr-msg"
+    local asset
+    for asset in SKILL.md references scripts; do
+        ln -s "$SOURCE_WORK/skills/pr-msg/$asset" \
+            "$REPO/.claude/skills/pr-msg/$asset"
+    done
+    bash "$DEPLOY" migrate "$REPO" >/dev/null
+    for asset in SKILL.md references scripts; do
+        git -C "$REPO" check-ignore -q --no-index -- \
+            ".claude/skills/pr-msg/$asset" \
+            || fail "migrated pr-msg asset is not ignored: $asset"
+    done
+    bash "$DEPLOY" status "$REPO" --provider all >/dev/null
+
+    new_repo partial-multi-asset-ignore
+    mkdir -p "$REPO/.claude/skills/pr-msg"
+    for asset in SKILL.md references scripts; do
+        ln -s "$SOURCE_WORK/skills/pr-msg/$asset" \
+            "$REPO/.claude/skills/pr-msg/$asset"
+    done
+    printf '%s\n' \
+        '# BEGIN ai.skillz: direct:symlink:claude:pr-msg' \
+        '/.claude/skills/pr-msg/SKILL.md' \
+        '# END ai.skillz: direct:symlink:claude:pr-msg' > "$REPO/.gitignore"
+    bash "$DEPLOY" migrate "$REPO" >/dev/null
+    for asset in SKILL.md references scripts; do
+        git -C "$REPO" check-ignore -q --no-index -- \
+            ".claude/skills/pr-msg/$asset" \
+            || fail "partially migrated pr-msg asset is not ignored: $asset"
+    done
+    bash "$DEPLOY" status "$REPO" --provider all >/dev/null
+    pass 'multi-asset hybrid migration preserves complete ignore coverage'
 }
 
 test_direct_to_submodule_migration() {
@@ -717,12 +893,49 @@ test_migration_full_preflight_zero_mutation() {
         "$REPO/.opencode/skills/py-codestyle"
     local before
     before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider all
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'mixed source roots'
     assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'mixed source roots'
     assert_eq "$(tree_digest "$REPO")" "$before"
     assert_fails bash "$DEPLOY" migrate "$REPO"
     assert_eq "$(tree_digest "$REPO")" "$before"
     [ ! -e "$REPO/.ai" ] || fail 'mixed-root migration created anchor'
+
+    local relative_one="$TMP_ROOT/relative-one-ai.skillz"
+    local relative_two="$TMP_ROOT/relative-two-ai.skillz"
+    git clone -q "$SOURCE_WORK" "$relative_one"
+    git clone -q "$SOURCE_WORK" "$relative_two"
+    new_repo mixed-relative-status
+    mkdir -p "$REPO/.claude/skills" "$REPO/.opencode/skills"
+    ln -s "$(realpath --relative-to="$REPO/.claude/skills" \
+        "$relative_one/skills/py-codestyle")" \
+        "$REPO/.claude/skills/py-codestyle"
+    ln -s "$(realpath --relative-to="$REPO/.opencode/skills" \
+        "$relative_two/skills/py-codestyle")" \
+        "$REPO/.opencode/skills/py-codestyle"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider all
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'mixed source roots'
+
+    new_repo unrelated-git-migration
+    bash "$DEPLOY" init "$REPO" --method submodule --url "$SOURCE_URL" \
+        >/dev/null
+    local unrelated="$TMP_ROOT/unrelated-skill-repo"
+    mkdir -p "$unrelated/skills/py-codestyle" "$REPO/.opencode/skills"
+    git -C "$unrelated" init -q
+    printf 'skill|py-codestyle|template|-\n' \
+        > "$unrelated/deploy-manifest.conf"
+    printf '%s\n' '---' 'name: py-codestyle' '---' \
+        > "$unrelated/skills/py-codestyle/SKILL.md"
+    ln -s "$unrelated/skills/py-codestyle" \
+        "$REPO/.opencode/skills/py-codestyle"
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'unrecognized or broken migration link'
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    assert_fails bash "$DEPLOY" migrate "$REPO"
+    assert_eq "$(tree_digest "$REPO")" "$before"
 
     new_repo mixed-submodule-migration
     bash "$DEPLOY" init "$REPO" --method submodule --url "$SOURCE_URL" \
@@ -759,6 +972,26 @@ test_migration_full_preflight_zero_mutation() {
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'anchor parent is not a directory'
     assert_eq "$(tree_digest "$REPO")" "$before"
     pass 'migration fully preflights mixed roots and missing assets with zero mutation'
+}
+
+test_tracked_command_copy_transition() {
+    new_repo tracked-command-copy
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --method symlink >/dev/null
+    mkdir -p "$REPO/.opencode/commands"
+    cp "$ROOT/providers/opencode/commands/commit-msg.md" \
+        "$REPO/.opencode/commands/commit-msg.md"
+    git -C "$REPO" add -f .opencode/commands/commit-msg.md
+    git -C "$REPO" commit -qm 'tracked command copy fixture'
+    assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'tracked canonical command copy must be untracked'
+    git -C "$REPO" rm --cached -q -- .opencode/commands/commit-msg.md
+    bash "$DEPLOY" migrate "$REPO" --dry-run >/dev/null
+    bash "$DEPLOY" migrate "$REPO" >/dev/null
+    [ -L "$REPO/.opencode/commands/commit-msg.md" ] \
+        || fail 'untracked canonical command copy was not converted to a link'
+    pass 'tracked canonical command copies require an explicit index transition'
 }
 
 test_migration_preserves_managed_command_link() {
@@ -1006,6 +1239,22 @@ test_deployment_validator_failures() {
     assert_contains "$(<"$TMP_ROOT/failure.out")" \
         'runtime state is staged or tracked: .claude/skills/commit-msg/msgs/tracked.md'
 
+    new_repo validate-runtime-msgs-file
+    mkdir -p "$REPO/.claude/skills/commit-msg"
+    printf malformed > "$REPO/.claude/skills/commit-msg/msgs"
+    git -C "$REPO" add -f .claude/skills/commit-msg/msgs
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'runtime state is staged or tracked: .claude/skills/commit-msg/msgs'
+
+    new_repo validate-taken-export-runtime
+    mkdir -p "$REPO/.ai/taken/exports"
+    printf tracked > "$REPO/.ai/taken/exports/item"
+    git -C "$REPO" add -f .ai/taken/exports/item
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'runtime state is staged or tracked: .ai/taken/exports/item'
+
     new_repo validate-command-dependency
     mkdir -p "$REPO/.opencode/commands"
     cp "$ROOT/providers/opencode/commands/commit-msg.md" \
@@ -1052,12 +1301,24 @@ test_opencode_debug_if_available() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" command run-tests "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" taken-export "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" command taken-export "$REPO" --provider opencode >/dev/null
     local config_output="$TMP_ROOT/opencode-config.out"
     local skill_output="$TMP_ROOT/opencode-skill.out"
-    (cd "$REPO" && opencode debug config > "$config_output")
-    (cd "$REPO" && opencode debug skill > "$skill_output")
+    (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
+        OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
+        opencode debug config > "$config_output")
+    (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
+        OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
+        opencode debug skill > "$skill_output")
     assert_file_contains "$config_output" '"commit-msg"'
+    assert_file_contains "$config_output" '"run-tests"'
+    assert_file_contains "$config_output" '"taken-export"'
     assert_file_contains "$skill_output" '"name": "commit-msg"'
+    assert_file_contains "$skill_output" '"name": "run-tests"'
+    assert_file_contains "$skill_output" '"name": "taken-export"'
     assert_file_contains "$skill_output" \
         "\"location\": \"$REPO/.opencode/skills/commit-msg/SKILL.md\""
     pass 'OpenCode debug config and skill resolve deployed fixture'
@@ -1068,6 +1329,7 @@ test_local_anchor_and_anchor_authority
 test_subdirectory_resolves_repository_root
 test_submodule_and_default_url
 test_init_stage_preserves_gitmodules_index
+test_submodule_init_boundaries
 test_phase0_and_global_compatibility
 test_exact_staging_and_index_preservation
 test_managed_replacement_safety
@@ -1083,8 +1345,10 @@ test_run_tests_hybrid_migration_safety
 test_local_tracking_and_portable_ignore_preflight
 test_gitignore_integrity_and_inventory
 test_direct_migration_dry_run
+test_multi_asset_migration_ignore
 test_direct_to_submodule_migration
 test_migration_full_preflight_zero_mutation
+test_tracked_command_copy_transition
 test_migration_preserves_managed_command_link
 test_legacy_submodule_relocation
 test_json_skills_paths_inspection
