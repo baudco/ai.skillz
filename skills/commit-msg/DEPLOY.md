@@ -1,50 +1,66 @@
 # Deploying `/commit-msg`
 
-## Method A: Absolute symlinks (single machine)
+`commit-msg` is hybrid: canonical workflow content is shared, while its
+style guide, session configuration, and generated messages remain local
+to each consumer repository.
 
-### 1. Create skill directory in your repo
-
-```bash
-mkdir -p .claude/skills/commit-msg/msgs
-```
-
-### 2. Symlink the generic SKILL.md
+## Deployment
 
 ```bash
-ln -s /path/to/ai.skillz/skills/commit-msg/SKILL.md \
-      .claude/skills/commit-msg/SKILL.md
+# Local development anchor (ignored absolute symlink).
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# Or portable, version-pinned anchor.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
+  --provider <claude|opencode|all>
 ```
 
-Or use the deploy script:
+The source anchor is always `.ai/ai.skillz`. Deployment creates hybrid
+directories at `.claude/skills/commit-msg/` and/or
+`.opencode/skills/commit-msg/`, with `SKILL.md` linked relatively to the
+same canonical file. It does not replace either directory, so existing
+local files survive migration and redeployment.
+
+The workflow's persisted runtime contract remains under `.claude/`:
+
+- `.claude/skills/commit-msg/style-guide-reference.md`
+- `.claude/skills/commit-msg/conf.toml`
+- `.claude/skills/commit-msg/msgs/`
+- `.claude/git_commit_msg_LATEST.md`
+- `.claude/review_context.md` and `.claude/review_regression.md`
+
+This state remains local or ignored as appropriate. Source-anchor
+migration does not move, delete, or rewrite it.
+
+## OpenCode command
+
+Deploy the reusable OpenCode command shim separately:
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
+  --provider opencode
+bash /path/to/ai.skillz/scripts/deploy.sh command commit-msg <repo> \
+  --provider opencode
 ```
 
-## Method B: Git submodule (portable, version-pinned)
+The first command is required even if another provider already has the
+skill. Command deployment refuses a missing or unhealthy OpenCode skill.
 
-### One-time setup
+Track `.opencode/commands/commit-msg.md`; consumer deployment copies it
+from `.ai/ai.skillz/providers/opencode/commands/commit-msg.md`. This
+`ai.skillz` checkout itself uses a tracked relative link to the canonical
+provider asset. There is no corresponding Claude command asset to deploy.
+OpenCode discovers the command and skill through its default project
+directories, so the script does not mutate `opencode.json` or
+`opencode.jsonc`. Quit and restart OpenCode after deployment or update.
 
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
-```
+## Tracking
 
-### Deploy this skill
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <your-repo>
-```
-
-### What gets committed
-
-- `.gitmodules`, `.claude/ai.skillz` (gitlink)
-- `.claude/skills/commit-msg/SKILL.md` → relative symlink
-  to `../../ai.skillz/skills/commit-msg/SKILL.md`
-- per-repo files (`style-guide-reference.md`, etc.)
-
-### What gets gitignored
-
-- `msgs/`, `conf.toml`, `*_LATEST.md`
+Track provider source links. In submodule mode, also track
+`.gitmodules` and the `.ai/ai.skillz` gitlink. In local mode, ignore the
+absolute anchor. Nothing is staged unless `--stage` is explicitly
+supplied.
 
 ## Post-deploy setup
 
@@ -55,8 +71,8 @@ bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <your-repo>
 Python stdlib):
 
 ```bash
-python /path/to/ai.skillz/scripts/generate-style-guide.py \
-  . --commits 500 \
+python <repo>/.ai/ai.skillz/scripts/generate-style-guide.py \
+  <repo> --commits 500 \
   --output .claude/skills/commit-msg/style-guide-reference.md
 ```
 
@@ -70,17 +86,17 @@ Optional flags:
   author's commits
 - `-n <count>` — number of commits (default: 500)
 
-**Option B**: have `claude` analyze your commit
+**Option B**: have the active coding agent analyze your commit
 history and write the style guide manually, using
 the examples in
-`ai.skillz/skills/commit-msg/references/` as
+`.ai/ai.skillz/skills/commit-msg/references/` as
 models. The output should match the same structure
 as Option A's generated guide.
 
 ### (Optional) Create session tracking config
 
 ```bash
-cp /path/to/ai.skillz/templates/commit-msg/conf.toml.j2 \
+cp <repo>/.ai/ai.skillz/templates/commit-msg/conf.toml.j2 \
    .claude/skills/commit-msg/conf.toml
 ```
 
@@ -96,6 +112,21 @@ skill generate one on first invocation.
 ## What gets symlinked (from ai.skillz)
 
 - `SKILL.md` — the generic workflow definition
+
+## Maintenance
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
+```
+
+`status` reports anchor health, hybrid links, command presence, legacy
+layouts, and unportable OpenCode `skills.paths`. Review the migration
+dry run before applying it. `update` advances a submodule anchor; update
+a local checkout directly.
 
 ## Prerequisites
 

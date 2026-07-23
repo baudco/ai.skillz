@@ -1,50 +1,54 @@
 # Deploying `/prompt-io`
 
-This skill is fully generic — no per-repo
-customization needed.
+The skill source is a generic whole directory. Prompt records are
+provider-neutral project artifacts namespaced by AI service.
 
-## Method A: Absolute symlinks (single machine)
-
-```bash
-ln -s /path/to/ai.skillz/skills/prompt-io \
-      .claude/skills/prompt-io
-mkdir -p ai/prompt-io/claude
-```
-
-Or use the deploy script:
+## Deployment
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy.sh \
-  prompt-io <your-repo>
-mkdir -p <your-repo>/ai/prompt-io/claude
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# or: ... init <repo> --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh prompt-io <repo> \
+  --provider <claude|opencode|all>
 ```
 
-## Method B: Git submodule (portable, version-pinned)
+The source anchor is `.ai/ai.skillz`. Relative provider links are
+created at `.claude/skills/prompt-io` and/or
+`.opencode/skills/prompt-io`. The active service writes under
+`ai/prompt-io/claude/`, `ai/prompt-io/opencode/`, or another matching
+service namespace.
 
-### One-time setup
+Track provider links and the durable prompt records required by project
+policy. With submodule mode, also track `.gitmodules` and the anchor
+gitlink; with local mode, ignore the absolute anchor. Deployment does
+not modify existing prompt logs and stages only when `--stage` is
+explicitly supplied.
 
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh \
-  init <your-repo>
-```
+Quit and restart OpenCode after deployment or update. Default
+`.opencode/skills/` discovery needs no `opencode.json` or
+`opencode.jsonc` mutation.
 
-### Deploy this skill
+## Tracked prompt records
 
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh \
-  prompt-io <your-repo>
-mkdir -p <your-repo>/ai/prompt-io/claude
-```
-
-### What gets committed
-
-- `.gitmodules`, `.claude/ai.skillz` (gitlink)
-- `.claude/skills/prompt-io` → relative symlink
-  to `../ai.skillz/skills/prompt-io`
 - `ai/prompt-io/<service>/README.md`
-- `ai/prompt-io/<service>/*_prompt_io.md` entries
+- `ai/prompt-io/<service>/*_prompt_io.md`
 - `ai/prompt-io/<service>/*_prompt_io.raw.md`
-  entries
+
+Source migration preserves these records in place.
+
+## Maintenance
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
+```
+
+Review the dry run before migration. `update` advances a submodule
+anchor; update a local source checkout directly.
 
 ## NLNet compliance
 

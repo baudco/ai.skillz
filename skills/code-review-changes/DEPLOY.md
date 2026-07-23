@@ -1,40 +1,46 @@
 # Deploying `/code-review-changes`
 
-This skill is fully generic — no per-repo customization
-needed.
+The skill content is generic and deploys as a whole-directory link. Its
+review handoff files are worktree-local runtime state.
 
-## Method A: Absolute symlinks (single machine)
-
-```bash
-ln -s /path/to/ai.skillz/skills/code-review-changes \
-      .claude/skills/code-review-changes
-```
-
-Or use the deploy script:
+## Deployment
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy.sh code-review-changes <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# or: ... init <repo> --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh code-review-changes <repo> \
+  --provider <claude|opencode|all>
 ```
 
-## Method B: Git submodule (portable, version-pinned)
+The provider-neutral source anchor is `.ai/ai.skillz`. Provider
+destinations are `.claude/skills/code-review-changes` and
+`.opencode/skills/code-review-changes`, both relative links to the same
+canonical directory.
 
-### One-time setup
+Existing `.claude/review_context.md` and
+`.claude/review_regression.md` files remain local and are never moved or
+overwritten by source deployment or migration. Track provider links;
+submodule mode also tracks `.gitmodules` and the anchor gitlink, while
+local mode ignores the absolute anchor. Nothing is staged unless
+`--stage` is explicitly supplied.
+
+Quit and restart OpenCode after deployment or update. The default
+OpenCode skill directory works without config mutation.
+
+## Maintenance
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
-### Deploy this skill
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh code-review-changes <your-repo>
-```
-
-### What gets committed
-
-- `.gitmodules`, `.claude/ai.skillz` (gitlink)
-- `.claude/skills/code-review-changes` → relative symlink
-  to `../ai.skillz/skills/code-review-changes`
+`status` can report unportable OpenCode `skills.paths`, but deployment
+does not edit `opencode.json` or `opencode.jsonc`. Review the migration
+dry run before applying it. Use `update` only for a submodule anchor.
 
 ## Dependencies on other skills
 

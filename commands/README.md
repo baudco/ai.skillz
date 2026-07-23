@@ -1,13 +1,13 @@
 # `ai.skillz/commands`
 
-Reusable Claude Code **slash commands** (the `/name` kind defined by
-`.claude/commands/<name>.md`), packaged here like `skills/` so they
-can be deployed across repos.
+Reusable slash commands are provider-specific adapters around canonical
+skills or provider workflows. Commands deploy as flat Markdown files in
+the selected provider's default discovery directory:
 
-Unlike skills (which deploy as `.claude/skills/<name>/` directories),
-a command deploys as a single flat `.md` file under
-`.claude/commands/`. Each command lives in its own subdir here with
-its docs + any companion config (hooks, etc.):
+- Claude Code: `.claude/commands/<name>.md`
+- OpenCode: `.opencode/commands/<name>.md`
+
+Claude command packages live here with their docs and companion config:
 
 ```
 commands/<name>/
@@ -19,25 +19,69 @@ commands/<name>/
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `branch-in-new-terminal` | Fork the current session and open the branch in a new terminal window (precise-id via `SessionStart` hook, or `--continue` fallback). |
+| Command | Provider | Description |
+|---------|----------|-------------|
+| `branch-in-new-terminal` | Claude Code | Fork the current session and open the branch in a new terminal window (precise-id via `SessionStart` hook, or `--continue` fallback). |
+| `commit-msg` | OpenCode | Load the canonical `commit-msg` skill for staged changes. |
+
+The reusable OpenCode shim is stored at
+`providers/opencode/commands/commit-msg.md`; this checkout's
+`.opencode/commands/commit-msg.md` is a relative link to it.
 
 ## Deployment
 
-`deploy.sh` has a first-class `command` mode:
+Initialize the provider-neutral `.ai/ai.skillz` anchor using either the
+local symlink or portable submodule method, then deploy only commands
+implemented for the selected provider:
 
 ```bash
-deploy.sh command <name> <target-repo>   # symlink into .claude/commands/
-deploy.sh command <name> --global        # into ~/.claude/commands/
-deploy.sh command all   <target-repo>     # every command
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# or: ... init <repo> --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  branch-in-new-terminal <repo> --provider claude
+
+# Required before the OpenCode command can be installed:
+bash /path/to/ai.skillz/scripts/deploy.sh \
+  commit-msg <repo> --provider opencode
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  commit-msg <repo> --provider opencode
+
+# Claude commands may instead be installed globally; OpenCode commands
+# remain repository-local.
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  branch-in-new-terminal --global --provider claude
 ```
 
-It symlinks the `.md` (absolute, or submodule-relative when the repo
-has the `.claude/ai.skillz` submodule), merges the command's
-`.gitignore` patterns (from `gitignore-patterns.conf`), and prints any
-companion-hook merge hint. Per-command `DEPLOY.md` covers the rest
-(hook install into `settings.json`).
+The deploy script refuses the OpenCode command unless the associated
+`.opencode/skills/commit-msg` deployment is healthy.
+
+Claude command destinations are relative links through `.ai/ai.skillz`
+in both methods. OpenCode's `commit-msg` shim is copied as a regular
+`.opencode/commands/commit-msg.md` file. Track the resulting provider
+command files in consumer repositories. With the local method, the
+anchor is an ignored absolute symlink; with the submodule method, track
+`.gitmodules` and the `.ai/ai.skillz` gitlink as well. Nothing is staged
+unless `--stage` is explicitly supplied.
+
+`--provider claude|opencode|all` selects provider destinations, but a
+command is deployed only where an implementation exists. The Claude
+`branch-in-new-terminal` command also merges its `.gitignore` pattern
+and prints the manual `SessionStart` hook instructions.
+
+Skill and command deployment defaults to Claude, while status defaults
+to both providers. Global deployment is Claude-only, does not accept a
+target repo or `--stage`, and uses local symlinks rather than an anchor.
+
+OpenCode's default `.opencode/commands/` discovery needs no
+`opencode.json` or `opencode.jsonc` mutation. Quit and restart OpenCode
+after command deployment or update. Use
+`deploy.sh status <repo> --provider all` to inspect command links,
+preview legacy movement with
+`deploy.sh migrate <repo> --dry-run`, and advance a submodule anchor with
+`deploy.sh update <repo>`. Run `scripts/validate-deployment.sh <repo>`
+afterward to check status, manifest dependencies, committed absolute
+links, and tracked or staged runtime state in the Git index.
 
 > Note: `claude-reply` is a Neovim plugin, **not** a slash-command, so
 > `deploy.sh command` does not apply to it. See the standalone
