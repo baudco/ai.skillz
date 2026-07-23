@@ -1,120 +1,96 @@
----
-name: run-tests
-description: >
-  Run {{ project_name }} test suite (or subsets). Use
-  when the user wants to run tests, verify changes,
-  or check for regressions.
-compatibility: >
-  Requires {{ test_runner }}. Designed for Claude Code
-  (or similar agentic coding tools).
-metadata:
-  author: goodboy
-  version: "0.1"
-argument-hint: "[test-path-or-pattern] [--opts]"
-allowed-tools:
-  - Bash({{ test_command }} *)
-  - Bash({{ import_check_command }})
-  - Bash(ls *)
-  - Read
-  - Grep
-  - Glob
-  - Task
----
+# Test Harness Reference: {{ project_name }}
 
-Run the `{{ project_name }}` test suite using
-`{{ test_runner }}`. Follow this process:
+This repository-local file supplements the canonical `/run-tests` skill.
+Keep project commands, paths, fixtures, and expected outcomes here; keep the
+shared execution and safety workflow in the canonical `SKILL.md`.
 
-## 1. Parse user intent
+## Project And Environment
 
-From the user's message and any arguments, determine:
+- Project: `{{ project_name }}`
+- Package/import name: `{{ import_name }}`
+- Test root: `{{ test_root }}`
+- Preferred virtual environment: `{{ venv_name }}`
+- Required shell or environment setup:
 
-- **scope**: full suite, specific file(s), specific
-  test(s), or a keyword pattern (`-k`).
-{%- if extra_scope_options %}
-{{ extra_scope_options }}
-{%- endif %}
-- **options**: any extra flags the user wants.
-
-If the user provides a bare path or pattern as argument,
-treat it as the test target. Examples:
-
-- `/run-tests` -> full suite
-- `/run-tests test_foo.py` -> single file
-- `/run-tests -k cancel` -> keyword filter
-
-## 2. Construct the test command
-
-Base command:
-```
-{{ test_command }}
+```text
+{{ environment_setup }}
 ```
 
-### Default flags (always include unless user overrides):
+## Commands
+
+Base test command:
+
+```text
+{{ base_test_command }}
+```
+
+Import and worktree-resolution check:
+
+```text
+{{ import_check_command }}
+```
+
+Collection check:
+
+```text
+{{ collection_check_command }}
+```
+
+Default flags that may be added unless the user overrides them:
+
 {{ default_flags }}
 
-### Path resolution:
-- If the user gives a bare filename, resolve it under
-  `{{ test_dir }}/`.
-- Glob if needed: `{{ test_dir }}/**/test_*<pattern>*.py`
+## Scope And Path Resolution
 
-### Key options for this project:
+Describe how bare filenames, directories, node IDs, keyword expressions,
+and full-suite requests map into `{{ test_root }}`. Record any suites that
+must not run by default because they require credentials, network access,
+GUI services, containers, or special hardware.
+
+## Project-Specific Flags And Backend Matrix
 
 {{ custom_flags }}
 
-## 3. Pre-flight checks
+Document supported combinations and the commands that provision each
+backend. Do not list planned but unavailable options as runnable.
 
-Always run these first, especially after refactors:
+## Fixture Invariants
 
-```sh
-{{ import_check }}
-```
+{{ fixture_invariants }}
 
-If this fails, fix the import error before running
-any actual tests.
+Record source data, temporary-copy behavior, environment restoration, and
+other invariants whose violation can create misleading failures.
 
-## 4. Run and report
+## Test Layout
 
-- Run the constructed command.
-- Use a timeout of **600000ms** (10min) for full suite
-  runs, **120000ms** (2min) for single-file runs.
-- Use `--lf` (last-failed) to re-run only previously
-  failing tests when iterating on a fix.
-
-### On failure:
-- Show the failing test name(s) and short traceback.
-- If the failure looks related to recent changes, point
-  out the likely cause and suggest a fix.
-- **Check the known-flaky list** (section 8) before
-  investigating.
-
-### On success:
-- Report the pass/fail/skip counts concisely.
-
-## 5. Test directory layout
-
-```
+```text
 {{ test_layout }}
 ```
 
-## 6. Change-type -> test mapping
-
-After modifying specific modules, run the corresponding
-test subset first for fast feedback:
+## Change-To-Test Mapping
 
 {{ change_test_mapping }}
 
-## 7. Quick-check shortcuts
+Prefer deterministic unit tests first, then the smallest relevant
+integration/backend matrix.
 
-### After refactors (fastest first-pass):
-```sh
+## Quick Checks
+
+```text
 {{ quick_check_commands }}
 ```
 
-### Re-run last failures only:
-```sh
-{{ test_command }} --lf -x --tb=short --no-header
-```
+## Known Outcomes
 
-## 8. Known flaky tests
+{{ known_outcomes }}
 
-{{ known_flaky }}
+List exact node IDs, conditions, and expected signatures. Do not classify a
+failure from only an exception class such as `TooSlowError`.
+
+## Tractor Runtime Notes
+
+{{ tractor_runtime_notes }}
+
+State whether the suite loads `tractor._testing.pytest`, whether registry
+addresses are fixed or session-unique, which capture modes are supported,
+and whether a repository-local cleanup command exists.

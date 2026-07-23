@@ -8,7 +8,7 @@ SKILLZ_ROOT="$(dirname "$SCRIPT_DIR")"
 MANIFEST="$SKILLZ_ROOT/deploy-manifest.conf"
 PATTERNS_CONF="$SKILLZ_ROOT/gitignore-patterns.conf"
 ANCHOR_REL=".ai/ai.skillz"
-DEFAULT_URL="../ai.skillz.git"
+DEFAULT_URL="https://github.com/baudco/ai.skillz.git"
 IGNORE_CHANGED_IDS=()
 
 die() {
@@ -32,15 +32,15 @@ Usage:
 Defaults:
   Skill and command deployment defaults to provider "claude".
   Status defaults to provider "all". Init defaults to method "submodule".
-  The default submodule URL is ../ai.skillz.git.
+  The default submodule URL is https://github.com/baudco/ai.skillz.git.
 
 Methods:
   symlink   Create .ai/ai.skillz as an ignored link to this checkout.
   submodule Create .ai/ai.skillz as a portable git submodule.
 
-Deployments use exact relative links when a healthy anchor exists. Without an
-anchor, omitted method or --method symlink retains ignored Phase-0 absolute
-link compatibility; --direct makes that choice explicit.
+Local symlink deployments use ignored absolute provider links. Submodule
+deployments use trackable relative links through the provider-neutral anchor.
+--direct is retained as an explicit local-link compatibility alias.
 Nothing is staged unless --stage is supplied; this script never commits.
 EOF
 }
@@ -627,9 +627,28 @@ select_deployment_source() {
         DEPLOY_DIRECT=yes
         DEPLOY_METHOD=symlink
         SOURCE_ROOT="$SKILLZ_ROOT"
-    elif [ "$ANCHOR_HEALTH" = healthy ]; then
-        require_anchor "$target" "$method"
+    elif [ "$method" = symlink ]; then
+        [ "$ANCHOR_HEALTH" != broken ] && [ "$ANCHOR_HEALTH" != invalid ] \
+            || die "refusing deployment with $ANCHOR_HEALTH anchor"
+        DEPLOY_DIRECT=yes
+        DEPLOY_METHOD=symlink
+        if [ "$ANCHOR_MODE" = symlink ] && [ "$ANCHOR_HEALTH" = healthy ]; then
+            SOURCE_ROOT="$ANCHOR_SOURCE"
+        else
+            SOURCE_ROOT="$SKILLZ_ROOT"
+        fi
+    elif [ "$method" = submodule ]; then
+        require_anchor "$target" submodule
         DEPLOY_DIRECT=no
+    elif [ "$ANCHOR_HEALTH" = healthy ]; then
+        if [ "$ANCHOR_MODE" = symlink ]; then
+            DEPLOY_DIRECT=yes
+            DEPLOY_METHOD=symlink
+            SOURCE_ROOT="$ANCHOR_SOURCE"
+        else
+            require_anchor "$target" submodule
+            DEPLOY_DIRECT=no
+        fi
     elif [ "$ANCHOR_HEALTH" = missing ] \
         && { [ -z "$method" ] || [ "$method" = symlink ]; }; then
         DEPLOY_DIRECT=yes
@@ -642,6 +661,68 @@ select_deployment_source() {
     fi
 }
 
+require_local_path_untracked() {
+    local target="$1" relative="$2"
+    [ "$target" = "$SOURCE_ROOT" ] && return 0
+    git_path_tracked "$target" "$relative" \
+        && die "local provider destination is tracked; untrack it before deployment: $relative"
+    return 0
+}
+
+require_portable_path_trackable() {
+    local target="$1" relative="$2"
+    git_path_tracked "$target" "$relative" && return 0
+    if git -C "$target" check-ignore -q --no-index -- "$relative"; then
+        die "portable provider destination is ignored; narrow the ignore rule before deployment: $relative"
+    fi
+}
+
+require_migration_path_trackable() {
+    local target="$1" relative="$2" ignore_id="$3"
+    git_path_tracked "$target" "$relative" && return 0
+    local temp_dir git_dir line skipping=no ignored=no parent current="" component
+    local begin="# BEGIN ai.skillz: $ignore_id"
+    local end="# END ai.skillz: $ignore_id"
+    temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/ai-skillz-ignore-check.XXXXXX")"
+    : > "$temp_dir/.gitignore"
+    if [ -f "$target/.gitignore" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            if [ "$line" = "$begin" ]; then
+                skipping=yes
+                continue
+            fi
+            if [ "$skipping" = yes ]; then
+                [ "$line" != "$end" ] || skipping=no
+                continue
+            fi
+            printf '%s\n' "$line" >> "$temp_dir/.gitignore"
+        done < "$target/.gitignore"
+    fi
+    parent="$(dirname "$relative")"
+    IFS='/' read -ra IGNORE_PARENT_COMPONENTS <<< "$parent"
+    for component in "${IGNORE_PARENT_COMPONENTS[@]}"; do
+        [ "$component" != . ] || continue
+        current="${current:+$current/}$component"
+        mkdir -p "$temp_dir/$current"
+        if [ -f "$target/$current/.gitignore" ]; then
+            cp "$target/$current/.gitignore" "$temp_dir/$current/.gitignore"
+        fi
+    done
+    git_dir="$(git -C "$target" rev-parse --absolute-git-dir)"
+    git --git-dir="$git_dir" --work-tree="$temp_dir" \
+        check-ignore -q --no-index -- "$relative" && ignored=yes
+    rm -rf "$temp_dir"
+    [ "$ignored" = no ] \
+        || die "portable provider destination is ignored outside its managed block; narrow the ignore rule before migration: $relative"
+}
+
+recognized_legacy_run_tests_link() {
+    recognized_source_root "$1" run-tests "" \
+        && [ -f "$RECOGNIZED_ROOT/deploy-manifest.conf" ] \
+        && grep -q '^skill|run-tests|hybrid|SKILL.md$' \
+            "$RECOGNIZED_ROOT/deploy-manifest.conf"
+}
+
 preflight_skill_provider() {
     local skill="$1" target="$2" provider="$3"
     local source_root asset destination asset_destination
@@ -652,6 +733,11 @@ preflight_skill_provider() {
     [ "$SKILL_SHAPE" != template ] || return 0
     [ -d "$source_root" ] || die "manifest skill source missing: $source_root"
     if [ "$SKILL_SHAPE" = generic ]; then
+        if [ "$DEPLOY_DIRECT" = yes ]; then
+            require_local_path_untracked "$target" "$PROVIDER_ROOT/skills/$skill"
+        else
+            require_portable_path_trackable "$target" "$PROVIDER_ROOT/skills/$skill"
+        fi
         [ -f "$source_root/SKILL.md" ] \
             || die "generic skill has no SKILL.md in deployment source: $skill"
         if [ -e "$destination" ] || [ -L "$destination" ]; then
@@ -660,13 +746,40 @@ preflight_skill_provider() {
         fi
         return 0
     fi
-    [ ! -L "$destination" ] \
-        || die "refusing hybrid provider directory symlink: $destination"
+    if [ -L "$destination" ]; then
+        [ "$skill" = run-tests ] && recognized_legacy_run_tests_link "$destination" \
+            || die "refusing hybrid provider directory symlink: $destination"
+        if [ "$DEPLOY_DIRECT" = yes ]; then
+            require_local_path_untracked "$target" "$PROVIDER_ROOT/skills/$skill"
+        else
+            require_portable_path_trackable "$target" \
+                "$PROVIDER_ROOT/skills/$skill/SKILL.md"
+        fi
+        return 0
+    fi
     [ ! -e "$destination" ] || [ -d "$destination" ] \
         || die "hybrid provider destination is not a directory: $destination"
+    if [ "$skill" = run-tests ] && [ -d "$destination" ]; then
+        if [ -e "$destination/SKILL.md" ] && [ ! -L "$destination/SKILL.md" ]; then
+            die "local run-tests/SKILL.md exists; extract project-specific guidance into test-harness-reference.md before deploying"
+        fi
+        if [ -e "$destination/test-harness-reference.md" ] \
+            || [ -L "$destination/test-harness-reference.md" ]; then
+            [ -f "$destination/test-harness-reference.md" ] \
+                && [ ! -L "$destination/test-harness-reference.md" ] \
+                || die "test-harness-reference.md must be a regular local file"
+        fi
+    fi
     preflight_directory_chain "$target" "$PROVIDER_ROOT/skills/$skill"
     IFS=',' read -ra ASSET_LIST <<< "$SKILL_ASSETS"
     for asset in "${ASSET_LIST[@]}"; do
+        if [ "$DEPLOY_DIRECT" = yes ]; then
+            require_local_path_untracked "$target" \
+                "$PROVIDER_ROOT/skills/$skill/$asset"
+        else
+            require_portable_path_trackable "$target" \
+                "$PROVIDER_ROOT/skills/$skill/$asset"
+        fi
         [ -e "$source_root/$asset" ] \
             || die "hybrid skill asset missing from deployment source: $source_root/$asset"
         asset_destination="$destination/$asset"
@@ -705,8 +818,12 @@ deploy_skill_provider() {
         fi
         record_managed_path "$PROVIDER_ROOT/skills/$skill"
     else
-        [ ! -L "$destination" ] \
-            || die "refusing to replace hybrid provider directory symlink: $destination"
+        if [ -L "$destination" ]; then
+            [ "$skill" = run-tests ] \
+                || die "refusing to replace hybrid provider directory symlink: $destination"
+            rm "$destination"
+            printf '  Replaced legacy run-tests directory symlink\n'
+        fi
         [ ! -e "$destination" ] || [ -d "$destination" ] \
             || die "hybrid provider destination is not a directory: $destination"
         mkdir -p "$destination"
@@ -1050,7 +1167,13 @@ command_destination_manageable() {
         return 0
     fi
     if [ "$mode" = link ]; then
-        [ -L "$destination" ] && same_resolved_path "$destination" "$source"
+        if [ -L "$destination" ]; then
+            same_resolved_path "$destination" "$source"
+        elif [ -f "$destination" ]; then
+            is_known_command_copy "$destination" "$source_root" "$source_rel"
+        else
+            return 1
+        fi
         return
     fi
     if [ -L "$destination" ]; then
@@ -1096,11 +1219,21 @@ deploy_command_provider() {
         [ "$global" = yes ] \
             || set_ignore_block "$target" "direct:symlink:$provider:command:$name"
     elif [ "$direct" = yes ] || [ "$global" = yes ]; then
+        if [ -f "$destination" ] && [ ! -L "$destination" ]; then
+            is_known_command_copy "$destination" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
+                || die "refusing to replace user-authored command file: $destination"
+            rm "$destination"
+        fi
         safe_link "$source" "$destination" "$source"
         [ "$global" = yes ] \
             || set_ignore_block "$target" "direct:symlink:$provider:command:$name" \
                 "/$PROVIDER_ROOT/commands/$name.md"
     else
+        if [ -f "$destination" ] && [ ! -L "$destination" ]; then
+            is_known_command_copy "$destination" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
+                || die "refusing to replace user-authored command file: $destination"
+            rm "$destination"
+        fi
         safe_link "../../$ANCHOR_REL/$COMMAND_SOURCE" "$destination" "$source"
         set_ignore_block "$target" "direct:symlink:$provider:command:$name"
     fi
@@ -1206,6 +1339,13 @@ deploy_command() {
         else
             preflight_directory_chain "$TARGET" "$PROVIDER_ROOT/commands"
             destination="$TARGET/$PROVIDER_ROOT/commands/$job_name.md"
+            if [ "$direct" = yes ]; then
+                require_local_path_untracked "$TARGET" \
+                    "$PROVIDER_ROOT/commands/$job_name.md"
+            else
+                require_portable_path_trackable "$TARGET" \
+                    "$PROVIDER_ROOT/commands/$job_name.md"
+            fi
         fi
         command_destination_manageable "$SOURCE_ROOT/$COMMAND_SOURCE" "$destination" \
             "$COMMAND_MODE" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
@@ -1337,6 +1477,11 @@ status_provider() {
             tracking_description "$target" "$PROVIDER_ROOT/skills/$name"
             printf ' [%s]' "$TRACKING"
             [ "$LINK_HEALTH" = healthy ] || { printf ' [UNHEALTHY]'; STATUS_UNHEALTHY=1; }
+            if [[ "$(readlink "$path" 2>/dev/null || true)" != /* ]] \
+                && [ "$TRACKING" = ignored ]; then
+                printf ' [UNHEALTHY:portable link ignored]'
+                STATUS_UNHEALTHY=1
+            fi
             if [ "$ANCHOR_HEALTH" = healthy ] \
                 && ! same_resolved_path "$path" "$SOURCE_ROOT/skills/$name"; then
                 printf ' [UNHEALTHY:not sourced from anchor]'
@@ -1379,6 +1524,11 @@ status_provider() {
                 tracking_description "$target" "$PROVIDER_ROOT/skills/$name/$asset"
                 printf ' [%s]' "$TRACKING"
                 [ "$LINK_HEALTH" = healthy ] || { printf ' [UNHEALTHY]'; STATUS_UNHEALTHY=1; }
+                if [[ "$(readlink "$path/$asset" 2>/dev/null || true)" != /* ]] \
+                    && [ "$TRACKING" = ignored ]; then
+                    printf ' [UNHEALTHY:portable link ignored]'
+                    STATUS_UNHEALTHY=1
+                fi
                 if [ "$ANCHOR_HEALTH" = healthy ] \
                     && ! same_resolved_path "$path/$asset" \
                         "$SOURCE_ROOT/skills/$name/$asset"; then
@@ -1409,12 +1559,22 @@ status_provider() {
             continue
         fi
         source_path="$SOURCE_ROOT/$source"
-        if [ "$mode" = link ]; then
+        if [ -L "$command_path" ] && [ "$target" = "$SOURCE_ROOT" ] \
+            && [ -f "$source_path" ] && same_resolved_path "$command_path" "$source_path"; then
+            tracking_description "$target" "$PROVIDER_ROOT/commands/$name.md"
+            printf '  command %-22s intentional source-repo symlink [healthy] [%s]\n' \
+                "$name" "$TRACKING"
+        elif [ "$mode" = link ]; then
             link_description "$command_path" "../../$ANCHOR_REL/$source"
             printf '  command %-22s %s' "$name" "$LINK_DESCRIPTION"
             tracking_description "$target" "$PROVIDER_ROOT/commands/$name.md"
             printf ' [%s]' "$TRACKING"
             [ "$LINK_HEALTH" = healthy ] || { printf ' [UNHEALTHY]'; STATUS_UNHEALTHY=1; }
+            if [[ "$(readlink "$command_path" 2>/dev/null || true)" != /* ]] \
+                && [ "$TRACKING" = ignored ]; then
+                printf ' [UNHEALTHY:portable link ignored]'
+                STATUS_UNHEALTHY=1
+            fi
             if [ "$ANCHOR_HEALTH" = healthy ] \
                 && ! same_resolved_path "$command_path" "$source_path"; then
                 printf ' [UNHEALTHY:not sourced from anchor]'
@@ -1431,11 +1591,6 @@ status_provider() {
                 STATUS_UNHEALTHY=1
             fi
             printf '\n'
-        elif [ -L "$command_path" ] && [ "$target" = "$SOURCE_ROOT" ] \
-            && [ -f "$source_path" ] && same_resolved_path "$command_path" "$source_path"; then
-            tracking_description "$target" "$PROVIDER_ROOT/commands/$name.md"
-            printf '  command %-22s intentional source-repo symlink [healthy] [%s]\n' \
-                "$name" "$TRACKING"
         elif [ -f "$source_path" ] && [ ! -L "$command_path" ] \
             && cmp -s "$source_path" "$command_path"; then
             tracking_description "$target" "$PROVIDER_ROOT/commands/$name.md"
@@ -1655,6 +1810,18 @@ recognized_command_root() {
         || [ -e "$RECOGNIZED_ROOT/.git" ] || return 1
 }
 
+migration_root_allowed() {
+    local candidate="$1"
+    [ "$candidate" = "$planned_source" ] && return 0
+    [ "$ANCHOR_HEALTH" = healthy ] && [ "$ANCHOR_MODE" = submodule ] \
+        || return 1
+    if [ -z "$MIGRATE_LEGACY_ROOT" ]; then
+        MIGRATE_LEGACY_ROOT="$candidate"
+        return 0
+    fi
+    [ "$candidate" = "$MIGRATE_LEGACY_ROOT" ]
+}
+
 migration_action() {
     if [ "$MIGRATE_DRY_RUN" = yes ]; then
         printf 'Would %s\n' "$*"
@@ -1825,18 +1992,25 @@ cmd_migrate() {
         planned_source="$RESOLVED_PATH"
     fi
     SOURCE_ROOT="$planned_source"
+    MIGRATE_DIRECT=yes
+    if [ "$anchor_action" = submodule ] \
+        || { [ "$ANCHOR_HEALTH" = healthy ] && [ "$ANCHOR_MODE" = submodule ]; }; then
+        MIGRATE_DIRECT=no
+    fi
     MIGRATE_PATHS=()
     MIGRATE_TARGETS=()
     MIGRATE_SOURCES=()
     MIGRATE_IGNORE_IDS=()
+    MIGRATE_IGNORE_PATTERNS=()
     MIGRATE_RUNTIME=()
     MIGRATE_COPY_PATHS=()
     MIGRATE_COPY_SOURCES=()
     MIGRATE_COPY_RELS=()
     MIGRATE_COPY_IGNORE_IDS=()
     MIGRATE_COPY_RUNTIME=()
+    MIGRATE_LEGACY_ROOT=""
 
-    local changed=0 destination expected canonical_present
+    local changed=0 destination expected canonical_present ignore_pattern ignore_id
     while IFS='|' read -r kind skill shape assets rest; do
         [ "$kind" = skill ] && [ "$shape" != template ] || continue
         for provider in claude opencode; do
@@ -1846,18 +2020,38 @@ cmd_migrate() {
                 [ -e "$path" ] || [ -L "$path" ] || continue
                 [ -L "$path" ] \
                     || die "migration conflict at provider destination: $path"
+                ignore_id="direct:symlink:$provider:$skill"
+                if [ "$MIGRATE_DIRECT" = yes ]; then
+                    require_local_path_untracked "$TARGET" \
+                        "$PROVIDER_ROOT/skills/$skill"
+                else
+                    require_migration_path_trackable "$TARGET" \
+                        "$PROVIDER_ROOT/skills/$skill" "$ignore_id"
+                fi
                 recognized_source_root "$path" "$skill" "" \
                     || die "unrecognized or broken migration link: $path"
-                [ "$RECOGNIZED_ROOT" = "$planned_source" ] \
-                    || die "migration links use mixed source roots: $RECOGNIZED_ROOT and $planned_source"
+                migration_root_allowed "$RECOGNIZED_ROOT" \
+                    || die "migration links use mixed source roots: $RECOGNIZED_ROOT, ${MIGRATE_LEGACY_ROOT:-none}, and $planned_source"
                 [ -e "$planned_source/skills/$skill" ] \
                     || die "migration target source missing: $planned_source/skills/$skill"
-                relative_skill_target generic "$skill"
-                if [ "$(readlink "$path")" != "$LINK_TARGET" ]; then
+                if [ "$MIGRATE_DIRECT" = yes ]; then
+                    LINK_TARGET="$planned_source/skills/$skill"
+                    tracking_description "$TARGET" "$PROVIDER_ROOT/skills/$skill"
+                else
+                    relative_skill_target generic "$skill"
+                    TRACKING=tracked
+                fi
+                if [ "$(readlink "$path")" != "$LINK_TARGET" ] \
+                    || { [ "$MIGRATE_DIRECT" = yes ] && [ "$TRACKING" != ignored ]; }; then
                     MIGRATE_PATHS+=("$path")
                     MIGRATE_TARGETS+=("$LINK_TARGET")
                     MIGRATE_SOURCES+=("$planned_source/skills/$skill")
                     MIGRATE_IGNORE_IDS+=("direct:symlink:$provider:$skill")
+                    if [ "$MIGRATE_DIRECT" = yes ]; then
+                        MIGRATE_IGNORE_PATTERNS+=("/$PROVIDER_ROOT/skills/$skill")
+                    else
+                        MIGRATE_IGNORE_PATTERNS+=("")
+                    fi
                     MIGRATE_RUNTIME+=("$skill")
                     changed=$((changed + 1))
                 fi
@@ -1875,20 +2069,41 @@ cmd_migrate() {
                 done
                 [ "$canonical_present" = yes ] || continue
                 for asset in "${ASSET_LIST[@]}"; do
+                    ignore_id="direct:symlink:$provider:$skill"
+                    if [ "$MIGRATE_DIRECT" = yes ]; then
+                        require_local_path_untracked "$TARGET" \
+                            "$PROVIDER_ROOT/skills/$skill/$asset"
+                    else
+                        require_migration_path_trackable "$TARGET" \
+                            "$PROVIDER_ROOT/skills/$skill/$asset" "$ignore_id"
+                    fi
                     [ -L "$path/$asset" ] \
                         || die "missing or unmanaged hybrid migration asset: $path/$asset"
                     recognized_source_root "$path/$asset" "$skill" "$asset" \
                         || die "unrecognized or broken hybrid migration link: $path/$asset"
-                    [ "$RECOGNIZED_ROOT" = "$planned_source" ] \
-                        || die "migration links use mixed source roots: $RECOGNIZED_ROOT and $planned_source"
+                    migration_root_allowed "$RECOGNIZED_ROOT" \
+                        || die "migration links use mixed source roots: $RECOGNIZED_ROOT, ${MIGRATE_LEGACY_ROOT:-none}, and $planned_source"
                     [ -e "$planned_source/skills/$skill/$asset" ] \
                         || die "migration target source missing: $planned_source/skills/$skill/$asset"
-                    relative_skill_target hybrid "$skill" "$asset"
-                    if [ "$(readlink "$path/$asset")" != "$LINK_TARGET" ]; then
+                    if [ "$MIGRATE_DIRECT" = yes ]; then
+                        LINK_TARGET="$planned_source/skills/$skill/$asset"
+                        tracking_description "$TARGET" \
+                            "$PROVIDER_ROOT/skills/$skill/$asset"
+                    else
+                        relative_skill_target hybrid "$skill" "$asset"
+                        TRACKING=tracked
+                    fi
+                    if [ "$(readlink "$path/$asset")" != "$LINK_TARGET" ] \
+                        || { [ "$MIGRATE_DIRECT" = yes ] && [ "$TRACKING" != ignored ]; }; then
                         MIGRATE_PATHS+=("$path/$asset")
                         MIGRATE_TARGETS+=("$LINK_TARGET")
                         MIGRATE_SOURCES+=("$planned_source/skills/$skill/$asset")
                         MIGRATE_IGNORE_IDS+=("direct:symlink:$provider:$skill")
+                        if [ "$MIGRATE_DIRECT" = yes ]; then
+                            MIGRATE_IGNORE_PATTERNS+=("/$PROVIDER_ROOT/skills/$skill/$asset")
+                        else
+                            MIGRATE_IGNORE_PATTERNS+=("")
+                        fi
                         MIGRATE_RUNTIME+=("$skill")
                         changed=$((changed + 1))
                     fi
@@ -1903,11 +2118,36 @@ cmd_migrate() {
         provider_root "$command_provider"
         destination="$TARGET/$PROVIDER_ROOT/commands/$command_name.md"
         [ -e "$destination" ] || [ -L "$destination" ] || continue
+        ignore_id="direct:symlink:$command_provider:command:$command_name"
+        if [ "$MIGRATE_DIRECT" = yes ]; then
+            require_local_path_untracked "$TARGET" \
+                "$PROVIDER_ROOT/commands/$command_name.md"
+        else
+            require_migration_path_trackable "$TARGET" \
+                "$PROVIDER_ROOT/commands/$command_name.md" "$ignore_id"
+        fi
         [ -e "$planned_source/$command_source" ] \
             || die "migration command source missing: $planned_source/$command_source"
         if [ ! -L "$destination" ]; then
-            if [ "$command_mode" = copy ] && [ -f "$destination" ] \
+            if [ -f "$destination" ] \
                 && is_known_command_copy "$destination" "$planned_source" "$command_source"; then
+                if [ "$command_mode" = link ]; then
+                    if [ "$MIGRATE_DIRECT" = yes ]; then
+                        expected="$planned_source/$command_source"
+                        ignore_pattern="/$PROVIDER_ROOT/commands/$command_name.md"
+                    else
+                        expected="../../$ANCHOR_REL/$command_source"
+                        ignore_pattern=""
+                    fi
+                    MIGRATE_PATHS+=("$destination")
+                    MIGRATE_TARGETS+=("$expected")
+                    MIGRATE_SOURCES+=("$planned_source/$command_source")
+                    MIGRATE_IGNORE_IDS+=("direct:symlink:$command_provider:command:$command_name")
+                    MIGRATE_IGNORE_PATTERNS+=("$ignore_pattern")
+                    MIGRATE_RUNTIME+=("$command_name")
+                    changed=$((changed + 1))
+                    continue
+                fi
                 if cmp -s "$destination" "$planned_source/$command_source"; then
                     continue
                 fi
@@ -1923,15 +2163,30 @@ cmd_migrate() {
         fi
         recognized_command_root "$destination" "$command_source" \
             || die "unrecognized or broken migration command link: $destination"
-        [ "$RECOGNIZED_ROOT" = "$planned_source" ] \
-            || die "migration links use mixed source roots: $RECOGNIZED_ROOT and $planned_source"
+        migration_root_allowed "$RECOGNIZED_ROOT" \
+            || die "migration links use mixed source roots: $RECOGNIZED_ROOT, ${MIGRATE_LEGACY_ROOT:-none}, and $planned_source"
         if [ "$command_mode" = link ]; then
-            expected="../../$ANCHOR_REL/$command_source"
-            [ "$(readlink "$destination")" = "$expected" ] && continue
+            if [ "$MIGRATE_DIRECT" = yes ]; then
+                expected="$planned_source/$command_source"
+                tracking_description "$TARGET" \
+                    "$PROVIDER_ROOT/commands/$command_name.md"
+            else
+                expected="../../$ANCHOR_REL/$command_source"
+                TRACKING=tracked
+            fi
+            if [ "$(readlink "$destination")" = "$expected" ] \
+                && { [ "$MIGRATE_DIRECT" = no ] || [ "$TRACKING" = ignored ]; }; then
+                continue
+            fi
             MIGRATE_PATHS+=("$destination")
             MIGRATE_TARGETS+=("$expected")
             MIGRATE_SOURCES+=("$planned_source/$command_source")
             MIGRATE_IGNORE_IDS+=("direct:symlink:$command_provider:command:$command_name")
+            if [ "$MIGRATE_DIRECT" = yes ]; then
+                MIGRATE_IGNORE_PATTERNS+=("/$PROVIDER_ROOT/commands/$command_name.md")
+            else
+                MIGRATE_IGNORE_PATTERNS+=("")
+            fi
             MIGRATE_RUNTIME+=("$command_name")
         else
             MIGRATE_COPY_PATHS+=("$destination")
@@ -2000,7 +2255,12 @@ cmd_migrate() {
             [ -e "${MIGRATE_SOURCES[$i]}" ] \
                 || die "migration source disappeared: ${MIGRATE_SOURCES[$i]}"
             ln -sfn "${MIGRATE_TARGETS[$i]}" "${MIGRATE_PATHS[$i]}"
-            set_ignore_block "$TARGET" "${MIGRATE_IGNORE_IDS[$i]}"
+            if [ -n "${MIGRATE_IGNORE_PATTERNS[$i]}" ]; then
+                set_ignore_block "$TARGET" "${MIGRATE_IGNORE_IDS[$i]}" \
+                    "${MIGRATE_IGNORE_PATTERNS[$i]}"
+            else
+                set_ignore_block "$TARGET" "${MIGRATE_IGNORE_IDS[$i]}"
+            fi
             ensure_runtime_ignores "${MIGRATE_RUNTIME[$i]}" "$TARGET"
             record_managed_path "${MIGRATE_PATHS[$i]#$TARGET/}"
             i=$((i + 1))
