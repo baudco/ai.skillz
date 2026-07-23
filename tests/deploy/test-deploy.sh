@@ -611,6 +611,29 @@ test_run_tests_hybrid_migration_safety() {
     assert_contains "$(<"$TMP_ROOT/failure.out")" \
         'local run-tests/SKILL.md exists'
 
+    new_repo run-tests-directory-harness
+    mkdir -p \
+        "$REPO/.claude/skills/run-tests/test-harness-reference.md"
+    assert_fails bash "$DEPLOY" run-tests "$REPO" --provider claude \
+        --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'test-harness-reference.md must be a regular local file'
+    [ ! -e "$REPO/.claude/skills/run-tests/SKILL.md" ] \
+        || fail 'directory harness was mutated before rejection'
+
+    new_repo run-tests-linked-harness
+    local linked_harness="$TMP_ROOT/linked-harness.md"
+    mkdir -p "$REPO/.claude/skills/run-tests"
+    printf 'external harness\n' > "$linked_harness"
+    ln -s "$linked_harness" \
+        "$REPO/.claude/skills/run-tests/test-harness-reference.md"
+    assert_fails bash "$DEPLOY" run-tests "$REPO" --provider claude \
+        --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'test-harness-reference.md must be a regular local file'
+    [ ! -e "$REPO/.claude/skills/run-tests/SKILL.md" ] \
+        || fail 'linked harness was mutated before rejection'
+
     new_repo run-tests-unrecognized-link
     local arbitrary="$TMP_ROOT/user-integration/.claude/skills/run-tests"
     mkdir -p "$arbitrary" "$REPO/.claude/skills"
