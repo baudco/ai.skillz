@@ -3,36 +3,42 @@
 `taken-export` is a generic whole-directory skill with no generated
 runtime state inside its skill directory.
 
-## Deployment Script
+## Deployment
 
-For the existing Claude-compatible deployment:
+```bash
+# Local: .ai/ai.skillz is an ignored link to a developer checkout.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# Portable: .ai/ai.skillz is a version-pinned submodule.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
-```sh
-bash /path/to/ai.skillz/scripts/deploy.sh taken-export /path/to/repo
+bash /path/to/ai.skillz/scripts/deploy.sh taken-export <repo> \
+  --provider <claude|opencode|all>
 ```
 
-This links the canonical directory into:
+Provider destinations are `.claude/skills/taken-export` and
+`.opencode/skills/taken-export`. Both are relative whole-directory links
+through the provider-neutral `.ai/ai.skillz` anchor.
 
-```text
-<repo>/.claude/skills/taken-export
+Track provider links. In submodule mode, also track `.gitmodules` and
+the anchor gitlink. In local mode, the absolute anchor stays ignored.
+Nothing is staged unless `--stage` is explicitly supplied.
+
+Quit and restart OpenCode after deploying or updating the skill. It
+uses default `.opencode/skills/` discovery; deployment does not mutate
+`opencode.json` or `opencode.jsonc`.
+
+## Maintenance
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
-## OpenCode
-
-Until provider-aware deployment lands, link the canonical directory into
-OpenCode's project discovery tree:
-
-```sh
-mkdir -p /path/to/repo/.opencode/skills
-ln -s /path/to/ai.skillz/skills/taken-export \
-  /path/to/repo/.opencode/skills/taken-export
-```
-
-Keep absolute development links untracked. Portable consumers should use
-the repository's `ai.skillz` submodule/anchor and a relative link.
-
-Restart OpenCode after deploying or updating the skill; skills are
-loaded at session startup.
+Review migration output before applying it. `update` advances a
+submodule anchor; local anchors follow their source checkout.
 
 ## Optional Dependencies
 

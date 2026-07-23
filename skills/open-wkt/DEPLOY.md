@@ -1,45 +1,29 @@
 # Deploying `/open-wkt`
 
-## Method A: Absolute symlinks (single machine)
+The canonical skill is provider-neutral, but its established worktree
+runtime layout remains under `.claude/`.
 
-### 1. Create skill directory in your repo
-
-```bash
-mkdir -p .claude/skills/open-wkt
-```
-
-### 2. Symlink the generic SKILL.md
+## Deployment
 
 ```bash
-ln -s /path/to/ai.skillz/skills/open-wkt/SKILL.md \
-      .claude/skills/open-wkt/SKILL.md
+# Ignored local source anchor.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# Or portable, version-pinned source anchor.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh open-wkt <repo> \
+  --provider <claude|opencode|all>
 ```
 
-Or use the deploy script:
+`.ai/ai.skillz` is the shared source anchor. The provider destinations
+are `.claude/skills/open-wkt` and `.opencode/skills/open-wkt`, linked
+relatively to the same canonical skill.
 
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh open-wkt <your-repo>
-```
-
-## Method B: Git submodule (portable, version-pinned)
-
-### One-time setup
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
-```
-
-### Deploy this skill
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh open-wkt <your-repo>
-```
-
-### What gets committed
-
-- `.gitmodules`, `.claude/ai.skillz` (gitlink)
-- `.claude/skills/open-wkt/SKILL.md` → relative symlink
-  to `../../ai.skillz/skills/open-wkt/SKILL.md`
+Track provider links. In submodule mode, also track `.gitmodules` and
+the anchor gitlink; in local mode, ignore the absolute anchor. The
+script stages only when `--stage` is explicitly supplied. Quit and
+restart OpenCode after deployment or update; no `opencode.json` or
+`opencode.jsonc` mutation is required or performed.
 
 ### What gets gitignored
 
@@ -64,6 +48,23 @@ claude_wkts
 ## What gets symlinked (from ai.skillz)
 
 - `SKILL.md` — the generic workflow definition
+
+Source deployment and migration preserve `.claude/wkts/`, its metadata,
+and `claude_wkts`; they do not rename this runtime contract for
+OpenCode.
+
+## Maintenance
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
+```
+
+Preview migration before applying it. `update` advances a submodule;
+local anchors follow updates to their source checkout.
 
 ## Prerequisites
 
