@@ -43,11 +43,21 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 bash /path/to/ai.skillz/scripts/deploy.sh command \
   branch-in-new-terminal <repo> --provider claude
 
-# Required before the OpenCode command can be installed:
+# Each OpenCode command requires its matching skill first:
 bash /path/to/ai.skillz/scripts/deploy.sh \
   commit-msg <repo> --provider opencode
 bash /path/to/ai.skillz/scripts/deploy.sh command \
   commit-msg <repo> --provider opencode
+
+bash /path/to/ai.skillz/scripts/deploy.sh \
+  run-tests <repo> --provider opencode
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  run-tests <repo> --provider opencode
+
+bash /path/to/ai.skillz/scripts/deploy.sh \
+  taken-export <repo> --provider opencode
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  taken-export <repo> --provider opencode
 
 # Claude commands may instead be installed globally; OpenCode commands
 # remain repository-local.
@@ -55,8 +65,8 @@ bash /path/to/ai.skillz/scripts/deploy.sh command \
   branch-in-new-terminal --global --provider claude
 ```
 
-The deploy script refuses the OpenCode command unless the associated
-`.opencode/skills/commit-msg` deployment is healthy.
+The deploy script refuses an OpenCode command unless its associated
+`.opencode/skills/<name>` deployment is healthy.
 
 Local command deployment uses ignored absolute links. Submodule deployment
 uses trackable relative links through `.ai/ai.skillz`; also track

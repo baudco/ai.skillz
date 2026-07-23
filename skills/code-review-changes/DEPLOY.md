@@ -43,7 +43,8 @@ dry run before applying it. Use `update` only for a submodule anchor.
 ## Dependencies on other skills
 
 - `/run-tests` — called in step 5 for pre-commit test
-  verification. If not deployed, tests are skipped.
+  verification in every repository receiving fixes.
+  Deploy it first; review fixes stop if it is absent.
 - `/commit-msg` — review context files are written for
   this skill to consume during commit generation.
 

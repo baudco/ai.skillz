@@ -38,6 +38,7 @@ implicitly.
 Copy the override template:
 
 ```sh
+mkdir -p .claude/skills/run-tests
 cp /path/to/ai.skillz/templates/run-tests/SKILL.md.j2 \
   .claude/skills/run-tests/test-harness-reference.md
 ```
@@ -90,6 +91,11 @@ bash /path/to/ai.skillz/scripts/deploy.sh \
 bash /path/to/ai.skillz/scripts/deploy.sh command run-tests /path/to/repo \
   --provider opencode --method symlink
 ```
+
+The harness remains at `.claude/skills/run-tests/` even for an
+OpenCode-only deployment because both providers share that repository-owned
+configuration path. A harness-only Claude directory is valid local state and
+does not enable the Claude skill by itself.
 
 Use `--method submodule` for both operations after portable initialization.
 The canonical shim is tracked at `providers/opencode/commands/run-tests.md`.

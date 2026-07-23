@@ -39,4 +39,6 @@ submodule anchor; update a local checkout directly.
 
 ## Prerequisites
 
-None (reads skill files only).
+Repository file access. The audit phase is read-only;
+the approved-change phase may edit skill files after
+explicit user sign-off.

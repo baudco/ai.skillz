@@ -270,9 +270,10 @@ When generating commit messages, always follow this process:
    `.claude/review_context.md` (written by the
    `/code-review-changes` skill after applying
    review fixes). If present, read it and extract
-   `pr`, `reviewer`, `review_url`, and optionally
-   `reply_ids`. These are used in step 3 to add a
-   `Review:` trailer. Delete the file after the
+   `pr`, `reviewer`, `review_url`, optionally
+   `commit_repo`, and optionally `reply_ids`. These
+   are used in step 3 to add a `Review:` trailer and
+   in step 6 to construct commit links. Delete the file after the
    message is written — it's single-use context.
    If the file is absent, this is not a
    review-motivated commit; skip the trailer.
@@ -364,6 +365,15 @@ Found-via: `/run-tests` test_stale_entry_is_deleted
 Keep it minimal - one line each for
 `Regressed-by` and `Found-via`. The commit hash
 and test name(s) are the essential signal.
+
+When `guilty: pending` records a regression caught
+before the review fix was committed, do not invent a
+hash. Replace `Regressed-by:` with:
+
+```
+Caught-during: review remediation
+Found-via: `/run-tests` <test-name>
+```
 
 **Review trailer** (when
 `.claude/review_context.md` exists):
@@ -494,8 +504,9 @@ changes, use subject line only.
      ```
      where `<commit-url>` =
      `https://github.com/<repo>/commit/<hash>`
-     (derive `<repo>` from the `repo` field in
-     `review_context.md`).
+      (derive `<repo>` from `commit_repo` in
+      `review_context.md`, falling back to `repo` for
+      same-repository fixes).
    - PATCH the comment:
      ```
      gh api \
@@ -511,13 +522,16 @@ changes, use subject line only.
    `reply_ids` are saved in `.claude/review_context.md`
    and can be PATCHed in a follow-up session.
 
-7. **Update tracking issue** (when the commit
+7. **Propose tracking issue updates** (when the commit
    addresses a task bullet from a tracking issue):
 
-   If the current work was motivated by a task
-   item in a tracking issue (e.g. created by
-   `/pr-msg`'s step 4c), update the issue after
-   the user commits:
+   If the current work was motivated by a task item
+   in a tracking issue, show the exact proposed issue
+   patch after the user commits. Never change a
+   checkbox or task state without the user's explicit
+   authorization for that exact transition.
+
+   Only after that authorization:
 
    - **Check off** the bullet: `- [ ]` → `- [x]`
    - **Prefix** with a commit-hash ref-link:
@@ -527,5 +541,5 @@ changes, use subject line only.
      the issue body
    - **PATCH** via `gh api`
 
-   This keeps tracking issues in sync with the
-   commits that resolve each item.
+   If authorization is not given, leave the issue
+   untouched and report the proposed update.

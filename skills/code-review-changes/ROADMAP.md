@@ -26,13 +26,12 @@ See `gish/ROADMAP.md` Phases 1-2 for the full spec.
 
 ## `/run-tests` dependency
 
-Step 5 (mandatory test verification) currently assumes
-a `/run-tests` skill is deployed. Should gracefully
-degrade when the skill is absent:
-
-- Check if `.claude/skills/run-tests/SKILL.md` exists
-- If missing, warn the user and skip (or run a generic
-  `pytest` / `make test` fallback)
+Step 5 requires the canonical `/run-tests` skill in
+the active provider session. Each repository receiving
+fixes supplies its own harness reference or project
+metadata. If the active session lacks the skill, stop
+and request deployment plus restart rather than
+inventing a generic test command.
 
 ## Review polling (`gish watch`)
 
