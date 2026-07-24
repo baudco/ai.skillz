@@ -1439,6 +1439,16 @@ deploy_command_provider() {
         [ "$global" = yes ] \
             || set_ignore_block "$target" "direct:symlink:$provider:command:$name"
     elif [ "$direct" = yes ] || [ "$global" = yes ]; then
+        if [ "$global" = no ] && [ "$target" = "$SOURCE_ROOT" ] \
+            && [ -L "$destination" ] \
+            && git_path_tracked "$target" "$PROVIDER_ROOT/commands/$name.md" \
+            && same_resolved_path "$destination" "$source"; then
+            set_ignore_block "$target" "direct:symlink:$provider:command:$name"
+            ensure_runtime_ignores "$name" "$target"
+            record_managed_path "$PROVIDER_ROOT/commands/$name.md"
+            printf 'Preserved command %s as an intentional source-repo symlink\n' "$name"
+            return 0
+        fi
         if [ -f "$destination" ] && [ ! -L "$destination" ]; then
             is_known_command_copy "$destination" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
                 || die "refusing to replace user-authored command file: $destination"

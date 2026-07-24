@@ -583,6 +583,17 @@ test_status_health_templates_and_source_symlink() {
     printf 'session = "runtime"\n' \
         > "$source_repo/.claude/skills/commit-msg/conf.toml"
     printf runtime > "$source_repo/.claude/skills/commit-msg/msgs/current.md"
+    local source_link
+    source_link="$(readlink "$source_repo/.opencode/commands/commit-msg.md")"
+    bash "$source_repo/scripts/deploy.sh" command all "$source_repo" \
+        --provider opencode --method symlink >/dev/null
+    assert_eq "$(readlink "$source_repo/.opencode/commands/commit-msg.md")" \
+        "$source_link"
+    git -C "$source_repo" diff --quiet -- .opencode/commands \
+        || fail 'source-repository command deployment rewrote tracked links'
+    git -C "$source_repo" check-ignore -q --no-index -- \
+        .opencode/commands/commit-msg.md \
+        && fail 'source-repository command deployment ignored tracked link'
     local source_status
     source_status="$(bash "$source_repo/scripts/deploy.sh" status "$source_repo")"
     assert_contains "$source_status" 'runtime-state-only (not deployed) [healthy]'
