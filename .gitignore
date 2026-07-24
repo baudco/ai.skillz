@@ -20,3 +20,98 @@ skills/pr-msg/pr_msg_LATEST.md
 # open-wkt worktrees + convenience symlink
 .claude/wkts/
 claude_wkts
+
+# BEGIN ai.skillz: direct:symlink:claude:close-wkt
+/.claude/skills/close-wkt
+# END ai.skillz: direct:symlink:claude:close-wkt
+
+# BEGIN ai.skillz: runtime:code-review-changes
+.claude/review_context.md
+.claude/review_regression.md
+# END ai.skillz: runtime:code-review-changes
+
+# BEGIN ai.skillz: direct:symlink:claude:code-review-changes
+/.claude/skills/code-review-changes
+# END ai.skillz: direct:symlink:claude:code-review-changes
+
+# BEGIN ai.skillz: runtime:commit-msg
+.claude/skills/commit-msg/msgs/
+.claude/skills/commit-msg/conf.toml
+.claude/git_commit_msg_LATEST.md
+# END ai.skillz: runtime:commit-msg
+
+# BEGIN ai.skillz: direct:symlink:claude:commit-msg
+/.claude/skills/commit-msg/SKILL.md
+# END ai.skillz: direct:symlink:claude:commit-msg
+
+# BEGIN ai.skillz: direct:symlink:claude:dep-supersede-scan
+/.claude/skills/dep-supersede-scan
+# END ai.skillz: direct:symlink:claude:dep-supersede-scan
+
+# BEGIN ai.skillz: direct:symlink:claude:gish
+/.claude/skills/gish
+# END ai.skillz: direct:symlink:claude:gish
+
+# BEGIN ai.skillz: direct:symlink:claude:inter-skill-review
+/.claude/skills/inter-skill-review
+# END ai.skillz: direct:symlink:claude:inter-skill-review
+
+# BEGIN ai.skillz: runtime:open-wkt
+.claude/wkts/
+claude_wkts
+# END ai.skillz: runtime:open-wkt
+
+# BEGIN ai.skillz: direct:symlink:claude:open-wkt
+/.claude/skills/open-wkt
+# END ai.skillz: direct:symlink:claude:open-wkt
+
+# BEGIN ai.skillz: direct:symlink:claude:plan-io
+/.claude/skills/plan-io
+# END ai.skillz: direct:symlink:claude:plan-io
+
+# BEGIN ai.skillz: runtime:pr-msg
+.claude/skills/pr-msg/msgs/
+.claude/skills/pr-msg/pr_msg_LATEST.md
+# END ai.skillz: runtime:pr-msg
+
+# BEGIN ai.skillz: direct:symlink:claude:pr-msg
+/.claude/skills/pr-msg/SKILL.md
+/.claude/skills/pr-msg/references
+/.claude/skills/pr-msg/scripts
+# END ai.skillz: direct:symlink:claude:pr-msg
+
+# BEGIN ai.skillz: direct:symlink:claude:prompt-io
+/.claude/skills/prompt-io
+# END ai.skillz: direct:symlink:claude:prompt-io
+
+# BEGIN ai.skillz: direct:symlink:claude:py-codestyle
+/.claude/skills/py-codestyle
+# END ai.skillz: direct:symlink:claude:py-codestyle
+
+# BEGIN ai.skillz: direct:symlink:claude:resolve-conflicts
+/.claude/skills/resolve-conflicts
+# END ai.skillz: direct:symlink:claude:resolve-conflicts
+
+# BEGIN ai.skillz: direct:symlink:claude:run-tests
+/.claude/skills/run-tests/SKILL.md
+# END ai.skillz: direct:symlink:claude:run-tests
+
+# BEGIN ai.skillz: runtime:taken-export
+.ai/taken/exports/
+# END ai.skillz: runtime:taken-export
+
+# BEGIN ai.skillz: direct:symlink:claude:taken-export
+/.claude/skills/taken-export
+# END ai.skillz: direct:symlink:claude:taken-export
+
+# BEGIN ai.skillz: direct:symlink:claude:yt-url-lookup
+/.claude/skills/yt-url-lookup
+# END ai.skillz: direct:symlink:claude:yt-url-lookup
+
+# BEGIN ai.skillz: direct:symlink:claude:command:branch-in-new-terminal
+/.claude/commands/branch-in-new-terminal.md
+# END ai.skillz: direct:symlink:claude:command:branch-in-new-terminal
+
+# BEGIN ai.skillz: runtime:branch-in-new-terminal
+.claude/.current_session
+# END ai.skillz: runtime:branch-in-new-terminal
