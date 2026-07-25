@@ -53,6 +53,9 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
 bash /path/to/ai.skillz/scripts/deploy.sh <skill> <repo> \
   --provider <claude|opencode|all>
+
+# Claude-only global deployment; no target repository or staging.
+bash /path/to/ai.skillz/scripts/deploy.sh <skill> --global
 ```
 
 `--provider claude` writes `.claude` links, `--provider opencode`
@@ -66,6 +69,13 @@ defaults to `--method submodule`, and `status` defaults to
 `--provider all`. Portable deployments initialize an anchor explicitly.
 When no anchor exists, an omitted method or `--method symlink` uses ignored
 absolute links; `--direct` remains an explicit compatibility alias.
+
+Global skill deployment is Claude-only and links beneath
+`~/.claude/skills/`. It converts missing destinations or byte-identical
+canonical copies, preserves non-canonical files in hybrid directories, and
+refuses divergent content. An existing `~/.claude/skills` link to this
+checkout's canonical `skills/` tree is accepted as an already-complete global
+deployment; other symlinked parent directories are refused.
 
 Generic skills are linked as whole directories. Hybrid skills such as
 `commit-msg` and `pr-msg` keep local directories for generated state and
