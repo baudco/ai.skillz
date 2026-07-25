@@ -184,6 +184,46 @@ Check CI/check-run status for a commit.
 Full PR lifecycle: view, create, edit body.
 Currently a TODO stub in the xontrib.
 
+### `gish pr clean <backend> [stack-tip]`
+
+Post-merge **stack hygiene** — run after a stacked-PR's
+bottom lands to reconcile the rest of the chain. Born from
+a `tractor` stacked-landing (PRs #464→#467→#465→#463) where
+GitHub auto-retargeted some dependents but left cruft: the
+merged branch lingered, an earlier sibling had silently
+auto-closed, and PR bodies still cited the old base.
+
+For the stack rooted at `[stack-tip]` (default: current
+branch), after its base PR merged:
+
+1. **Delete landed branches** — GitHub leaves the merged
+   PR's head branch up; prune it (local + every push
+   remote in the fan-out).
+2. **Verify/force dependent retargets** — GitHub
+   auto-retargets a dependent PR to the merged PR's base
+   *only when the head branch is deleted*; confirm each
+   dependent's `baseRefName` advanced and `gh pr edit
+   --base` any that didn't.
+3. **Flag reorder-closed PRs** — a PR whose *head* became
+   an ancestor of its *base* (e.g. a stack reorder) gets
+   auto-CLOSED by GitHub and **cannot be reopened or
+   retargeted** (the #466 trap). Detect these (`state ==
+   CLOSED && head ⊆ base && not merged`) and surface them
+   — they need a *fresh* PR, not a fix-up.
+4. **Refresh stacked-PR bodies** — rewrite each surviving
+   PR's `base:` meta + "Stacked PR — base `X`" line to the
+   new chain (consumes the `pr-msg-meta` block).
+
+**Backend mapping**:
+- `gh`: `gh api -X DELETE .../git/refs/heads/<branch>`,
+  `gh pr list --json state,baseRefName,headRefName`,
+  `gh pr edit --base`
+- `gitea`/`gl`: analogous branch-delete + PR-edit REST calls
+- `srht`: N/A (patch series, no long-lived branches)
+
+Pairs with `gish watch --await-push`: detect the merge,
+then auto-suggest `gish pr clean`.
+
 ### `gish edit <backend> <num> [--ai-draft]`
 
 Edit an issue or PR description with optional
