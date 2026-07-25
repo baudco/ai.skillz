@@ -21,6 +21,7 @@ usage() {
 Usage:
   deploy.sh init <repo> [--method symlink|submodule] [--url URL] [--ref REF] [--stage]
   deploy.sh <skill> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
+  deploy.sh <skill> --global [--provider claude|all] [--method symlink] [--direct]
   deploy.sh all <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
   deploy.sh command <name|all> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
   deploy.sh command <name|all> --global [--provider claude|all]
@@ -374,6 +375,114 @@ preflight_provider_base() {
     preflight_directory_chain "$target" "$PROVIDER_ROOT"
     preflight_directory_chain "$target" "$PROVIDER_ROOT/skills"
     preflight_directory_chain "$target" "$PROVIDER_ROOT/commands"
+}
+
+preflight_global_skill_base() {
+    local home="${HOME:-}" path
+    GLOBAL_SKILLS_PARENT_CANONICAL=no
+    [ -n "$home" ] && [[ "$home" = /* ]] \
+        || die "--global requires an absolute HOME"
+    [ -d "$home" ] || die "--global HOME does not exist: $home"
+    path="$home/.claude"
+    [ ! -L "$path" ] || die "refusing symlinked global skill parent: $path"
+    [ ! -e "$path" ] || [ -d "$path" ] \
+        || die "global skill parent is not a directory: $path"
+    path="$home/.claude/skills"
+    if [ -L "$path" ]; then
+        if same_resolved_path "$path" "$SOURCE_ROOT/skills"; then
+            GLOBAL_SKILLS_PARENT_CANONICAL=yes
+            return 0
+        fi
+        die "refusing symlinked global skill parent: $path"
+    fi
+    [ ! -e "$path" ] || [ -d "$path" ] \
+        || die "global skill parent is not a directory: $path"
+}
+
+source_copy_matches() {
+    local source="$1" destination="$2"
+    if [ -f "$source" ] && [ ! -L "$source" ] \
+        && [ -f "$destination" ] && [ ! -L "$destination" ]; then
+        cmp -s "$source" "$destination"
+        return
+    fi
+    if [ -d "$source" ] && [ ! -L "$source" ] \
+        && [ -d "$destination" ] && [ ! -L "$destination" ]; then
+        diff -qr --no-dereference "$source" "$destination" >/dev/null
+        return
+    fi
+    return 1
+}
+
+GLOBAL_SKILL_SWAP_ACTIVE=no
+
+rollback_global_skill_swap() {
+    [ "$GLOBAL_SKILL_SWAP_ACTIVE" = yes ] || return 0
+    if [ ! -e "$GLOBAL_SKILL_SWAP_DESTINATION" ] \
+        && [ ! -L "$GLOBAL_SKILL_SWAP_DESTINATION" ] \
+        && [ -e "$GLOBAL_SKILL_SWAP_DIR/original" ]; then
+        mv -T "$GLOBAL_SKILL_SWAP_DIR/original" \
+            "$GLOBAL_SKILL_SWAP_DESTINATION" >/dev/null 2>&1 || true
+    fi
+}
+
+arm_global_skill_swap() {
+    GLOBAL_SKILL_SWAP_ACTIVE=yes
+    GLOBAL_SKILL_SWAP_DESTINATION="$1"
+    GLOBAL_SKILL_SWAP_DIR="$2"
+    trap 'rollback_global_skill_swap' EXIT
+    trap 'rollback_global_skill_swap; exit 129' HUP
+    trap 'rollback_global_skill_swap; exit 130' INT
+    trap 'rollback_global_skill_swap; exit 143' TERM
+}
+
+disarm_global_skill_swap() {
+    trap - EXIT HUP INT TERM
+    GLOBAL_SKILL_SWAP_ACTIVE=no
+    GLOBAL_SKILL_SWAP_DESTINATION=""
+    GLOBAL_SKILL_SWAP_DIR=""
+}
+
+replace_source_copy_with_link() {
+    local source="$1" destination="$2" parent swap
+    source_copy_matches "$source" "$destination" \
+        || die "global source copy changed after preflight: $destination"
+    parent="$(dirname "$destination")"
+    swap="$(mktemp -d "$parent/.ai-skillz-link.XXXXXX")" \
+        || die "failed to allocate global skill swap beside: $destination"
+    if ! ln -s "$source" "$swap/link"; then
+        rmdir "$swap" || true
+        die "failed to prepare global skill link: $destination"
+    fi
+    arm_global_skill_swap "$destination" "$swap"
+    if ! mv -T "$destination" "$swap/original"; then
+        disarm_global_skill_swap
+        rm -f "$swap/link"
+        rmdir "$swap"
+        die "failed to preserve global source copy before replacement: $destination"
+    fi
+    if ! source_copy_matches "$source" "$swap/original"; then
+        mv -T "$swap/original" "$destination" \
+            || die "global source copy changed and could not be restored: $destination"
+        disarm_global_skill_swap
+        rm -f "$swap/link"
+        rmdir "$swap"
+        die "global source copy changed during replacement: $destination"
+    fi
+    if mv -T "$swap/link" "$destination"; then
+        rm -rf "$swap/original" \
+            || die "installed global link but retained backup after cleanup failure: $swap/original"
+        rmdir "$swap" \
+            || die "installed global link but failed to remove swap directory: $swap"
+        disarm_global_skill_swap
+        return 0
+    fi
+    mv -T "$swap/original" "$destination" \
+        || die "failed to restore global source copy after link failure: $destination"
+    disarm_global_skill_swap
+    rm -f "$swap/link"
+    rmdir "$swap"
+    die "failed to install global skill link: $destination"
 }
 
 # Replace one script-owned block without disturbing user-owned ignore lines.
@@ -996,16 +1105,85 @@ deploy_skill_provider() {
         "$([ "$direct" = yes ] && printf 'local-only absolute' || printf 'relative via anchor')"
 }
 
+preflight_global_skill() {
+    local skill="$1" source="$SOURCE_ROOT/skills/$skill"
+    local destination="$HOME/.claude/skills/$skill" asset asset_destination
+    [ "$SKILL_SHAPE" != template ] || return 0
+    [ -d "$source" ] || die "manifest skill source missing: $source"
+    [ -f "$source/SKILL.md" ] || die "global skill has no SKILL.md: $skill"
+    if [ "$SKILL_SHAPE" = generic ]; then
+        if [ -e "$destination" ] || [ -L "$destination" ]; then
+            if [ -L "$destination" ]; then
+                same_resolved_path "$destination" "$source" \
+                    || die "refusing unmanaged global skill destination: $destination"
+            else
+                source_copy_matches "$source" "$destination" \
+                    || die "refusing unmanaged global skill destination: $destination"
+            fi
+        fi
+        return 0
+    fi
+    if [ -L "$destination" ]; then
+        die "refusing global hybrid skill directory symlink: $destination"
+    fi
+    [ ! -e "$destination" ] || [ -d "$destination" ] \
+        || die "global hybrid skill destination is not a directory: $destination"
+    IFS=',' read -ra ASSET_LIST <<< "$SKILL_ASSETS"
+    for asset in "${ASSET_LIST[@]}"; do
+        [ -e "$source/$asset" ] \
+            || die "global hybrid skill asset missing: $source/$asset"
+        preflight_directory_chain "$destination" "$(dirname "$asset")"
+        asset_destination="$destination/$asset"
+        if [ -e "$asset_destination" ] || [ -L "$asset_destination" ]; then
+            if [ -L "$asset_destination" ]; then
+                same_resolved_path "$asset_destination" "$source/$asset" \
+                    || die "refusing unmanaged global hybrid asset: $asset_destination"
+            else
+                source_copy_matches "$source/$asset" "$asset_destination" \
+                    || die "refusing unmanaged global hybrid asset: $asset_destination"
+            fi
+        fi
+    done
+}
+
+deploy_global_skill() {
+    local skill="$1" source="$SOURCE_ROOT/skills/$skill"
+    local destination="$HOME/.claude/skills/$skill" asset asset_destination
+    mkdir -p "$HOME/.claude/skills"
+    if [ "$SKILL_SHAPE" = generic ]; then
+        if [ -e "$destination" ] && [ ! -L "$destination" ]; then
+            replace_source_copy_with_link "$source" "$destination"
+        else
+            safe_link "$source" "$destination" "$source"
+        fi
+    else
+        mkdir -p "$destination"
+        IFS=',' read -ra ASSET_LIST <<< "$SKILL_ASSETS"
+        for asset in "${ASSET_LIST[@]}"; do
+            asset_destination="$destination/$asset"
+            mkdir -p "$(dirname "$asset_destination")"
+            if [ -e "$asset_destination" ] && [ ! -L "$asset_destination" ]; then
+                replace_source_copy_with_link "$source/$asset" "$asset_destination"
+            else
+                safe_link "$source/$asset" "$asset_destination" "$source/$asset"
+            fi
+        done
+    fi
+    printf 'Deployed %s to ~/.claude/skills/%s (global absolute)\n' \
+        "$skill" "$skill"
+}
+
 deploy_skill() {
     local skill="$1"
     shift
-    local target_arg="" provider=claude method="" direct=no stage=no
+    local target_arg="" provider=claude method="" direct=no stage=no global=no
     while [ $# -gt 0 ]; do
         case "$1" in
             --provider) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
+            --global) global=yes; shift ;;
             --*) die "unknown option: $1" ;;
             *)
                 [ -z "$target_arg" ] || die "unexpected argument: $1"
@@ -1017,10 +1195,40 @@ deploy_skill() {
     validate_name "$skill" skill
     validate_provider "$provider"
     [ -z "$method" ] || validate_method "$method"
+    get_skill_record "$skill" || die "skill '$skill' is not in the deployment manifest"
+    if [ "$global" = yes ]; then
+        [ -z "$target_arg" ] || die "--global does not accept a target repository"
+        [ "$stage" = no ] || die "--stage is invalid with --global"
+        [ -z "$method" ] || [ "$method" = symlink ] \
+            || die "--global supports only --method symlink"
+        [ "$provider" != opencode ] \
+            || die "--global is supported only for Claude skills"
+        SOURCE_ROOT="$SKILLZ_ROOT"
+        preflight_global_skill_base
+        preflight_global_skill "$skill"
+        if [ "$GLOBAL_SKILLS_PARENT_CANONICAL" = yes ]; then
+            if [ "$SKILL_SHAPE" = template ]; then
+                printf 'SKIP %s for global Claude (template-only)\n' "$skill"
+                printf 'Result: 0 deployed, 1 template skipped\n'
+            else
+                printf 'Global Claude skills already use canonical parent: %s\n' \
+                    "$HOME/.claude/skills"
+                printf 'Result: 1 deployed, 0 template skipped\n'
+            fi
+            return 0
+        fi
+        if [ "$SKILL_SHAPE" = template ]; then
+            printf 'SKIP %s for global Claude (template-only)\n' "$skill"
+            printf 'Result: 0 deployed, 1 template skipped\n'
+            return 0
+        fi
+        deploy_global_skill "$skill"
+        printf 'Result: 1 deployed, 0 template skipped\n'
+        return 0
+    fi
     [ -n "$target_arg" ] || die "missing <target-repo>"
     canonical_repo "$target_arg"
     preflight_gitignore "$TARGET"
-    get_skill_record "$skill" || die "skill '$skill' is not in the deployment manifest"
     set_providers "$provider"
 
     select_deployment_source "$TARGET" "$method" "$direct"

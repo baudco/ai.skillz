@@ -287,6 +287,117 @@ test_phase0_and_global_compatibility() {
     pass 'Phase-0 defaults, no absolute staging, and Claude --global remain compatible'
 }
 
+test_global_skill_deployment_safety() {
+    local home="$TMP_ROOT/global-skill-home"
+    mkdir -p "$home/.claude/skills"
+    cp -a "$ROOT/skills/py-codestyle" "$home/.claude/skills/py-codestyle"
+    HOME="$home" bash "$DEPLOY" py-codestyle --global >/dev/null
+    assert_eq "$(readlink "$home/.claude/skills/py-codestyle")" \
+        "$ROOT/skills/py-codestyle"
+    compgen -G "$home/.claude/skills/.ai-skillz-link.*" >/dev/null \
+        && fail 'global canonical-copy replacement left swap state'
+    local before
+    before="$(tree_digest "$home")"
+    HOME="$home" bash "$DEPLOY" py-codestyle --global >/dev/null
+    assert_eq "$(tree_digest "$home")" "$before"
+
+    home="$TMP_ROOT/global-cleanup-failure-home"
+    mkdir -p "$home/.claude/skills"
+    cp -a "$ROOT/skills/gish" "$home/.claude/skills/gish"
+    chmod u-w "$home/.claude/skills/gish/references"
+    assert_fails env HOME="$home" bash "$DEPLOY" gish --global
+    [ -L "$home/.claude/skills/gish" ] \
+        || fail 'cleanup failure did not leave the canonical global link installed'
+    local swaps=("$home/.claude/skills"/.ai-skillz-link.*)
+    [ ${#swaps[@]} -eq 1 ] && [ -d "${swaps[0]}/original" ] \
+        || fail 'cleanup failure did not retain exactly one source-copy backup'
+    chmod -R u+w "${swaps[0]}"
+    rm -rf "${swaps[0]}"
+
+    home="$TMP_ROOT/global-canonical-parent-home"
+    mkdir -p "$home/.claude"
+    ln -s "$ROOT/skills" "$home/.claude/skills"
+    HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
+    assert_eq "$(readlink "$home/.claude/skills")" "$ROOT/skills"
+
+    home="$TMP_ROOT/global-hybrid-home"
+    mkdir -p "$home/.claude/skills/run-tests"
+    cp "$ROOT/skills/run-tests/SKILL.md" \
+        "$home/.claude/skills/run-tests/SKILL.md"
+    printf 'local harness\n' \
+        > "$home/.claude/skills/run-tests/test-harness-reference.md"
+    HOME="$home" bash "$DEPLOY" run-tests --global --provider all >/dev/null
+    assert_eq "$(readlink "$home/.claude/skills/run-tests/SKILL.md")" \
+        "$ROOT/skills/run-tests/SKILL.md"
+    assert_eq "$(<"$home/.claude/skills/run-tests/test-harness-reference.md")" \
+        'local harness'
+    [ ! -e "$home/.opencode" ] \
+        || fail 'global provider all unexpectedly created an OpenCode destination'
+
+    mkdir -p "$home/.claude/skills/pr-msg"
+    cp "$ROOT/skills/pr-msg/SKILL.md" "$home/.claude/skills/pr-msg/SKILL.md"
+    cp -a "$ROOT/skills/pr-msg/references" "$home/.claude/skills/pr-msg/references"
+    cp -a "$ROOT/skills/pr-msg/scripts" "$home/.claude/skills/pr-msg/scripts"
+    printf 'local pr state\n' > "$home/.claude/skills/pr-msg/pr-merge.xsh"
+    HOME="$home" bash "$DEPLOY" pr-msg --global >/dev/null
+    assert_eq "$(readlink "$home/.claude/skills/pr-msg/SKILL.md")" \
+        "$ROOT/skills/pr-msg/SKILL.md"
+    assert_eq "$(readlink "$home/.claude/skills/pr-msg/references")" \
+        "$ROOT/skills/pr-msg/references"
+    assert_eq "$(readlink "$home/.claude/skills/pr-msg/scripts")" \
+        "$ROOT/skills/pr-msg/scripts"
+    assert_eq "$(<"$home/.claude/skills/pr-msg/pr-merge.xsh")" 'local pr state'
+
+    home="$TMP_ROOT/global-nested-link-home"
+    local external_asset="$TMP_ROOT/global-hybrid-external"
+    local nested_source="$TMP_ROOT/global-nested-source"
+    git clone -q "$SOURCE_WORK" "$nested_source"
+    mkdir -p "$nested_source/skills/run-tests/references"
+    cp "$ROOT/skills/run-tests/references/tractor-example.md" \
+        "$nested_source/skills/run-tests/references/tractor-example.md"
+    sed -i \
+        's#^skill|run-tests|hybrid|SKILL.md$#skill|run-tests|hybrid|SKILL.md,references/tractor-example.md#' \
+        "$nested_source/deploy-manifest.conf"
+    mkdir -p "$home/.claude/skills/run-tests" "$external_asset"
+    cp "$nested_source/skills/run-tests/SKILL.md" \
+        "$home/.claude/skills/run-tests/SKILL.md"
+    printf 'external\n' > "$external_asset/user.txt"
+    ln -s "$external_asset" "$home/.claude/skills/run-tests/references"
+    before="$(tree_digest "$external_asset")"
+    local home_before="$(tree_digest "$home")"
+    assert_fails env HOME="$home" bash \
+        "$nested_source/scripts/deploy.sh" run-tests --global
+    assert_eq "$(tree_digest "$external_asset")" "$before"
+    assert_eq "$(tree_digest "$home")" "$home_before"
+
+    home="$TMP_ROOT/global-unmanaged-home"
+    mkdir -p "$home/.claude/skills/py-codestyle"
+    printf 'user-owned\n' > "$home/.claude/skills/py-codestyle/user.txt"
+    before="$(tree_digest "$home")"
+    assert_fails env HOME="$home" bash "$DEPLOY" py-codestyle --global
+    assert_eq "$(tree_digest "$home")" "$before"
+
+    home="$TMP_ROOT/global-parent-link-home"
+    local external="$TMP_ROOT/global-parent-external"
+    mkdir -p "$home/.claude" "$external"
+    printf 'external\n' > "$external/user.txt"
+    ln -s "$external" "$home/.claude/skills"
+    before="$(tree_digest "$external")"
+    assert_fails env HOME="$home" bash "$DEPLOY" py-codestyle --global
+    assert_eq "$(tree_digest "$external")" "$before"
+
+    new_repo global-skill-args
+    home="$TMP_ROOT/global-args-home"
+    mkdir -p "$home"
+    assert_fails env HOME="$home" bash "$DEPLOY" py-codestyle "$REPO" --global
+    assert_fails env HOME="$home" bash "$DEPLOY" py-codestyle --global \
+        --provider opencode
+    assert_fails env HOME="$home" bash "$DEPLOY" py-codestyle --global --stage
+    assert_fails env HOME="$home" bash "$DEPLOY" py-codestyle --global \
+        --method submodule
+    pass 'global skills convert canonical copies and refuse unsafe destinations/options'
+}
+
 test_exact_staging_and_index_preservation() {
     new_repo exact-stage
     mkdir -p "$REPO/.claude/skills/commit-msg/msgs"
@@ -1375,6 +1486,7 @@ test_submodule_and_default_url
 test_init_stage_preserves_gitmodules_index
 test_submodule_init_boundaries
 test_phase0_and_global_compatibility
+test_global_skill_deployment_safety
 test_exact_staging_and_index_preservation
 test_managed_replacement_safety
 test_provider_all_skill_preflight
