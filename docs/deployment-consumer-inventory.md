@@ -21,6 +21,28 @@ unstaged changes, and review every `migrate --dry-run` result before any
 mutation. Run them only after this deployment implementation is
 available in `/home/goodboy/repos/ai.skillz`.
 
+## Rollout update: 2026-07-25
+
+The sections below remain the historical 2026-07-23 audit. Since that
+snapshot, the provider-neutral deployment implementation and consumer rollout
+have advanced substantially. Fresh validation on 2026-07-25 reported zero
+errors for these repositories:
+
+| Consumer | Current rollout note |
+|----------|----------------------|
+| `lns` | Local deployment reconciled and validated. |
+| `taken` | Local deployment reconciled and validated. |
+| `piker` | Project test guidance extracted into `test-harness-reference.md`; local deployment validated. |
+| `fapnav.nvim` | Local deployment reconciled and validated. |
+| `modden` | Project test guidance and `gish` ownership reconciled; local deployment validated. |
+| `dotrc` | Global Claude configuration and local deployment ownership reconciled; deployment validated. |
+| `ai.reply` | Broken OpenCode `commit-msg` links to the removed implementation worktree repaired against the durable checkout; deployment validated. |
+| `ai.skillz` | Self-hosted provider configuration and global deployment support validated. |
+| `tractor` | Project test guidance extracted; canonical Claude and OpenCode `run-tests` deployment validated. |
+
+This update records implementation and validator state only. It does not
+alter acceptance state in any project roadmap, plan, issue, or checklist.
+
 ## Status terms
 
 | Result | Meaning |
