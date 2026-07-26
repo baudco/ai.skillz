@@ -112,7 +112,7 @@ prepare_source_repo() {
     chmod +x "$SOURCE_WORK/scripts/deploy.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     mkdir -p "$SOURCE_WORK/.opencode/commands"
-    for command in commit-msg run-tests taken-export; do
+    for command in code-review-changes commit-msg run-tests taken-export; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
@@ -597,7 +597,7 @@ test_missing_anchor_assets_and_command_preflight() {
     mkdir -p "$REPO/.ai"
     ln -s "$old" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" all "$REPO" --provider opencode >/dev/null
     assert_fails bash "$DEPLOY" command all "$REPO" --provider all
     [ ! -e "$REPO/.claude/commands/branch-in-new-terminal.md" ] \
         || fail 'command preflight partially deployed another provider'
