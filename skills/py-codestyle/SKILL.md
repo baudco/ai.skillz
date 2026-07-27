@@ -37,6 +37,29 @@ These rules apply globally to ALL python projects.
   or TODO. Restore any removal that is not directly justified
   by the patch's behavior.
 
+## Namespace-qualified technical prose
+
+- In Python comments and docstrings, qualify implementation
+  nouns such as "table", "registry", "mapping", "index", and
+  "cache" with the exact declaring symbol on first reference.
+  For example: canonical SID registry
+  (`Runspace._sid2spawn`) or graphical refs (`Wks.wins`).
+- Prefer class/field paths which support symbol lookup, such as
+  `Spawn.sub_spawns` and `Spawn.win_ids2sub_sids`, over vague
+  phrases such as "parent-local indexes" or "this mapping".
+- When describing an instance-specific operation, name both the
+  concrete expression and its declaring field. For example,
+  `tuple(spawn.sub_spawns.values())` snapshots the current
+  instance's `Spawn.sub_spawns` mapping.
+- Name the exact method which mutates a registry and the exact
+  fields it can mutate. Do not say "normal cleanup clears every
+  index" when `Runspace.pub_spawn_end()` and the affected fields
+  can be named directly.
+- Re-qualify a symbol later when intervening prose introduces
+  another plausible table or owner. Optimize comments and
+  regression docstrings for editor symbol lookup, not only for a
+  reader who already holds the full runtime model in memory.
+
 ## Line length
 
 - **69 char max per source line** including
