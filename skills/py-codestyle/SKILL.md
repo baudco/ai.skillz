@@ -148,6 +148,30 @@ These rules apply globally to ALL python projects.
   * content follows std PEP guidelines
   * final 2 lines: a blank line, then closing `'''`
 
+## Regression test documentation
+
+- Every newly added regression test MUST have a detailed
+  docstring which preserves the reason the test exists.
+- The docstring must explain:
+  * the original failure mode or incorrect behavior;
+  * the triggering input, state, or task/event
+    interleaving;
+  * the invariant or user-visible behavior which was
+    violated;
+  * how the test arranges the reproducing conditions;
+  * how its synchronization and assertions prove the fix.
+- For concurrency or race regressions, name the relevant
+  tasks, events, cancellation points, or publication order.
+  Explain why the test controls that ordering
+  deterministically instead of depending on timing luck.
+- Do not merely restate the test name or narrate each code
+  statement. Capture the failure mechanism and the proof
+  boundary so future maintainers can distinguish required
+  behavior from incidental test implementation.
+- Existing non-regression tests do not need expanded
+  docstrings unless they are being materially rewritten to
+  audit a specific prior bug.
+
 ## Type annotations
 
 - No whitespace in union-style type annotations:
