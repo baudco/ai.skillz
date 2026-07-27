@@ -15,6 +15,28 @@ disable-model-invocation: true
 
 These rules apply globally to ALL python projects.
 
+## Preserve maintainer context
+
+- Treat comments, TODOs, FIXMEs, disabled experiments,
+  commented-out options, and rationale notes as maintained
+  project content, not cleanup opportunities.
+- When refactoring nearby code, move still-relevant notes
+  with the code they describe. Preserve their wording and
+  task/checklist markers unless the requested change needs a
+  wording update.
+- Delete or rewrite a note only when the current patch
+  demonstrably resolves it, makes it factually obsolete, or
+  replaces it with equivalent or better documentation.
+- A changed code shape, cleaner-looking block, linter pass, or
+  personal uncertainty about a note is NOT sufficient reason
+  to remove it. Preserve it or ask the human.
+- Never change `[ ]`, `[x]`, TODO/WIP/DONE, or similar state
+  markers unless the human explicitly requests that exact
+  state transition.
+- During final diff review, account for every removed comment
+  or TODO. Restore any removal that is not directly justified
+  by the patch's behavior.
+
 ## Line length
 
 - **69 char max per source line** including
