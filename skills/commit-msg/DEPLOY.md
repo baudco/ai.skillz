@@ -35,7 +35,8 @@ migration does not move, delete, or rewrite it.
 
 ## OpenCode command
 
-Deploy the reusable OpenCode command shim separately:
+OpenCode skill deployment installs the reusable command shim automatically.
+The explicit command form remains available for repair or migration:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \

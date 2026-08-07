@@ -68,6 +68,11 @@ deployment creates ignored absolute provider links. Submodule deployment
 creates trackable relative links through the anchor. Nothing is staged unless
 `--stage` is explicitly supplied, and the script never commits.
 
+OpenCode skill deployment automatically installs every OpenCode command whose
+manifest dependency names that skill. Use `--no-command` for an intentional
+skill-only deployment. Command destinations are preflighted with skill
+destinations before any mutation.
+
 Skill and command deployment defaults to `--provider claude`, `init`
 defaults to `--method submodule`, and `status` defaults to
 `--provider all`. Portable deployments initialize an anchor explicitly.
@@ -102,9 +107,11 @@ self-hosts with tracked relative links from `.opencode/commands/` to
 `providers/opencode/commands/`.
 
 ```bash
-# The command dependency is enforced: deploy the OpenCode skill first.
+# Installs both the OpenCode skill and its dependent command shim.
 bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
   --provider opencode
+
+# Explicit command deployment remains available for repair or migration.
 bash /path/to/ai.skillz/scripts/deploy.sh command commit-msg <repo> \
   --provider opencode
 ```
