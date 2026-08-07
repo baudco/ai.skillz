@@ -106,6 +106,7 @@ prepare_source_repo() {
     cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/gish" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/opencode-cleaning" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
     cp "$ROOT/.gitignore" "$SOURCE_WORK/.gitignore"
@@ -115,7 +116,8 @@ prepare_source_repo() {
     chmod +x "$SOURCE_WORK/scripts/deploy.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     mkdir -p "$SOURCE_WORK/.opencode/commands"
-    for command in code-review code-review-changes commit-msg run-tests taken-export; do
+    for command in code-review code-review-changes commit-msg \
+        opencode-cleaning run-tests taken-export; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
@@ -124,6 +126,7 @@ prepare_source_repo() {
         scripts/deploy.sh scripts/validate-deployment.sh \
         providers/opencode/commands skills/code-review skills/gish \
         skills/harness-perf \
+        skills/opencode-cleaning \
         skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
@@ -1455,7 +1458,7 @@ test_all_templates_invalid_args_and_idempotence() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
-    assert_contains "$output" 'Result: 34 deployed, 0 template skipped'
+    assert_contains "$output" 'Result: 36 deployed, 0 template skipped'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     before="$(tree_digest "$REPO")"
@@ -1564,6 +1567,19 @@ test_code_review_contract_assets() {
     pass 'code-review schema and human-control contracts are present'
 }
 
+test_opencode_cleaning_contract() {
+    python "$ROOT/tests/test_opencode_cleaning.py"
+    assert_file_contains "$ROOT/skills/opencode-cleaning/SKILL.md" \
+        'Always protect the newest listed session'
+    assert_file_contains \
+        "$ROOT/skills/opencode-cleaning/scripts/opencode-cleaning.py" \
+        'FORK_TITLE.fullmatch(session.title)'
+    assert_file_contains \
+        "$ROOT/providers/opencode/commands/opencode-cleaning.md" \
+        'never authorizes deletion'
+    pass 'OpenCode cleaning classifier and approval gate are safe'
+}
+
 test_opencode_debug_if_available() {
     if ! command -v opencode >/dev/null 2>&1; then
         pass 'OpenCode debug validation skipped (opencode unavailable)'
@@ -1575,6 +1591,10 @@ test_opencode_debug_if_available() {
     bash "$DEPLOY" command code-review "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" opencode-cleaning "$REPO" \
+        --provider opencode >/dev/null
+    bash "$DEPLOY" command opencode-cleaning "$REPO" \
+        --provider opencode >/dev/null
     bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command run-tests "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" taken-export "$REPO" --provider opencode >/dev/null
@@ -1589,10 +1609,12 @@ test_opencode_debug_if_available() {
         opencode debug skill > "$skill_output")
     assert_file_contains "$config_output" '"commit-msg"'
     assert_file_contains "$config_output" '"code-review"'
+    assert_file_contains "$config_output" '"opencode-cleaning"'
     assert_file_contains "$config_output" '"run-tests"'
     assert_file_contains "$config_output" '"taken-export"'
     assert_file_contains "$skill_output" '"name": "commit-msg"'
     assert_file_contains "$skill_output" '"name": "code-review"'
+    assert_file_contains "$skill_output" '"name": "opencode-cleaning"'
     assert_file_contains "$skill_output" '"name": "run-tests"'
     assert_file_contains "$skill_output" '"name": "taken-export"'
     assert_file_contains "$skill_output" \
@@ -1635,6 +1657,7 @@ test_update_behavior_and_broken_anchor
 test_deployment_validator_failures
 test_all_templates_invalid_args_and_idempotence
 test_code_review_contract_assets
+test_opencode_cleaning_contract
 test_opencode_debug_if_available
 
 printf '1..%d\n' "$PASS"
