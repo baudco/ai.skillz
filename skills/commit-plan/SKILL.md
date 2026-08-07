@@ -118,6 +118,11 @@ fence language and command syntax. Examples: `/bin/zsh` becomes `zsh`,
 `/bin/bash` becomes `bash`, `/usr/bin/fish` becomes `fish`, and
 `/usr/bin/xonsh` becomes `xonsh`.
 
+For `xonsh`, render every command on one physical line. Never use a trailing
+`\` or any other newline-continuation syntax: pasted continuation lines can
+be parsed as indented Python instead of subprocess arguments. Keep a runnable
+sequence as one command per line inside the same `xonsh` fence.
+
 The returned sequence must use one explicitly labelled fence and valid syntax
 for that shell. Never emit an unlabelled fence or hardcode POSIX syntax for a
 different shell. If `$SHELL` is unavailable or unknown, ask which shell to
