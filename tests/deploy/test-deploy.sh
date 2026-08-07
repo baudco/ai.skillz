@@ -104,6 +104,7 @@ prepare_source_repo() {
     cp "$ROOT/skills/run-tests/SKILL.md" \
         "$SOURCE_WORK/skills/run-tests/SKILL.md"
     cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/gish" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
@@ -121,7 +122,8 @@ prepare_source_repo() {
     done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
-        providers/opencode/commands skills/code-review skills/harness-perf \
+        providers/opencode/commands skills/code-review skills/gish \
+        skills/harness-perf \
         skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
@@ -1471,6 +1473,7 @@ test_code_review_contract_assets() {
     python -m json.tool \
         "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
         >/dev/null
+    python "$ROOT/tests/test_gish_review_post.py"
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'explicitly authorizes test execution.'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
@@ -1524,7 +1527,7 @@ test_code_review_contract_assets() {
         'Reports in this runtime directory remain untracked'
     assert_file_contains \
         "$ROOT/skills/code-review/references/output-contract.md" \
-        "skill's v1 contract."
+        'JSON export remains local'
     assert_file_contains \
         "$ROOT/skills/code-review/references/output-contract.md" \
         'fingerprint: 23acc5fc36ab85c0'
@@ -1541,7 +1544,22 @@ test_code_review_contract_assets() {
         "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
         '"symbol"'
     assert_file_contains "$ROOT/providers/opencode/commands/code-review.md" \
-        'Never publish findings from this v1'
+        'first-class `gish` transport'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'Delegate publication to `/gish review-post`'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'Never fall back silently.'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        'Bind approval to that digest'
+    assert_file_contains "$ROOT/skills/gish/SKILL.md" \
+        'review-post <backend> <num>'
+    assert_file_contains \
+        "$ROOT/skills/gish/references/review-publication.md" \
+        '--raw-field event=COMMENT'
+    assert_file_contains \
+        "$ROOT/skills/gish/scripts/review-post.py" \
+        'target PR head moved after review'
     assert_file_contains "$ROOT/README.md" '| `code-review` |'
     pass 'code-review schema and human-control contracts are present'
 }

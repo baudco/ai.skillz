@@ -46,6 +46,11 @@ gh issue comment <num> --body "..."
 
 # view PR checks
 gh pr checks <num>
+
+# publish a human-approved non-approving review through /gish review-post
+gh api repos/<owner>/<repo>/pulls/<num>/reviews \
+  --method POST --raw-field event=COMMENT \
+  --raw-field commit_id=<head> --field body=@<body-file>
 ```
 
 **Env requirements**: `gh` installed + authenticated

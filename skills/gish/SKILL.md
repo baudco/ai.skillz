@@ -1,20 +1,19 @@
 ---
 name: gish
 description: >
-  Read, create, edit, and sync issues/PRs across
-  git service backends (GitHub, Gitea, etc.) using
-  local markdown files.
+  Read, create, edit, sync, and publish human-approved issue/PR content across
+  git service backends (GitHub, Gitea, etc.) using local markdown files.
 compatibility: >
   Requires git CLI. Optional: gh CLI for GitHub,
   xonsh + py-gitea for Gitea.
 metadata:
   author: goodboy
-  version: "0.1"
+  version: "0.2"
 argument-hint: "[action] [backend] [number]"
-disable-model-invocation: true
 allowed-tools:
   - Bash(gh *)
   - Bash(git *)
+  - Bash(python *)
   - Bash(xonsh *)
   - Bash(ls *)
   - Bash(mkdir *)
@@ -34,8 +33,18 @@ See also:
   per-backend capabilities
 - [references/format.md](references/format.md) —
   markdown file conventions
+- [references/review-publication.md](references/review-publication.md) —
+  human-approved top-level review publication contract
 - [ROADMAP.md](ROADMAP.md) — cross-service review +
   AI skill convergence plan
+
+## Safety Boundary
+
+Reading local files and remote public metadata does not authorize remote
+mutation. Creating, editing, syncing, commenting, or publishing requires a
+current human message which names the exact target and action. Never infer
+remote-write permission from loading this skill, an earlier approval, or a
+content-producing skill's initial invocation.
 
 ## Invocations
 
@@ -43,6 +52,8 @@ See also:
 - `/gish edit <backend> <num>` — edit local md file
 - `/gish create <backend>` — create new issue
 - `/gish sync <backend> <num>` — push local to remote
+- `/gish review-post <backend> <num> ...` — publish one approved top-level
+  review body
 - `/gish list [backend]` — list cached issue files
 - `/gish` (no args) — detect backends from
   `git remote`, show available local files
@@ -88,6 +99,36 @@ See also:
    - **gitea**: attempt xonsh + `gish`, else instruct
      user to sync manually
 3. Report success/failure.
+
+### `review-post <backend> <num>`
+
+Publish one non-approving top-level PR review from an exact local Markdown
+file. This operation is the first-class transport adapter for
+`/code-review`; it is not authorization to review, edit, commit, or push Git
+refs.
+
+Required arguments:
+
+```text
+/gish review-post <backend> <pr-num> \
+  --repo <owner/name> --body-file <path> --sha256 <digest> \
+  --head <commit> --event comment
+```
+
+Read and follow `references/review-publication.md`. Refuse publication unless
+the current human message approves the exact body, target, and non-approving
+event; the body digest and reviewed head still match; and the selected backend
+implements this operation. Never silently fall back to direct service calls
+outside the adapter contract.
+
+Run the deterministic adapter rather than reconstructing its checks:
+
+```text
+python <skill-dir>/scripts/review-post.py \
+  --backend <backend> --repo <owner/name> --pr <pr-num> \
+  --body-file <path> --sha256 <digest> --head <commit> \
+  --event comment
+```
 
 ### `list [backend]`
 
@@ -158,3 +199,8 @@ plan covering AI skill integration.
 For operations beyond what `gish.xsh` supports,
 fall back to the `gh` CLI directly for GitHub, or
 instruct the user for other backends.
+
+The skill-level `review-post` adapter is an exception to that generic
+fallback: it has its own human-verification and immutable-input contract and
+uses the backend commands documented in `references/review-publication.md`.
+Do not replace it with an ad hoc review-posting command.

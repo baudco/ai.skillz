@@ -28,7 +28,7 @@ generalized for cross-repo deployment.
 | `plan-io` | Plan file conventions |
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
-| `gish` | Git-over-SSH transport |
+| `gish` | Local-file-first forge transport, including approved reviews |
 | `harness-perf` | Diagnose CPU, memory, latency, and hangs in AI coding harnesses |
 | `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
