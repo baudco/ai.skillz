@@ -26,9 +26,39 @@ kind=""
 name=""
 shape=""
 assets=""
+skill_dependency=""
 rest=""
 
-while IFS='|' read -r kind name shape assets rest; do
+manifest_skill_dependency() {
+    local wanted="$1" record_kind record_name record_shape
+    local record_assets record_dependency record_rest
+    MANIFEST_SKILL_DEPENDENCY=""
+    while IFS='|' read -r record_kind record_name record_shape \
+        record_assets record_dependency record_rest; do
+        [ "$record_kind" = skill ] || continue
+        if [ "$record_name" = "$wanted" ]; then
+            MANIFEST_SKILL_DEPENDENCY="$record_dependency"
+            return 0
+        fi
+    done < "$MANIFEST"
+    return 1
+}
+
+skill_dependency_cycle() {
+    local start="$1" current="$1" dependency seen="|$1|"
+    while manifest_skill_dependency "$current"; do
+        dependency="$MANIFEST_SKILL_DEPENDENCY"
+        [ -n "$dependency" ] && [ "$dependency" != - ] || return 1
+        case "$seen" in
+            *"|$dependency|"*) return 0 ;;
+        esac
+        seen="$seen$dependency|"
+        current="$dependency"
+    done
+    return 1
+}
+
+while IFS='|' read -r kind name shape assets skill_dependency rest; do
     [ "$kind" = skill ] || continue
     skills="$skills$name|"
     case "$shape" in
@@ -55,6 +85,28 @@ while IFS='|' read -r kind name shape assets rest; do
             ;;
         *)
             printf 'ERROR: invalid manifest shape for %s: %s\n' "$name" "$shape" >&2
+            errors=$((errors + 1))
+            ;;
+    esac
+done < "$MANIFEST"
+
+while IFS='|' read -r kind name shape assets skill_dependency rest; do
+    [ "$kind" = skill ] || continue
+    if skill_dependency_cycle "$name"; then
+        printf 'ERROR: skill dependency cycle includes: %s\n' "$name" >&2
+        errors=$((errors + 1))
+    fi
+done < "$MANIFEST"
+
+while IFS='|' read -r kind name shape assets skill_dependency rest; do
+    [ "$kind" = skill ] || continue
+    [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ] \
+        || continue
+    case "$skills" in
+        *"|$skill_dependency|"*) ;;
+        *)
+            printf 'ERROR: skill dependency missing from manifest: %s -> %s\n' \
+                "$name" "$skill_dependency" >&2
             errors=$((errors + 1))
             ;;
     esac

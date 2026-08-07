@@ -1,18 +1,16 @@
 ---
 name: commit-msg
 description: >
-  Generate git commit messages and complete multi-commit
-  or local-merge plans following project style. Use when
-  user wants to create a commit, asks for a commit message,
-  or says "commit plan", "multi-commit plan", or "merge
-  plan".
+  Generate git commit messages and local-merge plans following project style.
+  Use when the user wants to create a commit, asks for a commit message, or
+  says "merge plan". Delegate multi-commit planning to `commit-plan`.
 compatibility: >
   Requires git CLI. Optional: gh CLI for review
   context integration.
 metadata:
   author: goodboy
-  version: "0.5"
-argument-hint: "[commit plan|merge plan|optional-scope-or-description]"
+  version: "0.6"
+argument-hint: "[merge plan|optional-scope-or-description]"
 allowed-tools:
   - Bash(git *)
   - Bash(gh *)
@@ -96,79 +94,17 @@ A request for a "merge plan" asks for the ready-to-run plan and message,
 not execution. Run the merge or commit only when the human explicitly
 asks to execute it.
 
-## "COMMIT PLAN": batch files + messages in a multi-commit format
+## "COMMIT PLAN" compatibility redirect
 
-The literal phrase **"commit plan"** (case-insensitive) is a mandatory
-trigger for this section. When the human uses it, these instructions
-take precedence over the ordinary single-commit workflow below. Treat
-it as an explicit request for a complete, ready-to-run multi-commit
-package, not merely a proposal of boundaries or subjects.
+The literal phrase **"commit plan"** (case-insensitive) belongs to the
+provider-neutral `/commit-plan` skill. The same redirect applies when a direct
+`/commit-msg` request asks to split changes into multiple commits or when the
+agent proposes a logical multi-commit plan. Load `/commit-plan` and transfer
+the request once. Do not continue the single-message workflow and do not
+re-enter this redirect after `/commit-plan` loads this file as its dependency.
 
-Follow every numbered step in this section exactly. Do not abbreviate
-the workflow, defer message generation, tell the human to invoke
-`/commit-msg` again per boundary, or return only subjects or suggested
-commands. If a boundary cannot be materialized safely, stop and report
-the exact blocker instead of silently degrading to a partial plan.
-
-When the user ASKS FOR (or any time the AI-agent proposes) a logical
-multi-commit plan, do NOT make the human invoke `/commit-msg` after
-each commit. Before returning the plan:
-
-1. Materialize each planned commit boundary in the index,
-   one at a time.
-2. Run the normal staged-diff analysis and checks for that
-   exact boundary.
-3. Generate and archive a distinct message for every commit
-   under `.claude/skills/commit-msg/msgs/`.
-4. Restore the index to the boundary that was staged when
-   the skill was invoked (normally the first planned commit).
-5. Return one complete command sequence in a single fenced
-   block using the user's configured `$SHELL` syntax.
-
-### `$SHELL` rendering is mandatory
-
-Before rendering the command sequence, determine the user's configured
-shell from `$SHELL` and use its basename as the Markdown fence language
-and command syntax. Examples: `/bin/zsh` -> `zsh`, `/bin/bash` ->
-`bash`, `/usr/bin/fish` -> `fish`, and `/usr/bin/xonsh` -> `xonsh`.
-
-The returned sequence MUST use one explicitly labelled fence: three
-backticks immediately followed by the shell basename. For example,
-when `$SHELL` is `xonsh`, the fence info string MUST be `xonsh`, and
-every assignment, conditional, loop, quoting form, and command
-separator must be valid xonsh syntax.
-
-NEVER emit an unlabelled fence. NEVER hardcode `bash` or POSIX shell
-syntax when `$SHELL` names another shell. If `$SHELL` is unavailable
-or its syntax is unknown, ask the human which shell to target instead
-of guessing or returning a mixed-syntax plan.
-
-The command block MUST include, in execution order:
-
-- exact staging/unstaging commands for each boundary
-- staged file/diff checks before each commit
-- any required lint/test commands
-- `git commit --edit --file
-  .claude/skills/commit-msg/msgs/<generated-file>` for each
-  commit
-
-Use each archived message path directly. Do not use
-`.claude/git_commit_msg_LATEST.md` in a multi-commit sequence,
-because later message generation overwrites it. Do not merely
-list subjects or tell the human to rerun `/commit-msg`.
-
-Before returning a commit plan, verify all of the following:
-
-- every planned commit has its own archived message file
-- every message was generated from that commit's exact staged diff
-- the index matches the boundary staged when the skill was invoked
-- one command block covers every boundary in execution order
-- every rendered commit command includes `--edit`
-- the fence label matches the basename of `$SHELL`
-- every command and control construct is valid for `$SHELL`
-
-If any check is false, the commit plan is incomplete and MUST NOT be
-returned as finished.
+If `/commit-plan` is unavailable, stop and report the missing deployment. Do
+not reproduce a partial multi-commit workflow from memory.
 
 ## Scope: commit messages only
 
@@ -432,6 +368,8 @@ as `review_regression.md`).
        or similar filesystem-safe format.
      * and `<hash>` from `git log -1 --format=%h`
        first 7 chars.
+     * `/commit-plan` appends a zero-padded boundary ordinal before
+       `_commit_msg.md` when one timestamp/hash pair would otherwise collide.
      * `mkdir -p` the `msgs/` dir if it doesn't exist.
    - `.claude/git_commit_msg_LATEST.md` (overwrite)
 
