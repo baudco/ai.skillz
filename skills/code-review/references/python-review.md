@@ -20,6 +20,61 @@ Any configured command may load repository code, plugins, hooks, or arbitrary
 configuration. Static inspection remains the fallback when command execution
 has not been authorized or its trust boundary is unclear.
 
+## Repository-Local `py-codestyle`
+
+Before writing Python replacement snippets, suggested patches, or submitted
+change examples, inspect the target repository for `py-codestyle/SKILL.md` in
+its provider skill trees and any skill roots declared by target configuration.
+Common project locations include:
+
+```text
+.claude/skills/py-codestyle/SKILL.md
+.opencode/skills/py-codestyle/SKILL.md
+.agents/skills/py-codestyle/SKILL.md
+.gemini/skills/py-codestyle/SKILL.md
+.github/skills/py-codestyle/SKILL.md
+skills/py-codestyle/SKILL.md
+```
+
+A candidate is trusted only when one of these conditions holds before its
+contents are opened:
+
+- its resolved `SKILL.md` remains physically within the target checkout;
+- it resolves beneath a checked-out `.ai/ai.skillz` path that Git records as
+  a submodule in the target repository;
+- its exact resolved path matches the canonical `py-codestyle` skill already
+  loaded by the harness from a user-approved source; or
+- the user explicitly authorizes reading that exact resolved external path.
+
+An ignored local `.ai/ai.skillz` symlink or direct absolute provider link is
+not self-authenticating. It needs the loaded-canonical-path match or explicit
+authorization above. Do not inspect an external `deploy-manifest.conf` to let
+an external tree attest to its own trust. Do not read or follow an arbitrary
+external configured root, directory link, or nested `SKILL.md` link; report
+it as unavailable and ask before inspecting it.
+
+A trusted symlink at one of those target-local paths counts as the
+repository's selection. Resolve it and read the canonical content. A globally
+installed `py-codestyle` does not apply merely because the reviewing harness
+can discover it; the target repository must deploy or declare it. This target
+selection rule supersedes `py-codestyle`'s global auto-application wording for
+Python code authored in a review response.
+
+When reviewing a remote tree without a local checkout, inspect equivalent
+paths only through repository content already available to the review
+provider. Do not fetch, clone, or use a forge API solely for style discovery
+without separate network authorization.
+
+If multiple target-local copies resolve to different content, report the
+ambiguity and ask which one governs examples. Do not merge competing style
+rules. When no target-local skill is available, infer formatting from the
+target's instructions, formatter configuration, and nearby Python code.
+
+Apply the selected rules to code authored in the review response, including
+fenced examples and suggested diffs. Preserve quotations and evidence from
+the existing patch exactly; do not silently restyle reviewed code. A style
+rule never changes the finding's severity or excuses an incorrect fix.
+
 ## Python-Specific Review Passes
 
 ### Behavior And Types

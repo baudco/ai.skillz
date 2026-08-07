@@ -69,5 +69,7 @@ bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 
 `/run-tests` is optional and owns runtime test execution. Deploy it when a
 review should be able to confirm findings with project-specific tests.
+`/py-codestyle` is optional and, when deployed by the target repository, owns
+formatting for Python replacement snippets and suggested patches.
 `/code-review-changes` remains the separate workflow for applying and
 publishing responses to existing remote review feedback.

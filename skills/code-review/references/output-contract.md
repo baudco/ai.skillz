@@ -20,6 +20,10 @@ Evidence: ...
 Recommendation: ...
 ```
 
+If a recommendation includes Python replacement code, use a fenced `python`
+block and format it according to the target repository's deployed
+`py-codestyle` skill. Keep quoted evidence byte-faithful to the reviewed diff.
+
 Then include, in order:
 
 1. Open questions or assumptions that affect validity.
