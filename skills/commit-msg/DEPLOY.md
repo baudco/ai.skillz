@@ -129,6 +129,10 @@ layouts, and unportable OpenCode `skills.paths`. Review the migration
 dry run before applying it. `update` advances a submodule anchor; update
 a local checkout directly.
 
+For multi-commit planning, deploy the provider-neutral `commit-plan` companion
+after `commit-msg`. `commit-plan` consumes this skill's style, message, runtime,
+and safety contracts rather than duplicating them.
+
 ## Prerequisites
 
 - `git` CLI

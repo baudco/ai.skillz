@@ -103,7 +103,10 @@ prepare_source_repo() {
         "$SOURCE_WORK/providers/opencode/commands/"
     cp "$ROOT/skills/run-tests/SKILL.md" \
         "$SOURCE_WORK/skills/run-tests/SKILL.md"
+    cp "$ROOT/skills/commit-msg/SKILL.md" \
+        "$SOURCE_WORK/skills/commit-msg/SKILL.md"
     cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/commit-plan" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/gish" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/opencode-cleaning" "$SOURCE_WORK/skills/"
@@ -116,7 +119,7 @@ prepare_source_repo() {
     chmod +x "$SOURCE_WORK/scripts/deploy.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     mkdir -p "$SOURCE_WORK/.opencode/commands"
-    for command in code-review code-review-changes commit-msg \
+    for command in code-review code-review-changes commit-plan commit-msg \
         opencode-cleaning run-tests taken-export; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
@@ -124,10 +127,11 @@ prepare_source_repo() {
     done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
-        providers/opencode/commands skills/code-review skills/gish \
+        providers/opencode/commands skills/code-review skills/commit-plan \
+        skills/gish \
         skills/harness-perf \
         skills/opencode-cleaning \
-        skills/run-tests/SKILL.md \
+        skills/commit-msg/SKILL.md skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
     SOURCE_URL="file://$SOURCE_WORK"
@@ -1458,7 +1462,7 @@ test_all_templates_invalid_args_and_idempotence() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
-    assert_contains "$output" 'Result: 36 deployed, 0 template skipped'
+    assert_contains "$output" 'Result: 38 deployed, 0 template skipped'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     before="$(tree_digest "$REPO")"
@@ -1580,6 +1584,49 @@ test_opencode_cleaning_contract() {
     pass 'OpenCode cleaning classifier and approval gate are safe'
 }
 
+test_commit_plan_contract() {
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Create a complete multi-commit package by composing with `/commit-msg`.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '**"COMMIT PLAN" compatibility redirect**'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'atomically restore the saved'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'provider-neutral `/commit-plan` skill'
+    assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
+        'without re-entering the compatibility redirect'
+    new_repo commit-plan-dependency
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    assert_fails bash "$DEPLOY" commit-plan "$REPO" \
+        --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'commit-msg'"
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" command commit-plan "$REPO" \
+        --provider opencode >/dev/null
+    rm "$REPO/.opencode/skills/commit-msg/SKILL.md"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'dependency commit-msg missing or unhealthy'
+    assert_fails bash "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_fails bash "$DEPLOY" command commit-plan "$REPO" \
+        --provider opencode
+    local home="$TMP_ROOT/commit-plan-global-home"
+    mkdir -p "$home"
+    assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
+    env HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
+    env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
+    local cycle="$TMP_ROOT/commit-plan-cycle"
+    cp -a "$SOURCE_WORK" "$cycle"
+    sed -i 's#skill|commit-msg|hybrid|SKILL.md#skill|commit-msg|hybrid|SKILL.md|commit-plan#' \
+        "$cycle/deploy-manifest.conf"
+    assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'skill dependency cycle includes'
+    pass 'commit-plan composes with commit-msg without recursive ownership'
+}
+
 test_opencode_debug_if_available() {
     if ! command -v opencode >/dev/null 2>&1; then
         pass 'OpenCode debug validation skipped (opencode unavailable)'
@@ -1590,6 +1637,8 @@ test_opencode_debug_if_available() {
     bash "$DEPLOY" code-review "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command code-review "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" command commit-plan "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" opencode-cleaning "$REPO" \
         --provider opencode >/dev/null
@@ -1608,11 +1657,13 @@ test_opencode_debug_if_available() {
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
         opencode debug skill > "$skill_output")
     assert_file_contains "$config_output" '"commit-msg"'
+    assert_file_contains "$config_output" '"commit-plan"'
     assert_file_contains "$config_output" '"code-review"'
     assert_file_contains "$config_output" '"opencode-cleaning"'
     assert_file_contains "$config_output" '"run-tests"'
     assert_file_contains "$config_output" '"taken-export"'
     assert_file_contains "$skill_output" '"name": "commit-msg"'
+    assert_file_contains "$skill_output" '"name": "commit-plan"'
     assert_file_contains "$skill_output" '"name": "code-review"'
     assert_file_contains "$skill_output" '"name": "opencode-cleaning"'
     assert_file_contains "$skill_output" '"name": "run-tests"'
@@ -1657,6 +1708,7 @@ test_update_behavior_and_broken_anchor
 test_deployment_validator_failures
 test_all_templates_invalid_args_and_idempotence
 test_code_review_contract_assets
+test_commit_plan_contract
 test_opencode_cleaning_contract
 test_opencode_debug_if_available
 

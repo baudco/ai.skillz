@@ -1,0 +1,1 @@
+../../providers/opencode/commands/commit-plan.md

@@ -18,6 +18,7 @@ generalized for cross-repo deployment.
 |-------|-------------|
 | `py-codestyle` | Python code style conventions |
 | `commit-msg` | Git commit message generation |
+| `commit-plan` | Multi-commit orchestration using `commit-msg` messages |
 | `pr-msg` | PR description generation |
 | `code-review` | Read-only, Python-focused review with structured findings |
 | `code-review-changes` | Apply PR review feedback |
