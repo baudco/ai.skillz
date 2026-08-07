@@ -19,6 +19,7 @@ generalized for cross-repo deployment.
 | `py-codestyle` | Python code style conventions |
 | `commit-msg` | Git commit message generation |
 | `pr-msg` | PR description generation |
+| `code-review` | Read-only, Python-focused review with structured findings |
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
 | `run-tests` | Shared test workflow with repository-owned harness guidance |
@@ -89,8 +90,8 @@ repository owns `test-harness-reference.md`.
 
 Provider-specific reusable assets live under `providers/`. For example,
 the canonical OpenCode `/commit-msg` shim is
-`providers/opencode/commands/commit-msg.md`; review-changes, Taken, and Run
-shims use the same layout. Local deployment links
+`providers/opencode/commands/commit-msg.md`; code-review, review-changes,
+Taken, and Run shims use the same layout. Local deployment links
 `.opencode/commands/<name>.md` directly to the
 canonical provider asset and ignores that absolute link. Portable deployment
 uses a trackable relative link through `.ai/ai.skillz`. This repository
