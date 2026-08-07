@@ -29,6 +29,7 @@ generalized for cross-repo deployment.
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
 | `gish` | Git-over-SSH transport |
+| `harness-perf` | Diagnose CPU, memory, latency, and hangs in AI coding harnesses |
 | `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
 
