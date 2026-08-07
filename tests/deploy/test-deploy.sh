@@ -1477,6 +1477,49 @@ test_code_review_contract_assets() {
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'Test selection remains owned by `/run-tests`'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'trusted target-local deployment, including a safely resolved'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'supersedes reviewer-global auto-application'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'installed `py-codestyle` does not apply merely because'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'resolved `SKILL.md` remains physically within the target checkout'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'a submodule in the target repository'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'loaded by the harness from a user-approved source'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'user explicitly authorizes reading that exact resolved external path'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Do not inspect an external `deploy-manifest.conf`'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'external configured root, directory link, or nested'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Do not fetch, clone, or use a forge API solely for style discovery'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Do not merge competing style'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        "target's instructions, formatter configuration, and nearby Python"
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Preserve quotations and evidence from'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        "never changes the finding's severity"
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        "target repository's deployed"
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'Reports in this runtime directory remain untracked'
     assert_file_contains \
         "$ROOT/skills/code-review/references/output-contract.md" \

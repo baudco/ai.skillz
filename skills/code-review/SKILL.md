@@ -59,6 +59,15 @@ Test selection remains owned by `/run-tests` and its test harness reference.
 Reject unfinished template markers such as `{{` or `}}`. Never import another
 repository's review conventions.
 
+Discover whether the target repository deploys its own `py-codestyle` skill
+using the provider-neutral rules in `references/python-review.md`. A
+trusted target-local deployment, including a safely resolved target-local
+symlink, makes that skill authoritative for Python replacement snippets,
+suggested patches, and submitted change examples. Do not substitute a global
+reviewer skill that the target repository did not select. This target
+selection rule supersedes reviewer-global auto-application of `py-codestyle`
+for code authored in the review response.
+
 ## 3. Resolve The Review Scope
 
 Honor an explicit user target first. Supported targets include:
@@ -152,6 +161,11 @@ Assign one severity and one confidence level to each candidate:
 Every finding must identify a specific failure mode, affected behavior, code
 evidence, and a practical remediation direction. Remove duplicates and weak
 speculation. Prefer no finding over an unactionable warning.
+
+When a recommendation contains Python code, format it using the target
+repository's discovered `py-codestyle` skill. If none is deployed, follow the
+target's existing Python conventions. Style guidance controls presentation of
+the proposed change; it does not override correctness, severity, or evidence.
 
 ## 7. Report Findings First
 
