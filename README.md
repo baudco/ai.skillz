@@ -25,6 +25,7 @@ generalized for cross-repo deployment.
 | `run-tests` | Shared test workflow with repository-owned harness guidance |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
+| `opencode-cleaning` | Safely preview and remove stale OpenCode forks |
 | `plan-io` | Plan file conventions |
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
