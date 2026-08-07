@@ -108,16 +108,27 @@ No Git subprocess loop, child-process storm, or large watcher set appeared.
 `fff-bg-*`, notification, Bun pool, and most network threads remained asleep
 during representative samples.
 
-### Exact Upstream Match
+### Source-Level Match
 
-Upstream issue:
+OpenCode 1.18.13 source confirmed the relevant UI behavior:
 
-<https://github.com/anomalyco/opencode/issues/34226>
+- `packages/tui/src/component/spinner.tsx` renders an animated spinner every
+  80 ms when animations are enabled and a static `⋯ <label>` fallback when
+  disabled.
+- `packages/tui/src/component/prompt/index.tsx` renders the active prompt
+  spinner every 40 ms when animations are enabled and static `[⋯]` when
+  disabled.
 
-The report exactly matched OpenCode 1.18.13 and described spinner animation
-requesting a full TUI render every 40 ms. Those renders create enough
-allocation pressure to wake seven `HeapHelper` threads. The reporter measured
-a reduction from 28.9% CPU to 1.4% after disabling animations.
+See the tagged sources:
+
+- <https://github.com/anomalyco/opencode/blob/v1.18.13/packages/tui/src/component/spinner.tsx>
+- <https://github.com/anomalyco/opencode/blob/v1.18.13/packages/tui/src/component/prompt/index.tsx>
+
+Upstream issue `#34226` reports similar high CPU and memory after long
+sessions and requests heap evidence, but it does not attribute the behavior
+to spinner animation. The render-loop attribution in this case comes from
+the local animation A/B result plus the matching tagged implementation, not
+from that issue report.
 
 The local persisted state initially contained:
 
@@ -215,11 +226,13 @@ If the symptom returns:
 5. Compare mini-mode replay defaults against `--no-replay` and one fixed
    `--replay-limit`.
 6. Capture a heap snapshot if the high post-GC floor reproduces.
-7. Recheck issue `#34226` and current release notes for a merged render-loop
-   fix before opening a duplicate.
+7. Recheck the spinner implementation and current release notes for a merged
+   render-loop fix before opening a new issue.
 
 ### Related Upstream Reports
 
+- <https://github.com/anomalyco/opencode/issues/34226>: long-session high CPU
+  and memory with heap analysis; related symptoms, but no spinner attribution.
 - <https://github.com/anomalyco/opencode/issues/20695>: upstream heap-snapshot
   collection instructions.
 - <https://github.com/anomalyco/opencode/issues/39342>: streaming and syntax
