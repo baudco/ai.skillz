@@ -20,9 +20,9 @@ usage() {
     cat <<'EOF'
 Usage:
   deploy.sh init <repo> [--method symlink|submodule] [--url URL] [--ref REF] [--stage]
-  deploy.sh <skill> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
+  deploy.sh <skill> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
   deploy.sh <skill> --global [--provider claude|all] [--method symlink] [--direct]
-  deploy.sh all <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
+  deploy.sh all <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
   deploy.sh command <name|all> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
   deploy.sh command <name|all> --global [--provider claude|all]
   deploy.sh update <repo> [--ref REF] [--stage]
@@ -41,6 +41,8 @@ Methods:
 
 Local symlink deployments use ignored absolute provider links. Submodule
 deployments use trackable relative links through the provider-neutral anchor.
+OpenCode skill deployment also installs manifest commands which depend on the
+skill. Use --no-command for an explicit skill-only deployment.
 --direct is retained as an explicit local-link compatibility alias.
 Nothing is staged unless --stage is supplied; this script never commits.
 EOF
@@ -184,6 +186,14 @@ validate_manifest() {
     while IFS='|' read -r kind a b c d extra; do
         [ "$kind" = skill ] || continue
         validate_skill_dependency_chain "$a"
+    done < "$MANIFEST"
+    while IFS='|' read -r kind a b c d extra; do
+        [ "$kind" = command ] || continue
+        [ "$extra" != - ] || continue
+        get_skill_record "$extra" \
+            || die "command '$a/$b' dependency missing from manifest: $extra"
+        [ "$SKILL_SHAPE" != template ] \
+            || die "command '$a/$b' depends on template-only skill '$extra'"
     done < "$MANIFEST"
 }
 
@@ -1262,12 +1272,14 @@ deploy_skill() {
     local skill="$1"
     shift
     local target_arg="" provider=claude method="" direct=no stage=no global=no
+    local auto_commands=yes
     while [ $# -gt 0 ]; do
         case "$1" in
             --provider) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
+            --no-command) auto_commands=no; shift ;;
             --global) global=yes; shift ;;
             --*) die "unknown option: $1" ;;
             *)
@@ -1285,6 +1297,8 @@ deploy_skill() {
     if [ "$global" = yes ]; then
         [ -z "$target_arg" ] || die "--global does not accept a target repository"
         [ "$stage" = no ] || die "--stage is invalid with --global"
+        [ "$auto_commands" = yes ] \
+            || die "--no-command is invalid with --global"
         [ -z "$method" ] || [ "$method" = symlink ] \
             || die "--global supports only --method symlink"
         [ "$provider" != opencode ] \
@@ -1326,6 +1340,7 @@ deploy_skill() {
     direct="$DEPLOY_DIRECT"
 
     local deployed=0 skipped=0 selected_provider
+    local command_count=0 job
     MANAGED_PATHS=()
     if [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ]; then
         for selected_provider in "${PROVIDERS[@]}"; do
@@ -1338,6 +1353,13 @@ deploy_skill() {
     for selected_provider in "${PROVIDERS[@]}"; do
         preflight_skill_provider "$skill" "$TARGET" "$selected_provider"
     done
+    COMMAND_JOBS=()
+    if [ "$auto_commands" = yes ] && providers_include_opencode; then
+        collect_skill_command_jobs "$skill"
+        for job in "${COMMAND_JOBS[@]}"; do
+            preflight_command_job "$job" "$direct" no "$skill"
+        done
+    fi
     for selected_provider in "${PROVIDERS[@]}"; do
         if deploy_skill_provider "$skill" "$TARGET" "$selected_provider" "$direct"; then
             deployed=$((deployed + 1))
@@ -1346,20 +1368,25 @@ deploy_skill() {
             skipped=$((skipped + 1))
         fi
     done
+    deploy_command_jobs "$TARGET" "$direct" no
+    command_count="$COMMAND_DEPLOYED"
 
     stage_paths "$TARGET" "$stage" "${MANAGED_PATHS[@]}"
     stage_ignore_changes "$TARGET" "$stage"
-    printf 'Result: %d deployed, %d template skipped\n' "$deployed" "$skipped"
+    printf 'Result: %d deployed, %d template skipped, %d command deployment(s)\n' \
+        "$deployed" "$skipped" "$command_count"
 }
 
 deploy_all() {
     local target_arg="" provider=claude method="" direct=no stage=no
+    local auto_commands=yes
     while [ $# -gt 0 ]; do
         case "$1" in
             --provider) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
+            --no-command) auto_commands=no; shift ;;
             --*) die "unknown option: $1" ;;
             *) [ -z "$target_arg" ] || die "unexpected argument: $1"; target_arg="$1"; shift ;;
         esac
@@ -1373,7 +1400,7 @@ deploy_all() {
     direct="$DEPLOY_DIRECT"
 
     local kind skill shape assets dependency rest deployed=0 skipped=0
-    local selected_provider
+    local selected_provider command_count=0 job
     set_providers "$provider"
     MANAGED_PATHS=()
     while IFS='|' read -r kind skill shape assets dependency rest; do
@@ -1384,6 +1411,16 @@ deploy_all() {
             preflight_skill_provider "$skill" "$TARGET" "$selected_provider"
         done
     done < "$MANIFEST"
+    COMMAND_JOBS=()
+    if [ "$auto_commands" = yes ] && providers_include_opencode; then
+        while IFS='|' read -r kind skill shape assets dependency rest; do
+            [ "$kind" = skill ] || continue
+            collect_skill_command_jobs "$skill"
+        done < "$MANIFEST"
+        for job in "${COMMAND_JOBS[@]}"; do
+            preflight_command_job "$job" "$direct" no '*'
+        done
+    fi
     while IFS='|' read -r kind skill shape assets dependency rest; do
         [ "$kind" = skill ] || continue
         SKILL_SHAPE="$shape"
@@ -1404,9 +1441,12 @@ deploy_all() {
             fi
         done
     done < "$MANIFEST"
+    deploy_command_jobs "$TARGET" "$direct" no
+    command_count="$COMMAND_DEPLOYED"
     stage_paths "$TARGET" "$stage" "${MANAGED_PATHS[@]}"
     stage_ignore_changes "$TARGET" "$stage"
-    printf 'Result: %d deployed, %d template skipped\n' "$deployed" "$skipped"
+    printf 'Result: %d deployed, %d template skipped, %d command deployment(s)\n' \
+        "$deployed" "$skipped" "$command_count"
 }
 
 add_submodule_without_staging() {
@@ -1726,6 +1766,74 @@ command_destination_manageable() {
     fi
 }
 
+providers_include_opencode() {
+    local selected_provider
+    for selected_provider in "${PROVIDERS[@]}"; do
+        [ "$selected_provider" = opencode ] && return 0
+    done
+    return 1
+}
+
+collect_skill_command_jobs() {
+    local wanted_skill="$1" kind provider name source mode dependency rest
+    while IFS='|' read -r kind provider name source mode dependency rest; do
+        [ "$kind" = command ] || continue
+        [ "$provider" = opencode ] || continue
+        [ "$dependency" = "$wanted_skill" ] || continue
+        COMMAND_JOBS+=("$provider:$name")
+    done < "$MANIFEST"
+}
+
+preflight_command_job() {
+    local job="$1" direct="$2" global="$3" planned_dependency="$4"
+    local job_provider="${job%%:*}" job_name="${job#*:}" destination
+    get_command_record "$job_provider" "$job_name" \
+        || die "manifest command disappeared"
+    [ -f "$SOURCE_ROOT/$COMMAND_SOURCE" ] \
+        || die "command source missing from deployment source: $SOURCE_ROOT/$COMMAND_SOURCE"
+    if [ "$global" = no ] && [ "$COMMAND_SKILL" != - ] \
+        && [ "$planned_dependency" != '*' ] \
+        && [ "$COMMAND_SKILL" != "$planned_dependency" ]; then
+        skill_deployment_healthy "$TARGET" "$job_provider" "$COMMAND_SKILL" \
+            || die "command '$job_name' requires healthy $job_provider skill '$COMMAND_SKILL'"
+    fi
+    [ "$global" = yes ] || preflight_runtime_ignores "$job_name" "$TARGET"
+    provider_root "$job_provider"
+    if [ "$global" = yes ]; then
+        destination="$HOME/.claude/commands/$job_name.md"
+    else
+        preflight_directory_chain "$TARGET" "$PROVIDER_ROOT/commands"
+        destination="$TARGET/$PROVIDER_ROOT/commands/$job_name.md"
+        if [ "$direct" = yes ]; then
+            require_planned_ignore "$TARGET" \
+                "direct:symlink:$job_provider:command:$job_name" \
+                "$PROVIDER_ROOT/commands/$job_name.md" \
+                "/$PROVIDER_ROOT/commands/$job_name.md"
+            require_local_path_untracked "$TARGET" \
+                "$PROVIDER_ROOT/commands/$job_name.md"
+        else
+            require_portable_path_trackable "$TARGET" \
+                "$PROVIDER_ROOT/commands/$job_name.md"
+        fi
+    fi
+    command_destination_manageable \
+        "$SOURCE_ROOT/$COMMAND_SOURCE" "$destination" \
+        "$COMMAND_MODE" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
+        || die "refusing unmanaged command destination: $destination"
+}
+
+deploy_command_jobs() {
+    local target="$1" direct="$2" global="$3" job job_provider job_name
+    COMMAND_DEPLOYED=0
+    for job in "${COMMAND_JOBS[@]}"; do
+        job_provider="${job%%:*}"
+        job_name="${job#*:}"
+        deploy_command_provider \
+            "$job_name" "$target" "$job_provider" "$direct" "$global"
+        COMMAND_DEPLOYED=$((COMMAND_DEPLOYED + 1))
+    done
+}
+
 report_companion_hook() {
     local source="$1" target_label="$2" hook
     for hook in "$(dirname "$source")"/*.hook.json; do
@@ -1847,7 +1955,7 @@ deploy_command() {
     set_providers "$provider"
 
     local selected_provider kind manifest_provider manifest_name source mode dependency rest
-    local count=0 skipped=0 job job_provider job_name destination
+    local count=0 skipped=0 job
     COMMAND_JOBS=()
     if [ "$name" = all ]; then
         while IFS='|' read -r kind manifest_provider manifest_name source mode dependency rest; do
@@ -1877,46 +1985,12 @@ deploy_command() {
 
     # Preflight every selected job before writing any provider destination.
     for job in "${COMMAND_JOBS[@]}"; do
-        job_provider="${job%%:*}"
-        job_name="${job#*:}"
-        get_command_record "$job_provider" "$job_name" || die "manifest command disappeared"
-        [ -f "$SOURCE_ROOT/$COMMAND_SOURCE" ] \
-            || die "command source missing from deployment source: $SOURCE_ROOT/$COMMAND_SOURCE"
-        if [ "$global" = no ] && [ "$COMMAND_SKILL" != - ]; then
-            skill_deployment_healthy "$TARGET" "$job_provider" "$COMMAND_SKILL" \
-                || die "command '$job_name' requires healthy $job_provider skill '$COMMAND_SKILL'"
-        fi
-        [ "$global" = yes ] || preflight_runtime_ignores "$job_name" "$TARGET"
-        provider_root "$job_provider"
-        if [ "$global" = yes ]; then
-            destination="$HOME/.claude/commands/$job_name.md"
-        else
-            preflight_directory_chain "$TARGET" "$PROVIDER_ROOT/commands"
-            destination="$TARGET/$PROVIDER_ROOT/commands/$job_name.md"
-            if [ "$direct" = yes ]; then
-                require_planned_ignore "$TARGET" \
-                    "direct:symlink:$job_provider:command:$job_name" \
-                    "$PROVIDER_ROOT/commands/$job_name.md" \
-                    "/$PROVIDER_ROOT/commands/$job_name.md"
-                require_local_path_untracked "$TARGET" \
-                    "$PROVIDER_ROOT/commands/$job_name.md"
-            else
-                require_portable_path_trackable "$TARGET" \
-                    "$PROVIDER_ROOT/commands/$job_name.md"
-            fi
-        fi
-        command_destination_manageable "$SOURCE_ROOT/$COMMAND_SOURCE" "$destination" \
-            "$COMMAND_MODE" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
-            || die "refusing unmanaged command destination: $destination"
+        preflight_command_job "$job" "$direct" "$global" ''
     done
 
     MANAGED_PATHS=()
-    for job in "${COMMAND_JOBS[@]}"; do
-        job_provider="${job%%:*}"
-        job_name="${job#*:}"
-        deploy_command_provider "$job_name" "$TARGET" "$job_provider" "$direct" "$global"
-        count=$((count + 1))
-    done
+    deploy_command_jobs "$TARGET" "$direct" "$global"
+    count="$COMMAND_DEPLOYED"
     if [ "$global" = no ]; then
         stage_paths "$TARGET" "$stage" "${MANAGED_PATHS[@]}"
         stage_ignore_changes "$TARGET" "$stage"

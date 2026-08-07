@@ -20,7 +20,8 @@ Provider destinations are `.claude/skills/taken-export` and
 `.opencode/skills/taken-export`. Local mode creates ignored absolute links;
 portable mode creates trackable relative links through `.ai/ai.skillz`.
 
-OpenCode also needs its command shim:
+OpenCode skill deployment installs its dependent command shim automatically.
+The explicit command form remains available for repair:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh command taken-export <repo> \

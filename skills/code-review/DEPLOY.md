@@ -19,7 +19,8 @@ are `.claude/skills/code-review` and `.opencode/skills/code-review`. Local
 links are absolute and ignored; portable links are relative and trackable.
 Nothing is staged unless `--stage` is explicitly supplied.
 
-OpenCode also needs its command shim:
+OpenCode skill deployment installs its dependent command shim automatically.
+The explicit command form remains available for repair:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh command code-review <repo> \

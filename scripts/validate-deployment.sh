@@ -33,11 +33,13 @@ manifest_skill_dependency() {
     local wanted="$1" record_kind record_name record_shape
     local record_assets record_dependency record_rest
     MANIFEST_SKILL_DEPENDENCY=""
+    MANIFEST_SKILL_SHAPE=""
     while IFS='|' read -r record_kind record_name record_shape \
         record_assets record_dependency record_rest; do
         [ "$record_kind" = skill ] || continue
         if [ "$record_name" = "$wanted" ]; then
             MANIFEST_SKILL_DEPENDENCY="$record_dependency"
+            MANIFEST_SKILL_SHAPE="$record_shape"
             return 0
         fi
     done < "$MANIFEST"
@@ -131,6 +133,12 @@ while IFS='|' read -r kind provider name source mode dependency rest; do
                 errors=$((errors + 1))
                 ;;
         esac
+        if manifest_skill_dependency "$dependency" \
+            && [ "$MANIFEST_SKILL_SHAPE" = template ]; then
+            printf 'ERROR: command dependency is template-only: %s/%s -> %s\n' \
+                "$provider" "$name" "$dependency" >&2
+            errors=$((errors + 1))
+        fi
     fi
 done < "$MANIFEST"
 

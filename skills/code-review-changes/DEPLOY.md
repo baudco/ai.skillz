@@ -16,6 +16,8 @@ bash /path/to/ai.skillz/scripts/deploy.sh code-review-changes <repo> \
 Provider destinations are `.claude/skills/code-review-changes` and
 `.opencode/skills/code-review-changes`. Local mode uses ignored absolute
 links; submodule mode uses trackable relative links through `.ai/ai.skillz`.
+OpenCode skill deployment installs its dependent command shim automatically;
+use `--no-command` only for an intentional skill-only deployment.
 
 Existing `.claude/review_context.md` and
 `.claude/review_regression.md` files remain local and are never moved or

@@ -13,8 +13,9 @@ bash /path/to/ai.skillz/scripts/deploy.sh opencode-cleaning <repo> \
   --provider <claude|opencode|all>
 ```
 
-Use `--method submodule` after portable initialization. OpenCode also needs
-its command shim:
+Use `--method submodule` after portable initialization. OpenCode skill
+deployment installs its dependent command shim automatically. The explicit
+command form remains available for repair:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh command opencode-cleaning <repo> \

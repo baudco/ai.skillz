@@ -156,7 +156,8 @@ test_local_anchor_and_anchor_authority() {
     bash "$DEPLOY" py-codestyle "$REPO" --provider all >/dev/null
     grep -q anchor-specific "$REPO/.opencode/skills/py-codestyle/SKILL.md" \
         || fail 'anchored skill did not resolve through target anchor'
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     printf '\nanchor-command\n' >> "$alternate/providers/opencode/commands/commit-msg.md"
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     grep -q anchor-command "$REPO/.opencode/commands/commit-msg.md" \
@@ -433,8 +434,13 @@ test_exact_staging_and_index_preservation() {
         || fail 'user runtime state was staged'
     [ -z "$(index_entry "$REPO" .claude/skills/commit-msg/SKILL.md)" ] \
         || fail 'local-only canonical hybrid link was staged'
+    [ -z "$(index_entry "$REPO" .opencode/commands/commit-msg.md)" ] \
+        || fail 'local-only automatic command link was staged'
     git -C "$REPO" show :.gitignore | grep -q '# BEGIN ai.skillz: runtime:commit-msg' \
         || fail 'tool-owned ignore block was not staged'
+    git -C "$REPO" show :.gitignore \
+        | grep -q '# BEGIN ai.skillz: direct:symlink:opencode:command:commit-msg' \
+        || fail 'automatic command ignore block was not staged'
     git -C "$REPO" show :.gitignore | grep -q unstaged-ignore-user-line \
         && fail 'unrelated unstaged .gitignore line was staged'
     pass '--stage touches only exact canonical artifacts and preserves index entries'
@@ -448,14 +454,16 @@ test_managed_replacement_safety() {
     assert_fails bash "$DEPLOY" py-codestyle "$REPO"
     assert_eq "$(readlink "$REPO/.claude/skills/py-codestyle")" "$REPO/unmanaged"
 
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     printf 'user command\n' > "$REPO/.opencode/commands/commit-msg.md"
     assert_fails bash "$DEPLOY" command commit-msg "$REPO" --provider opencode
     assert_eq "$(<"$REPO/.opencode/commands/commit-msg.md")" 'user command'
 
     new_repo recognized-command-copy
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     cp "$ROOT/providers/opencode/commands/commit-msg.md" \
         "$REPO/.opencode/commands/commit-msg.md"
@@ -478,7 +486,8 @@ test_managed_replacement_safety() {
     mkdir -p "$REPO/.ai"
     ln -s "$history_source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     cp "$historical_copy" "$REPO/.opencode/commands/commit-msg.md"
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
@@ -609,7 +618,13 @@ test_missing_anchor_assets_and_command_preflight() {
     mkdir -p "$REPO/.ai"
     ln -s "$old" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
-    bash "$DEPLOY" all "$REPO" --provider opencode >/dev/null
+    assert_fails bash "$DEPLOY" all "$REPO" --provider opencode
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'command source missing from deployment source'
+    [ ! -e "$REPO/.opencode/skills/code-review" ] \
+        || fail 'automatic command preflight partially deployed skills'
+    bash "$DEPLOY" all "$REPO" --provider opencode \
+        --no-command >/dev/null
     assert_fails bash "$DEPLOY" command all "$REPO" --provider all
     [ ! -e "$REPO/.claude/commands/branch-in-new-terminal.md" ] \
         || fail 'command preflight partially deployed another provider'
@@ -656,6 +671,113 @@ test_runtime_ignores_and_state_preservation() {
         .ai/code-review/reports/result.json \
         || fail 'code-review report is not ignored'
     pass 'OpenCode deployment preserves and ignores canonical .claude runtime state'
+}
+
+test_opencode_skill_auto_commands() {
+    new_repo auto-command
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    local output
+    output="$(bash "$DEPLOY" code-review "$REPO" --provider opencode)"
+    assert_contains "$output" '1 command deployment(s)'
+    [ -L "$REPO/.opencode/skills/code-review" ] \
+        || fail 'OpenCode skill was not deployed'
+    [ -L "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'dependent OpenCode command was not deployed'
+
+    new_repo auto-command-all-providers
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    bash "$DEPLOY" code-review "$REPO" --provider all >/dev/null
+    [ -L "$REPO/.claude/skills/code-review" ] \
+        || fail 'Claude skill was not deployed'
+    [ -L "$REPO/.opencode/skills/code-review" ] \
+        || fail 'OpenCode skill was not deployed for provider all'
+    [ -L "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'OpenCode command was not deployed for provider all'
+    [ ! -e "$REPO/.claude/commands/code-review.md" ] \
+        || fail 'unsupported Claude command was created'
+
+    new_repo claude-skill-no-opencode-command
+    bash "$DEPLOY" code-review "$REPO" --provider claude >/dev/null
+    [ ! -e "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'Claude-only skill deployment created OpenCode command'
+
+    new_repo no-auto-command
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    output="$(bash "$DEPLOY" code-review "$REPO" \
+        --provider opencode --no-command)"
+    assert_contains "$output" '0 command deployment(s)'
+    [ -L "$REPO/.opencode/skills/code-review" ] \
+        || fail '--no-command skipped the skill'
+    [ ! -e "$REPO/.opencode/commands/code-review.md" ] \
+        || fail '--no-command created a command'
+    bash "$DEPLOY" command code-review "$REPO" \
+        --provider opencode >/dev/null
+    [ -L "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'explicit command repair failed after --no-command'
+    assert_fails bash "$DEPLOY" command code-review "$REPO" \
+        --provider opencode --no-command
+
+    new_repo auto-command-conflict
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    mkdir -p "$REPO/.opencode/commands"
+    printf 'user command\n' > "$REPO/.opencode/commands/code-review.md"
+    local before after
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" code-review "$REPO" --provider opencode
+    after="$(tree_digest "$REPO")"
+    assert_eq "$after" "$before"
+    [ ! -e "$REPO/.opencode/skills/code-review" ] \
+        || fail 'skill was deployed before command conflict failed'
+
+    new_repo auto-command-all-conflict
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    mkdir -p "$REPO/.opencode/commands"
+    printf 'user command\n' > "$REPO/.opencode/commands/taken-export.md"
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" all "$REPO" --provider opencode
+    after="$(tree_digest "$REPO")"
+    assert_eq "$after" "$before"
+    [ ! -e "$REPO/.opencode/skills/code-review" ] \
+        || fail 'all deployed skills before command conflict failed'
+
+    new_repo all-no-auto-command
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    output="$(bash "$DEPLOY" all "$REPO" \
+        --provider opencode --no-command)"
+    assert_contains "$output" '0 command deployment(s)'
+    [ ! -e "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'all --no-command created commands'
+
+    new_repo portable-auto-command-stage
+    bash "$DEPLOY" init "$REPO" --method submodule \
+        --url "$SOURCE_URL" >/dev/null
+    bash "$DEPLOY" code-review "$REPO" --provider opencode \
+        --method submodule --stage >/dev/null
+    [ -n "$(index_entry "$REPO" .opencode/skills/code-review)" ] \
+        || fail 'portable automatic skill link was not staged'
+    [ -n "$(index_entry "$REPO" .opencode/commands/code-review.md)" ] \
+        || fail 'portable automatic command link was not staged'
+
+    local invalid="$TMP_ROOT/invalid-command-dependency"
+    cp -a "$SOURCE_WORK" "$invalid"
+    sed -i \
+        's#|link|code-review$#|link|missing-skill#' \
+        "$invalid/deploy-manifest.conf"
+    assert_fails bash "$invalid/scripts/deploy.sh" status "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'dependency missing from manifest'
+
+    invalid="$TMP_ROOT/template-command-dependency"
+    cp -a "$SOURCE_WORK" "$invalid"
+    printf '\nskill|template-only|template|-\n' \
+        >> "$invalid/deploy-manifest.conf"
+    sed -i \
+        's#|link|code-review$#|link|template-only#' \
+        "$invalid/deploy-manifest.conf"
+    assert_fails bash "$invalid/scripts/deploy.sh" status "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'depends on template-only skill'
+    pass 'OpenCode skill deployment atomically includes dependent commands'
 }
 
 test_command_dependency_all_and_hooks() {
@@ -1153,7 +1275,7 @@ test_migration_full_preflight_zero_mutation() {
 test_tracked_command_copy_transition() {
     new_repo tracked-command-copy
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
-        --method symlink >/dev/null
+        --method symlink --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     cp "$ROOT/providers/opencode/commands/commit-msg.md" \
         "$REPO/.opencode/commands/commit-msg.md"
@@ -1462,9 +1584,16 @@ test_all_templates_invalid_args_and_idempotence() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
-    assert_contains "$output" 'Result: 38 deployed, 0 template skipped'
+    assert_contains "$output" \
+        'Result: 38 deployed, 0 template skipped, 7 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
+    local command
+    for command in code-review code-review-changes commit-plan commit-msg \
+        opencode-cleaning run-tests taken-export; do
+        [ -L "$REPO/.opencode/commands/$command.md" ] \
+            || fail "all did not deploy OpenCode command: $command"
+    done
     before="$(tree_digest "$REPO")"
     bash "$DEPLOY" all "$REPO" --provider all >/dev/null
     after="$(tree_digest "$REPO")"
@@ -1689,6 +1818,7 @@ test_external_provider_parent_refusal
 test_direct_opencode_with_existing_claude_and_config
 test_missing_anchor_assets_and_command_preflight
 test_runtime_ignores_and_state_preservation
+test_opencode_skill_auto_commands
 test_command_dependency_all_and_hooks
 test_status_health_templates_and_source_symlink
 test_run_tests_hybrid_migration_safety

@@ -18,7 +18,8 @@ bash /path/to/ai.skillz/scripts/deploy.sh commit-plan <repo> \
 Use the normal `init` command first for a local symlink or portable submodule
 anchor. `commit-plan` stops rather than degrading when `commit-msg` is missing.
 
-OpenCode also needs its command shim:
+OpenCode skill deployment installs its dependent command shim automatically.
+The explicit command form remains available for repair:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh command commit-plan <repo> \
