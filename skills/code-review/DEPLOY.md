@@ -71,5 +71,16 @@ bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 review should be able to confirm findings with project-specific tests.
 `/py-codestyle` is optional and, when deployed by the target repository, owns
 formatting for Python replacement snippets and suggested patches.
+`/gish` is the preferred optional transport for human-approved top-level
+review publication:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh gish <repo> \
+  --provider <claude|opencode|all>
+```
+
+Local review remains available without `gish`. Publication must stop or obtain
+new explicit approval for a disclosed direct-provider fallback when the
+selected `gish` backend cannot publish reviews.
 `/code-review-changes` remains the separate workflow for applying and
 publishing responses to existing remote review feedback.
