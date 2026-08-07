@@ -104,6 +104,7 @@ prepare_source_repo() {
     cp "$ROOT/skills/run-tests/SKILL.md" \
         "$SOURCE_WORK/skills/run-tests/SKILL.md"
     cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
     cp "$ROOT/.gitignore" "$SOURCE_WORK/.gitignore"
@@ -120,7 +121,7 @@ prepare_source_repo() {
     done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
-        providers/opencode/commands skills/code-review \
+        providers/opencode/commands skills/code-review skills/harness-perf \
         skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
@@ -1452,7 +1453,7 @@ test_all_templates_invalid_args_and_idempotence() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
-    assert_contains "$output" 'Result: 32 deployed, 0 template skipped'
+    assert_contains "$output" 'Result: 34 deployed, 0 template skipped'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     before="$(tree_digest "$REPO")"
