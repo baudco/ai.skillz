@@ -99,7 +99,7 @@ repository owns `test-harness-reference.md`.
 Provider-specific reusable assets live under `providers/`. For example,
 the canonical OpenCode `/commit-msg` shim is
 `providers/opencode/commands/commit-msg.md`; code-review, review-changes,
-Taken, and Run shims use the same layout. Local deployment links
+PR-message, Taken, and Run shims use the same layout. Local deployment links
 `.opencode/commands/<name>.md` directly to the
 canonical provider asset and ignores that absolute link. Portable deployment
 uses a trackable relative link through `.ai/ai.skillz`. This repository

@@ -120,7 +120,7 @@ prepare_source_repo() {
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     mkdir -p "$SOURCE_WORK/.opencode/commands"
     for command in code-review code-review-changes commit-plan commit-msg \
-        opencode-cleaning run-tests taken-export; do
+        opencode-cleaning pr-msg run-tests taken-export; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
@@ -1585,12 +1585,12 @@ test_all_templates_invalid_args_and_idempotence() {
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
     assert_contains "$output" \
-        'Result: 38 deployed, 0 template skipped, 7 command deployment(s)'
+        'Result: 38 deployed, 0 template skipped, 8 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     local command
     for command in code-review code-review-changes commit-plan commit-msg \
-        opencode-cleaning run-tests taken-export; do
+        opencode-cleaning pr-msg run-tests taken-export; do
         [ -L "$REPO/.opencode/commands/$command.md" ] \
             || fail "all did not deploy OpenCode command: $command"
     done
@@ -1773,6 +1773,7 @@ test_opencode_debug_if_available() {
         --provider opencode >/dev/null
     bash "$DEPLOY" command opencode-cleaning "$REPO" \
         --provider opencode >/dev/null
+    bash "$DEPLOY" pr-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command run-tests "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" taken-export "$REPO" --provider opencode >/dev/null
@@ -1789,12 +1790,14 @@ test_opencode_debug_if_available() {
     assert_file_contains "$config_output" '"commit-plan"'
     assert_file_contains "$config_output" '"code-review"'
     assert_file_contains "$config_output" '"opencode-cleaning"'
+    assert_file_contains "$config_output" '"pr-msg"'
     assert_file_contains "$config_output" '"run-tests"'
     assert_file_contains "$config_output" '"taken-export"'
     assert_file_contains "$skill_output" '"name": "commit-msg"'
     assert_file_contains "$skill_output" '"name": "commit-plan"'
     assert_file_contains "$skill_output" '"name": "code-review"'
     assert_file_contains "$skill_output" '"name": "opencode-cleaning"'
+    assert_file_contains "$skill_output" '"name": "pr-msg"'
     assert_file_contains "$skill_output" '"name": "run-tests"'
     assert_file_contains "$skill_output" '"name": "taken-export"'
     assert_file_contains "$skill_output" \

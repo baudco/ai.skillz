@@ -18,6 +18,8 @@ creates `.claude/skills/pr-msg/` and/or `.opencode/skills/pr-msg/` as local
 hybrid directories. Local mode uses ignored absolute links for `SKILL.md`,
 `references/`, and `scripts/`; submodule mode uses trackable relative links
 through the anchor. The directories themselves are not replaced.
+OpenCode skill deployment installs the `/pr-msg` command shim automatically;
+use `--no-command` only for an intentional skill-only deployment.
 
 The existing persisted runtime contract remains under
 `.claude/skills/pr-msg/`, including `msgs/` and `pr_msg_LATEST.md`.
@@ -43,6 +45,7 @@ Quit and restart OpenCode after deployment or update. Default
 - `SKILL.md` — the generic workflow definition
 - `references/format-reference.md` — PR format spec
 - `scripts/rewrap.py` — line-width enforcement tool
+- `providers/opencode/commands/pr-msg.md` — OpenCode command shim
 
 ## Maintenance
 
