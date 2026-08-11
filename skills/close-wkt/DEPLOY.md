@@ -18,7 +18,7 @@ ln -s /path/to/ai.skillz/skills/close-wkt/SKILL.md \
 Or use the deploy script:
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh close-wkt <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh close-wkt <your-repo>
 ```
 
 ## Method B: Git submodule (portable, version-pinned)
@@ -26,13 +26,13 @@ bash /path/to/ai.skillz/scripts/deploy-skill.sh close-wkt <your-repo>
 ### One-time setup
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh init <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
 ```
 
 ### Deploy this skill
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh close-wkt <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh close-wkt <your-repo>
 ```
 
 ### What gets committed

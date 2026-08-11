@@ -13,7 +13,7 @@ ln -s /path/to/ai.skillz/skills/inter-skill-review \
 Or use the deploy script:
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh inter-skill-review <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh inter-skill-review <your-repo>
 ```
 
 ## Method B: Git submodule (portable, version-pinned)
@@ -21,13 +21,13 @@ bash /path/to/ai.skillz/scripts/deploy-skill.sh inter-skill-review <your-repo>
 ### One-time setup
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh init <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
 ```
 
 ### Deploy this skill
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh inter-skill-review <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh inter-skill-review <your-repo>
 ```
 
 ### What gets committed

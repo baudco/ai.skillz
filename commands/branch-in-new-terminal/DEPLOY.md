@@ -75,8 +75,15 @@ A new terminal should open running a forked copy of the session. If
 nothing opens, the `SessionStart` hook is probably not installed (the
 precise variant reads `.claude/.current_session`).
 
-## TODO
+## Automated deploy
 
-- teach `scripts/deploy-skill.sh` about a `commands/` deploy mode so
-  `deploy-skill.sh branch-in-new-terminal <repo>` symlinks the `.md`
-  + offers to merge the hook (currently manual, per above).
+`scripts/deploy.sh` has a `command` mode that automates the symlink:
+
+```bash
+deploy.sh command branch-in-new-terminal <repo>   # into .claude/commands/
+deploy.sh command branch-in-new-terminal --global # into ~/.claude/commands/
+```
+
+It symlinks the `.md` and prints the companion `SessionStart` hook for
+you to merge into `settings.json` (the hook merge stays manual, per
+above).

@@ -3,13 +3,13 @@
 # absolute symlinks or git-submodule-relative symlinks.
 #
 # Usage:
-#   bash scripts/deploy-skill.sh init <target-repo> [--url URL] [--ref REF]
-#   bash scripts/deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
-#   bash scripts/deploy-skill.sh all <target-repo> [--method symlink|submodule]
-#   bash scripts/deploy-skill.sh command <name|all> <target-repo> [--method ...] [--global]
-#   bash scripts/deploy-skill.sh update <target-repo> [--ref REF]
-#   bash scripts/deploy-skill.sh status <target-repo>
-#   bash scripts/deploy-skill.sh gitignore <target-repo> [skill-name]
+#   bash scripts/deploy.sh init <target-repo> [--url URL] [--ref REF]
+#   bash scripts/deploy.sh <skill-name> <target-repo> [--method symlink|submodule]
+#   bash scripts/deploy.sh all <target-repo> [--method symlink|submodule]
+#   bash scripts/deploy.sh command <name|all> <target-repo> [--method ...] [--global]
+#   bash scripts/deploy.sh update <target-repo> [--ref REF]
+#   bash scripts/deploy.sh status <target-repo>
+#   bash scripts/deploy.sh gitignore <target-repo> [skill-name]
 #
 # Commands (the `/name` slash-command kind) live under commands/<name>/
 # and deploy as a flat `.claude/commands/<name>.md` symlink (+ any
@@ -35,13 +35,13 @@ die() { echo "Error: $*" >&2; exit 1; }
 usage() {
     cat <<'EOF'
 Usage:
-  deploy-skill.sh init   <target-repo> [--url URL] [--ref REF]
-  deploy-skill.sh <skill-name> <target-repo> [--method symlink|submodule]
-  deploy-skill.sh all    <target-repo> [--method symlink|submodule]
-  deploy-skill.sh command <name|all> <target-repo> [--method ...] [--global]
-  deploy-skill.sh update <target-repo> [--ref REF]
-  deploy-skill.sh status <target-repo>
-  deploy-skill.sh gitignore <target-repo> [skill-name]
+  deploy.sh init   <target-repo> [--url URL] [--ref REF]
+  deploy.sh <skill-name> <target-repo> [--method symlink|submodule]
+  deploy.sh all    <target-repo> [--method symlink|submodule]
+  deploy.sh command <name|all> <target-repo> [--method ...] [--global]
+  deploy.sh update <target-repo> [--ref REF]
+  deploy.sh status <target-repo>
+  deploy.sh gitignore <target-repo> [skill-name]
 
 Subcommands:
   init      Add ai.skillz as a git submodule at .claude/ai.skillz/.
@@ -182,7 +182,7 @@ cmd_init() {
     mkdir -p "$target/.claude/skills"
     echo ""
     echo "Submodule ready at $target/.claude/ai.skillz/"
-    echo "Deploy skills with:  deploy-skill.sh <skill> $target"
+    echo "Deploy skills with:  deploy.sh <skill> $target"
 }
 
 # -------------------------------------------------------------------

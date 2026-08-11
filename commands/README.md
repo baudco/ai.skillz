@@ -25,10 +25,16 @@ commands/<name>/
 
 ## Deployment
 
-Per-command `DEPLOY.md` covers the steps. In short: symlink the `.md`
-into a target repo's `.claude/commands/` (or `~/.claude/commands/` for
-global), then install any companion hook into `settings.json`.
+`deploy.sh` has a first-class `command` mode:
 
-> TODO: extend `scripts/deploy-skill.sh` with a `commands/` mode so
-> commands deploy with the same symlink/submodule ergonomics as
-> skills (currently the `.md` symlink + hook merge is manual).
+```bash
+deploy.sh command <name> <target-repo>   # symlink into .claude/commands/
+deploy.sh command <name> --global        # into ~/.claude/commands/
+deploy.sh command all   <target-repo>     # every command
+```
+
+It symlinks the `.md` (absolute, or submodule-relative when the repo
+has the `.claude/ai.skillz` submodule), merges the command's
+`.gitignore` patterns (from `gitignore-patterns.conf`), and prints any
+companion-hook merge hint. Per-command `DEPLOY.md` covers the rest
+(hook install into `settings.json`).
