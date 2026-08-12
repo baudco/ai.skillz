@@ -3,9 +3,11 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -24,6 +26,7 @@ class ReviewTarget:
     pr: int
     head: str
     event: str
+    actor: str
 
 
 def git_worktree() -> Path:
@@ -40,7 +43,7 @@ def validate_body(
     value: str,
     worktree: Path,
     expected_digest: str,
-) -> Path:
+) -> tuple[Path, bytes]:
     if not DIGEST.fullmatch(expected_digest):
         raise ValueError(
             'SHA-256 digest is not lowercase hexadecimal'
@@ -73,7 +76,7 @@ def validate_body(
     actual_digest = hashlib.sha256(payload).hexdigest()
     if actual_digest != expected_digest:
         raise ValueError('review body SHA-256 digest changed')
-    return path
+    return path, payload
 
 
 def validate_target(target: ReviewTarget) -> None:
@@ -91,6 +94,8 @@ def validate_target(target: ReviewTarget) -> None:
         raise ValueError(
             'only the comment review event is supported'
         )
+    if not target.actor:
+        raise ValueError('publishing account is empty')
 
 
 def parse_json(payload: str, operation: str) -> dict[str, Any]:
@@ -105,6 +110,29 @@ def publish_github(
     body_file: Path,
     gh: str,
 ) -> dict[str, Any]:
+    token = subprocess.run(
+        [gh, 'auth', 'token'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if not token:
+        raise ValueError('GitHub authentication token is empty')
+    environment = os.environ.copy()
+    environment['GH_TOKEN'] = token
+
+    account = subprocess.run(
+        [gh, 'api', 'user', '--jq', '.login'],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    if account.stdout.strip() != target.actor:
+        raise ValueError(
+            'authenticated GitHub account does not match approval'
+        )
+
     view = subprocess.run(
         [
             gh,
@@ -118,6 +146,7 @@ def publish_github(
         ],
         check=True,
         capture_output=True,
+        env=environment,
         text=True,
     )
     info = parse_json(view.stdout, 'PR metadata')
@@ -146,6 +175,7 @@ def publish_github(
         ],
         check=True,
         capture_output=True,
+        env=environment,
         text=True,
     )
     return parse_json(result.stdout, 'review publication')
@@ -164,6 +194,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument('--sha256', required=True)
     result.add_argument('--head', required=True)
     result.add_argument('--event', required=True)
+    result.add_argument('--actor', required=True)
     result.add_argument('--worktree')
     result.add_argument('--gh', default='gh')
     return result
@@ -177,6 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         pr=args.pr,
         head=args.head,
         event=args.event,
+        actor=args.actor,
     )
     try:
         validate_target(target)
@@ -185,12 +217,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.worktree
             else git_worktree()
         )
-        body_file = validate_body(
+        source_file, payload = validate_body(
             args.body_file,
             worktree,
             args.sha256,
         )
-        result = publish_github(target, body_file, args.gh)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            body_file = Path(temp_dir) / 'review.md'
+            body_file.write_bytes(payload)
+            body_file.chmod(0o600)
+            result = publish_github(
+                target,
+                body_file,
+                args.gh,
+            )
     except (
         json.JSONDecodeError,
         OSError,
@@ -214,7 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f'Published review {review_id}')
     if review_url:
         print(f'URL: {review_url}')
-    print(f'Body: {body_file}')
+    print(f'Body: {source_file}')
     print(f'SHA-256: {args.sha256}')
     return 0
 

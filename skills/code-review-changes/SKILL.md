@@ -11,7 +11,7 @@ compatibility: >
 metadata:
   author: goodboy
   version: "0.1"
-argument-hint: "<PR-review-URL-or-PR#>"
+argument-hint: "<PR-review-URL | PR# --repo owner/name>"
 disable-model-invocation: true
 allowed-tools:
   - Bash(gh *)
@@ -19,6 +19,7 @@ allowed-tools:
   - Bash(date *)
   - Bash(mkdir *)
   - Bash(ls *)
+  - Bash(sha256sum *)
   - Read
   - Grep
   - Glob
@@ -31,12 +32,21 @@ this process:
 
 ## 0. Parse input and fetch review data
 
+Before any forge query, require explicit current-prompt network authorization.
+Supplying a review URL or asking to address feedback authorizes neither network
+access nor remote publication. If authorization is absent, use complete review
+content supplied locally or ask one short network-access question and stop.
+
 - Accept either a full GH review URL like
   `https://github.com/<owner>/<repo>/pull/<N>#pullrequestreview-<ID>`
-  or a bare `<PR#>` (fetches ALL reviews on that
-  PR).
+  or `<PR#> --repo <owner/name>` (fetches all reviews on that PR). A bare PR
+  number without an explicit repository is ambiguous; ask one short repository
+  question before any network access and never infer it from cwd or remotes.
 - Extract `owner`, `repo`, `pr_number`, and
   optionally `review_id` from the URL.
+- Query `/gish inspect-pr gh <N> --repo <owner>/<repo>` under the same explicit
+  network authorization. Record the head repository, head ref, and head OID;
+  branch names alone are not authoritative, especially for fork PRs.
 - Fetch review comments via `gh api`:
   ```
   gh api repos/<owner>/<repo>/pulls/<N>/comments \
@@ -97,16 +107,19 @@ Present a summary table to the user:
 
 ## 3. Set up a worktree for changes
 
-- Create a worktree on the PR's head branch:
+- Require the deployed `/open-wkt` companion and invoke it with the verified PR
+  head OID, not a same-named local branch:
   ```
-  git worktree add \
-    .claude/worktrees/<slug> <branch>
-  ```
-  where `<slug>` is derived from the PR number
-  (e.g. `pr<N>-review`).
-- `cd` into the worktree for all subsequent file
+  /open-wkt <slug> --start-point <head-oid>
+   ```
+   where `<slug>` is derived from the PR number
+   using valid snake_case (e.g. `pr<N>_review`).
+- If `/open-wkt` is unavailable, stop without creating an unmanaged worktree.
+- Switch into its `.claude/wkts/<slug>` worktree for all subsequent file
   operations.
-- Confirm the HEAD matches the PR's latest commit.
+- Confirm the new worktree HEAD equals the forge-reported head OID. If the
+  object is missing, stop; fetch the exact head repository/ref only when the
+  current prompt authorized that network operation, then verify its OID.
 
 ## 4. Apply code fixes
 
@@ -123,14 +136,22 @@ For each comment triaged as `fix`:
 When a fix targets a symlinked file with
 `is_cross_repo == true`:
 
-- Edit the `canonical_path` (the symlink target),
-  NOT the symlink itself. The change propagates
-  into the PR worktree automatically.
-- Track each distinct `canonical_repo` that
-  receives fixes — these repos need their own
-  stage/commit cycle in step 6.
-- Verify the fix is visible from the PR worktree
-  by reading the symlink path after editing.
+- Report the exact canonical repository and target path, then require explicit
+  current-prompt authorization to modify that separate repository. PR review
+  remediation authorization for the submitted repository does not imply it.
+- In the canonical repository, resolve its current head OID and invoke
+  `/open-wkt crossrepo_pr<N>_review --start-point <canonical-head-oid>`. Stop if
+  the companion is unavailable or the name is already owned by another
+  session.
+- Map `canonical_path` to the equivalent path inside that managed canonical
+  worktree and edit only that copy, not the original checkout or the symlink.
+  Track this worktree as the receiving repository for tests, context, staging,
+  and commit steps.
+- Track each distinct `canonical_worktree_root` that receives fixes. Those
+  managed worktrees need their own test, context, stage, and commit cycle.
+- The original PR-worktree symlink may not point at the canonical worktree.
+  Verify the fix against the managed canonical copy and compare the intended
+  PR path semantically; do not mutate the symlink merely to make it visible.
 
 ## 5. Verify: run tests (mandatory)
 
@@ -138,7 +159,7 @@ When a fix targets a symlinked file with
 by the repository that receives them. From each
 repository/worktree root, run `/run-tests` targeting
 the modules changed there. This ensures cross-repo
-fixes use the canonical repository's environment and
+fixes use the managed canonical worktree's environment and
 `test-harness-reference.md`, not the PR repository's.
 
 The active provider session must have the canonical
@@ -240,7 +261,7 @@ all pass. Only proceed to step 6 once green.
 Write `.claude/review_context.md` so `/commit-msg`
 can add a `Review:` trailer. **Placement rule**:
 write it to the repo where the `fix` changes
-actually land — i.e. `<canonical_repo>/.claude/`
+actually land — i.e. `<canonical_worktree_root>/.claude/`
 when cross-repo symlink fixes were applied, NOT
 the PR repo. This ensures `/commit-msg` finds
 the context when run from the correct repo.
@@ -260,8 +281,8 @@ reviewer: <reviewer-login>
 actions: fix=<n> ack=<n> wontfix=<n>
 ```
 
-The `reply_ids` field is appended in step 7 after
-GH comments are posted. If the review was fetched
+The `reply_ids` and `reply_files` fields are appended in step 7 after
+comments with pending-commit placeholders are posted. If the review was fetched
 by bare PR number (no specific `review_id`),
 use the PR URL as `review_url`.
 
@@ -271,25 +292,29 @@ When `is_cross_repo` fixes exist, drive the
 commit from this session rather than deferring
 to a separate session in the other repo:
 
-1. Stage the changed files in `canonical_repo`:
+1. Show the exact changed paths and current index, then require an explicit
+   current-prompt request to stage those paths. Applying fixes or approving a
+   commit message is not staging authorization.
+2. Only after that request, stage the changed files in the managed canonical
+   worktree:
    ```
-   git -C <canonical_repo> add <changed-files>
+   git -C <canonical_worktree_root> add <changed-files>
    ```
-2. Show the staged diff to the user for review.
-3. Generate the commit message inline (same
+3. Show the staged diff to the user for review.
+4. Generate the commit message inline (same
    rules as `/commit-msg` — pick up
    `review_context.md` from that repo).
-4. Ask the user to confirm, then commit:
+5. Ask the user to confirm, then commit:
    ```
-   git -C <canonical_repo> commit \
+   git -C <canonical_worktree_root> commit \
      --edit --file <msg-file>
    ```
-5. Read back the hash:
+6. Read back the hash:
    ```
-   git -C <canonical_repo> log -1 --format=%h
+   git -C <canonical_worktree_root> log -1 --format=%h
    ```
-6. Use the hash immediately in step 7 to PATCH
-   reply footers — no placeholder needed when
+7. Use the hash in the complete reply candidates in step 7. Present those
+   final bodies for exact publication approval; no placeholder is needed when
    the commit happens before replies are posted.
 
 When the fix commit is in a different repo than
@@ -300,27 +325,26 @@ instead of the PR repo's URL).
 
 ## 7. Post inline reply comments
 
-Do not post remote replies until the user explicitly
-accepts the proposed fixes and reply text. If the user
+Do not post remote replies until a current human message explicitly approves
+the complete reply body, backend, repository, PR, parent comment, and publish
+action. Acceptance of fixes, commit authorization, or an earlier draft is not
+publication authorization. If the user
 has not committed yet, also ask whether to wait for the
 real hash or post approved placeholders. A review
 handoff is not authorization to publish comments.
 
-For EVERY review comment (not just `fix` items),
-post an inline reply via `gh api` using the
-`in_reply_to` field (NOT the `/replies`
-sub-endpoint, which returns 404):
-
-```
-gh api \
-  repos/<owner>/<repo>/pulls/<N>/comments \
-  -f body="<reply>" \
-  -f commit_id="<head-sha>" \
-  -f path="<file-path>" \
-  -f line=1 \
-  -f side="RIGHT" \
-  -F in_reply_to=<comment_id>
-```
+For every review comment, write the complete reply first under
+`<fix-repo-root>/.claude/review_replies/<parent-id>_candidate.md`, compute its
+SHA-256 digest, and show the rendered body plus exact target arguments. After
+the separate approval above, first write
+`<parent-id>_publication.json` beside the candidate with the exact target,
+digest, candidate path, and `remote_id: null`. Then publish through
+`/gish comment-reply` with the
+repository, PR, parent comment, verified head OID, path, line, side, candidate
+file, and digest. On success, atomically replace `remote_id: null` with the
+returned ID before processing another reply. Preserve the record on failure so
+an interrupted run can reconcile the exact attempted publication. Never
+interpolate reply Markdown into a shell command.
 
 ### Reply format
 
@@ -392,29 +416,33 @@ chain them:
 Since the user commits manually (step 6), the
 final commit hash may not exist yet when posting
 replies. Post comments immediately with a
-placeholder footer:
+placeholder footer only when that exact candidate and placeholder publication
+were separately approved:
 
 ```
 > 📎 commit pending
 ```
 
-After the user commits and provides the hash
-(or you detect it via `git log -1 --format=%h`),
-PATCH each comment to replace the placeholder
-with the real linked hash:
+After the user commits and provides the hash (or a new HEAD is detected),
+prepare the complete local replacement body and its SHA-256 digest. Detection
+of the commit does not authorize a remote edit. Require a separate current
+human message approving that exact body, digest, backend, repository, comment
+ID, and edit action, then publish through `/gish comment-edit`. Preserve the
+candidate on missing approval or failure.
 
-```
-gh api \
-  repos/<owner>/<repo>/pulls/comments/<id> \
-  -X PATCH -f body="<updated-body>"
-```
-
-Track posted comment IDs so you can update them.
+Track posted comment IDs so separately approved edits can target them.
+For every posted placeholder reply, also preserve the exact submitted body in
+`<fix-repo-root>/.claude/review_replies/<id>_pending.md`, where
+`<fix-repo-root>` is the same repository receiving `review_context.md` under
+the placement rule in step 6. Record paths relative to that root in
+`reply_files`. This local source lets
+`/commit-msg` prepare a complete replacement without an unauthorized network
+read.
 
 ### Update review context with reply IDs
 
-After posting all GH reply comments, append the
-`reply_ids` field to `.claude/review_context.md`
+After posting all reply comments, append the `reply_ids` and `reply_files`
+fields to `.claude/review_context.md`
 (written in step 6). List the IDs of replies whose
 footer still reads `> 📎 commit pending` so that
 `/commit-msg` (or a follow-up session) can tell
@@ -423,6 +451,7 @@ real commit hash:
 
 ```
 reply_ids: <id1>,<id2>,...
+reply_files: <id1>=.claude/review_replies/<id1>_pending.md,<id2>=.claude/review_replies/<id2>_pending.md
 ```
 
 If no replies were posted (all comments were

@@ -10,7 +10,7 @@ compatibility: >
 metadata:
   author: goodboy
   version: "0.1"
-argument-hint: "<name> [--fixturize] [--notify-on-teardown]"
+argument-hint: "<name> [--start-point <oid>] [--fixturize] [--notify-on-teardown] [--takeover] [--recover-guard <token>]"
 disable-model-invocation: false
 allowed-tools:
   - Bash(git *)
@@ -21,7 +21,6 @@ allowed-tools:
   - Bash(rm *)
   - Bash(date *)
   - Bash(cat *)
-  - Bash(touch *)
   - Read
   - Write
   - Glob
@@ -63,13 +62,17 @@ remembering the `.claude/` nesting.
 ## Invocation
 
 ```
-/open-wkt <name> [--fixturize] [--notify-on-teardown]
+/open-wkt <name> [--start-point <oid>] [--fixturize] [--notify-on-teardown]
 ```
 
 ### Parameters
 
 - **`name`** (required): snake_case label for the
   worktree. Used as directory name and branch suffix.
+
+- **`--start-point <oid>`** (optional): create the worktree branch from this
+  exact local commit instead of current `HEAD`. Require a full OID that resolves
+  to a commit; this option does not authorize fetching a missing object.
 
 - **`--fixturize`** (optional, default: false): when
   set, run `UV_PROJECT_ENVIRONMENT=.venv uv sync`
@@ -94,22 +97,32 @@ remembering the `.claude/` nesting.
    already exists, re-enter it instead of creating
    a new one. Print a notice.
 
-3. **Create the worktree**:
-   ```sh
-   git worktree add \
-     .claude/wkts/<name> \
-     -b wkt/<name>
-   ```
-   This branches from current HEAD.
+3. **Acquire the creation guard**: resolve the common Git directory, create
+   its shared lock parent with `mkdir -p <common-git-dir>/ai-skillz-wkt-locks`,
+   then atomically create `<name>.guard`. Write the owner token and `creating`
+   phase inside it. Do this before creating a branch or worktree. If the guard
+   exists, stop and report its owner/phase. Recovery requires an explicit
+   current-prompt `--recover-guard <token>` after inspecting whether the branch,
+   worktree, and owner record were partially created; age alone is insufficient.
 
-4. **Ensure convenience symlink**:
+4. **Create the worktree** while holding the guard:
+   ```sh
+    git worktree add \
+      .claude/wkts/<name> \
+      -b wkt/<name> [<start-point-oid>]
+    ```
+   Without `--start-point`, this branches from current HEAD.
+
+5. **Ensure convenience symlink**:
    ```sh
    # only if not already present
    ln -sfn .claude/wkts claude_wkts
    ```
 
-5. **Write lifecycle metadata**:
-   Create `.claude/wkts/<name>/.wkt_meta.json`:
+6. **Write lifecycle metadata outside the worktree**: resolve the linked
+   worktree's private Git directory with `git -C .claude/wkts/<name> rev-parse
+   --git-dir`, create its `ai-skillz-wkt/` directory, and write `meta.json`
+   there:
    ```json
    {
      "name": "<name>",
@@ -121,34 +134,38 @@ remembering the `.claude/` nesting.
      "status": "active"
    }
    ```
-   This file is `.gitignore`d (never committed).
+   Git administrative storage keeps this metadata out of status and commits.
 
-6. **Set active-work indicator**:
-   Create a lock-style file:
-   ```sh
-   touch .claude/wkts/<name>/.wkt_active
-   ```
-   While this file exists, it signals that an agent
-   (or human) is actively working in the worktree.
-   A human seeing this file knows not to mutate the
-   contents. The `/close-wkt` skill removes it.
+7. **Finalize worktree ownership atomically**:
+   Derive a stable owner token from the current provider, session, and agent
+   identity. Do not use a generic value such as `active`. Serialize every
+   initial creation already holds the common-dir guard from step 3. Require
+   `<worktree-git-dir>/ai-skillz-wkt/owner.json` to be absent, then write the
+   exact owner token,
+   provider, session, agent, and acquisition timestamp. Release the guard only
+   after the owner record is durable. On worktree-creation failure, inspect and
+   record partial state, then either cleanly release an unchanged guard or
+   preserve it with the recovery token and phase.
 
-   For subagent usage, the agent should hold this
-   file (create on entry, remove on exit). A stale
-   `.wkt_active` older than 1 hour can be considered
-   abandoned.
+   Takeover requires `--takeover` in an explicit current-prompt request. Show
+   the prior owner and age first. Acquire the common-dir guard, re-read the
+   owner, and stop if it differs from the owner the human authorized replacing.
+   Only then replace the private Git-dir `owner.json` before releasing the
+   guard.
+   Never refresh, delete, or overwrite another owner's lock merely because the
+   directory already exists.
 
-7. **Copy `.claude/settings.local.json`** from the
+8. **Copy `.claude/settings.local.json`** from the
    main repo into the worktree's `.claude/` dir so
    tool permissions carry over.
 
-8. **Fixturize** (if requested):
+9. **Fixturize** (if requested):
    ```sh
    cd .claude/wkts/<name>
    UV_PROJECT_ENVIRONMENT=.venv uv sync
    ```
 
-9. **Switch working directory** to the worktree.
+10. **Switch working directory** to the worktree.
 
 ## Re-entry protocol
 
@@ -157,11 +174,11 @@ If `/open-wkt <name>` is called and
 
 1. Verify the git worktree is still valid
    (`git worktree list` includes it).
-2. Check `.wkt_active` — if present AND fresh
-   (< 1 hour old), warn that another session may
-   be working here.
-3. Touch `.wkt_active` to refresh timestamp.
-4. Switch working directory to the worktree.
+2. Resolve and read `<worktree-git-dir>/ai-skillz-wkt/owner.json`, then compare
+   its exact token with the current owner token.
+3. If the tokens differ, stop. Re-entry is allowed only after an explicit
+   `--takeover` request records the ownership transfer.
+4. If the tokens match, preserve the lock and switch to the worktree.
 
 ## Listing worktrees
 
@@ -174,8 +191,8 @@ pr366_review          wkt/pr366_review         idle     1d
 proto_wkt_skill       wkt/proto_wkt_skill      active   5m
 ```
 
-Status derived from `.wkt_active` file presence +
-freshness.
+Status is derived from the ownership directory and its recorded acquisition
+time. A stale age is displayed but never treated as an unlocked state.
 
 ## Subagent usage
 
@@ -186,7 +203,10 @@ When a `Task` agent needs an isolated worktree:
 2. Spawns the subagent with cwd set to the worktree.
 3. On subagent completion, calls `/close-wkt <name>`.
 
-The `.wkt_active` file prevents concurrent mutation.
+The common-dir guard and private Git-dir owner record prevent concurrent
+mutation without dirtying the worktree. Pass the same owner token to
+`/close-wkt`; a different session must request an explicit takeover before
+teardown.
 
 ## Files managed
 
@@ -196,14 +216,17 @@ The `.wkt_active` file prevents concurrent mutation.
 ├── .claude/
 │   └── wkts/
 │       ├── <name>/                  # the worktree
-│       │   ├── .wkt_meta.json       # lifecycle meta
-│       │   ├── .wkt_active          # lock indicator
 │       │   ├── .claude/
 │       │   │   └── settings.local.json
 │       │   └── ...                  # repo contents
 │       └── <another_name>/
 └── .gitignore                       # includes wkts
 ```
+
+Each linked worktree's private Git directory contains
+`ai-skillz-wkt/meta.json` and `ai-skillz-wkt/owner.json`. The repository common
+Git directory contains only short-lived `ai-skillz-wkt-locks/*.guard`
+directories.
 
 ## .gitignore entries
 

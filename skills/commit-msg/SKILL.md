@@ -5,18 +5,17 @@ description: >
   Use when the user wants to create a commit, asks for a commit message, or
   says "merge plan". Delegate multi-commit planning to `commit-plan`.
 compatibility: >
-  Requires git CLI. Optional: gh CLI for review
-  context integration.
+  Requires git CLI. Publishing approved review-comment edits uses gish.
 metadata:
   author: goodboy
   version: "0.6"
 argument-hint: "[merge plan|optional-scope-or-description]"
 allowed-tools:
   - Bash(git *)
-  - Bash(gh *)
   - Bash(date *)
   - Bash(cp *)
   - Bash(mkdir *)
+  - Bash(sha256sum *)
   - Read
   - Grep
   - Glob
@@ -207,10 +206,10 @@ When generating commit messages, always follow this process:
    `/code-review-changes` skill after applying
    review fixes). If present, read it and extract
    `pr`, `reviewer`, `review_url`, optionally
-   `commit_repo`, and optionally `reply_ids`. These
+   `commit_repo`, and optionally `reply_ids` and `reply_files`. These
    are used in step 3 to add a `Review:` trailer and
    in step 6 to construct commit links. Delete the file after the
-   message is written — it's single-use context.
+   message is written unless reply candidates still need the real commit hash.
    If the file is absent, this is not a
    review-motivated commit; skip the trailer.
 
@@ -341,10 +340,9 @@ The `Review:` line is terse — PR number +
 reviewer login. The URL goes on the next line
 for click-through. Keeps the 67-col line limit.
 
-If the context file contains `reply_ids`, hold
-off on deleting it — step 6 will PATCH those
-GH comments after the user commits, then delete
-the file. If no `reply_ids` are present, delete
+If the context file contains `reply_ids`, hold off on deleting it; step 6 will
+prepare exact local comment-edit candidates after the user commits. If no
+`reply_ids` are present, delete
 `.claude/review_context.md` right after the
 message is written (single-use, same lifecycle
 as `review_regression.md`).
@@ -415,8 +413,8 @@ instead use,
 Keep it concise. Match the tone of recent commits. For simple
 changes, use subject line only.
 
-6. **PATCH review reply placeholders** (only when
-   `reply_ids` was present in `review_context.md`):
+6. **Prepare review-reply edits locally** (only when `reply_ids` was present
+   in `review_context.md`):
 
    After writing the commit message files, tell the
    user to commit:
@@ -425,18 +423,13 @@ changes, use subject line only.
      .claude/git_commit_msg_LATEST.md
    ```
 
-   Once the user confirms the commit (or you detect
-   a new HEAD via `git log -1 --format=%h` differing
-   from the hash seen in step 1), the real commit
-   hash is known. For each reply ID:
+   Once the user confirms the commit (or a new HEAD is detected), the real
+   commit hash is known. For each reply ID, read its exact local source body
+   from the corresponding `reply_files` entry written by
+   `/code-review-changes`. If an entry is missing, stop for that reply; do not
+   fetch remote content or reconstruct it from memory.
 
-   - Fetch the current comment body:
-     ```
-     gh api \
-       repos/<owner>/<repo>/pulls/comments/<id> \
-       --jq '.body'
-     ```
-   - Replace `> 📎 commit pending` with:
+   - Replace `> 📎 commit pending` in the local body with:
      ```
      > 📎 fixed in [`<hash>`](<commit-url>)
      ```
@@ -445,20 +438,23 @@ changes, use subject line only.
       (derive `<repo>` from `commit_repo` in
       `review_context.md`, falling back to `repo` for
       same-repository fixes).
-   - PATCH the comment:
-     ```
-     gh api \
-       repos/<owner>/<repo>/pulls/comments/<id> \
-       -X PATCH -f body="<updated-body>"
-     ```
+   - Write a separate candidate file under
+     `.claude/review_replies/<id>_commit_edit.md`.
+   - Show the complete rendered candidate, comment ID, backend, repository,
+     and SHA-256 digest. Commit authorization and detection of a new HEAD do
+     not authorize publication.
 
-   After all PATCHes succeed, delete
-   `.claude/review_context.md`.
+   Publish only after a separate current human message approves that exact
+   candidate body, digest, backend, repository, comment ID, and edit action.
+   Delegate the write to `/gish comment-edit`; never call a provider CLI
+   directly. Delete `.claude/review_context.md` and the candidate/source reply
+   files only after every separately approved edit succeeds. If approval is
+   absent or publication fails, preserve them for a follow-up session.
 
    If the user declines to commit now (e.g. wants
    to review further), remind them that the
    `reply_ids` are saved in `.claude/review_context.md`
-   and can be PATCHed in a follow-up session.
+   and can be prepared and published in a follow-up session.
 
 7. **Propose tracking issue updates** (when the commit
    addresses a task bullet from a tracking issue):
@@ -477,7 +473,8 @@ changes, use subject line only.
      `/pr-msg` "Summary of changes" bullets
    - **Add the ref-link def** at the bottom of
      the issue body
-   - **PATCH** via `gh api`
+   - **Sync** the exact approved issue body via `/gish sync <backend> issue
+     <num> --repo <owner/name> --body-file <path> --sha256 <digest>`
 
    If authorization is not given, leave the issue
    untouched and report the proposed update.
