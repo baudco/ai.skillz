@@ -1648,6 +1648,7 @@ test_code_review_contract_assets() {
         >/dev/null
     python "$ROOT/tests/test_gish_review_post.py"
     python "$ROOT/tests/test_code_review_disclosure.py"
+    python "$ROOT/tests/test_gish_xontrib.py"
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'explicitly authorizes test execution.'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \

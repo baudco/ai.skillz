@@ -83,8 +83,7 @@ gish gitea          # create new issue
 ```
 
 **Env requirements**:
-- modden dev env (`nix develop -c xonsh`)
-- or `pyup modden; reloadxsh gish` from xonsh
+- configured `scripts/gish-xontrib` launcher selecting a modden dev env
 - `py-gitea` package available
 - API token at `~/opsec/gitea/py-gitea.key`
 

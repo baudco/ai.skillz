@@ -53,11 +53,27 @@ config needed.
 
 ### Gitea
 
-Requires the modden dev environment with `py-gitea`:
+Requires the modden dev environment with `py-gitea`. Configure the launcher
+with a durable absolute path to that environment's xonsh:
+
 ```bash
-nix develop -c xonsh   # from modden repo
-# or
-pyup modden; reloadxsh gish
+/path/to/deployed/gish/scripts/gish-xontrib \
+  --configure /path/to/modden/.venv/bin/xonsh
+/path/to/deployed/gish/scripts/gish-xontrib --check
 ```
+
+`--configure` verifies that `xontrib load gish` succeeds under `--no-rc`,
+then writes only the absolute interpreter path to
+`$XDG_CONFIG_HOME/ai.skillz/gish-xonsh` with mode 0600. The
+`AI_SKILLZ_GISH_XONSH` environment variable provides a process-local override.
+Re-run the check after rebuilding or moving the modden environment.
+
+OpenCode's top-level `shell` setting is independent. Prefer a stable
+profile-installed shell and let this launcher enter the modden environment.
+If the user deliberately configures OpenCode itself with the modden venv's
+xonsh, use an absolute path and explain that moving, rebuilding, or deleting
+that environment will prevent all OpenCode subprocesses from starting. Never
+rewrite `opencode.json` or `opencode.jsonc` as an implicit side effect of skill
+deployment.
 
 Token location: `~/opsec/gitea/py-gitea.key`

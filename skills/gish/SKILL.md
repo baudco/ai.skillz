@@ -5,7 +5,7 @@ description: >
   git service backends (GitHub, Gitea, etc.) using local markdown files.
 compatibility: >
   Requires git CLI. Optional: gh CLI for GitHub,
-  xonsh + py-gitea for Gitea.
+  configured modden-capable xonsh + py-gitea for Gitea.
 metadata:
   author: goodboy
   version: "0.2"
@@ -37,6 +37,33 @@ See also:
   human-approved top-level review publication contract
 - [ROADMAP.md](ROADMAP.md) — cross-service review +
   AI skill convergence plan
+
+## Runtime Selection
+
+The shell running the coding harness and the environment implementing a forge
+backend are separate choices. Do not assume bare `xonsh` on `PATH` is the
+modden environment, and do not infer backend readiness from `$SHELL`.
+
+For the current Gitea backend, prefer the stable launcher bundled with this
+skill:
+
+```text
+<gish-skill-dir>/scripts/gish-xontrib --check
+<gish-skill-dir>/scripts/gish-xontrib <legacy-xontrib-args...>
+```
+
+It reads an absolute xonsh path from
+`$XDG_CONFIG_HOME/ai.skillz/gish-xonsh`, or from the process-local
+`AI_SKILLZ_GISH_XONSH` override. Configure it only with explicit user
+approval; see `DEPLOY.md`. The selected xonsh must load modden's `gish`
+xontrib under `--no-rc`, which also proves its Python dependencies are
+available.
+
+The launcher currently exposes the modden xontrib's legacy Gitea command
+surface. It does not manufacture newer normalized `/gish` operations which
+the xontrib has not implemented. For those operations, use a supported direct
+provider adapter only when the user prefers and authorizes that fallback, or
+stop with the unavailable capability clearly identified.
 
 ## Safety Boundary
 

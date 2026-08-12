@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+INVOKE_SCRIPT="$SCRIPT_DIR/invoke-gish.xsh"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+CONFIG_PATH="$CONFIG_HOME/ai.skillz/gish-xonsh"
+
+die() {
+    printf 'Error: %s\n' "$*" >&2
+    exit 1
+}
+
+usage() {
+    cat <<'EOF'
+Usage:
+  gish-xontrib --adapter-help
+  gish-xontrib --configure /absolute/path/to/xonsh
+  gish-xontrib --check
+  gish-xontrib [gish arguments...]
+
+The configured xonsh must provide the Modden gish xontrib and its backend
+dependencies. AI_SKILLZ_GISH_XONSH overrides the saved path for one process.
+EOF
+}
+
+validate_xonsh() {
+    local candidate="$1"
+    [ "${candidate#/}" != "$candidate" ] \
+        || die "xonsh path must be absolute: $candidate"
+    [ -f "$candidate" ] \
+        || die "configured xonsh does not exist: $candidate"
+    [ -x "$candidate" ] \
+        || die "configured xonsh is not executable: $candidate"
+}
+
+run_gish() {
+    local candidate="$1"
+    shift
+    "$candidate" --no-rc -c "$(<"$INVOKE_SCRIPT")" \
+        gish-adapter "$@"
+}
+
+configure() {
+    local candidate="$1" config_dir
+    validate_xonsh "$candidate"
+    run_gish "$candidate" --adapter-check >/dev/null
+    config_dir="$(dirname "$CONFIG_PATH")"
+    mkdir -p "$config_dir"
+    printf '%s\n' "$candidate" > "$CONFIG_PATH"
+    chmod 600 "$CONFIG_PATH"
+    printf 'Configured gish xonsh: %s\n' "$candidate"
+}
+
+select_xonsh() {
+    local candidate="${AI_SKILLZ_GISH_XONSH:-}"
+    if [ -z "$candidate" ] && [ -f "$CONFIG_PATH" ]; then
+        IFS= read -r candidate < "$CONFIG_PATH"
+    fi
+    [ -n "$candidate" ] || die \
+        "no gish xonsh configured; run '$0 --configure /absolute/path/to/xonsh'"
+    validate_xonsh "$candidate"
+    printf '%s\n' "$candidate"
+}
+
+case "${1:-}" in
+    --adapter-help)
+        usage
+        exit 0
+        ;;
+    --configure)
+        [ "$#" -eq 2 ] || die "--configure requires one xonsh path"
+        configure "$2"
+        exit 0
+        ;;
+esac
+
+XONSH="$(select_xonsh)"
+if [ "${1:-}" = --check ]; then
+    [ "$#" -eq 1 ] || die "--check accepts no arguments"
+    run_gish "$XONSH" --adapter-check
+    exit 0
+fi
+
+run_gish "$XONSH" "$@"

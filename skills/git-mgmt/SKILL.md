@@ -6,8 +6,9 @@ description: >
   inspecting or changing branch relationships, especially when stacked
   branches may be operated on concurrently.
 compatibility: >
-  Requires git CLI. Fresh forge inspection uses the provider-neutral gish
-  adapter. Conflict resolution uses the resolve-conflicts companion skill.
+  Requires git CLI. Fresh forge inspection prefers the provider-neutral gish
+  adapter, with explicit direct-provider or local-only fallbacks. Conflict
+  resolution uses the resolve-conflicts companion skill.
 metadata:
   author: goodboy
   version: "0.1"
@@ -15,6 +16,8 @@ argument-hint: "[branch, worktree, PR, or requested git operation]"
 disable-model-invocation: false
 allowed-tools:
   - Bash(git *)
+  - Bash(gh *)
+  - Bash(bash *)
   - Read
   - Glob
   - Grep
@@ -97,10 +100,10 @@ For a forge PR/MR/patch request:
    the base layer.
 3. Compare forge SHAs with local branch and remote-tracking refs.
 4. Label each value clearly as forge-reported, local or remote-tracking.
-5. Use `/gish inspect-pr <backend> <num> --repo <owner/name>` as the
-   provider-neutral forge adapter. Network
-   access requires explicit authorization in the current prompt; loading a
-   workflow which wants fresh metadata does not authorize it.
+5. Prefer `/gish inspect-pr <backend> <num> --repo <owner/name>` as the
+   provider-neutral forge adapter. Network access requires explicit
+   authorization in the current prompt; loading a workflow which wants fresh
+   metadata does not authorize it.
 6. Require the adapter result to identify the provider, repository, PR, query
    time, head repository, head ref, head OID, base ref, and base-tip OID.
    Record a provider diff base OID only when the provider reports one; never
@@ -110,11 +113,33 @@ For a forge PR/MR/patch request:
 8. Verify any same-named local or remote-tracking ref against the corresponding
    forge OID before using that ref. Prefer verified OIDs in range commands.
 
-If `gish`, its selected backend adapter, network authorization, or required
-metadata is unavailable, do not claim current forge authority. Continue only
-with clearly labeled "local/prospective inspection at SHA `<oid>`", state the
-local refs and exact range used, and report which forge fields remain
-unverified. Do not fetch or ask to fetch as part of this fallback.
+Before using a modden-backed `gish` transport, resolve the deployed sibling
+skill from the active provider root and run:
+
+```text
+../gish/scripts/gish-xontrib --check
+```
+
+Do not infer readiness from `$SHELL`, `PATH`, or an activated venv. The coding
+harness shell and the backend environment are separate. The launcher selects
+an explicitly configured absolute xonsh path and verifies the modden xontrib
+under `--no-rc`. If it reports that no runtime is configured, describe the
+setup in `../gish/DEPLOY.md`; do not choose or persist an interpreter without
+the user's approval.
+
+If the user prefers not to use `gish`, use a direct provider CLI or API only
+when the selected provider can return every required field and the current
+prompt explicitly authorizes that exact network read. Label the result as a
+direct `<provider>` query rather than provider-neutral `gish` output. Never
+silently switch transports for a remote write or for an operation whose safety
+contract requires `gish`.
+
+If `gish`, a complete approved direct adapter, network authorization, or
+required metadata is unavailable, do not claim current forge authority.
+Continue only with clearly labeled "local/prospective inspection at SHA
+`<oid>`", state the local refs and exact range used, and report which forge
+fields remain unverified. Do not fetch or ask to fetch as part of this
+fallback.
 
 The forge-reported PR head and base-tip OIDs are authoritative identities for
 the submitted PR. They are not interchangeable with the local merge base or a
