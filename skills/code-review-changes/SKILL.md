@@ -115,8 +115,9 @@ Present a summary table to the user:
    where `<slug>` is derived from the PR number
    using valid snake_case (e.g. `pr<N>_review`).
 - If `/open-wkt` is unavailable, stop without creating an unmanaged worktree.
-- Switch into its `.claude/wkts/<slug>` worktree for all subsequent file
-  operations.
+- Capture the absolute canonical `<repo-root>/wkts/<slug>` path returned by
+  `/open-wkt` and use it for all subsequent file operations. Do not reconstruct
+  a relative path from the caller's cwd.
 - Confirm the new worktree HEAD equals the forge-reported head OID. If the
   object is missing, stop; fetch the exact head repository/ref only when the
   current prompt authorized that network operation, then verify its OID.

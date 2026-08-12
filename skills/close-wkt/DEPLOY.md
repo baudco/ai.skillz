@@ -1,7 +1,7 @@
 # Deploying `/close-wkt`
 
-The skill source is provider-neutral and shares `/open-wkt`'s existing
-`.claude/wkts/` runtime state.
+The skill source is provider-neutral and shares `/open-wkt`'s root-level
+`wkts/` runtime state.
 
 ## Deployment
 
@@ -39,8 +39,8 @@ bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
 bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
-Review the dry run before migration. Migration preserves
-`.claude/wkts/` and `claude_wkts`. `update` advances a submodule anchor;
+Review the dry run before migration. Migration preserves `wkts/`.
+`update` advances a submodule anchor;
 update a local checkout directly.
 
 ## Prerequisites

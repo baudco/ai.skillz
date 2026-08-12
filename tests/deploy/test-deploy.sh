@@ -1050,6 +1050,29 @@ test_gitignore_integrity_and_inventory() {
     assert_file_contains "$REPO/.gitignore" '.claude/skills/commit-msg/msgs/'
     assert_file_contains "$REPO/.gitignore" '.claude/review_regression.md'
     assert_file_contains "$REPO/.gitignore" '.claude/review_replies/'
+    assert_file_contains "$REPO/.gitignore" '/wkts/'
+    assert_not_contains "$(<"$REPO/.gitignore")" '.claude/wkts/'
+    assert_not_contains "$(<"$REPO/.gitignore")" 'claude_wkts'
+    git -C "$REPO" check-ignore -q --no-index -- wkts/example/file \
+        || fail 'provider-neutral worktree root is not ignored'
+    if git -C "$REPO" check-ignore -q --no-index -- .claude/wkts/example; then
+        fail 'legacy harness-specific worktree root remains ignored'
+    fi
+    if git -C "$REPO" check-ignore -q --no-index -- nested/wkts/example; then
+        fail 'nested worktree directory is unexpectedly ignored'
+    fi
+
+    new_repo legacy-runtime-preflight
+    mkdir -p "$REPO/.claude"
+    ln -s missing "$REPO/.claude/wkts"
+    assert_fails bash "$DEPLOY" py-codestyle "$REPO" --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'legacy worktree runtime remains'
+    rm "$REPO/.claude/wkts"
+    printf legacy > "$REPO/claude_wkts"
+    assert_fails bash "$DEPLOY" py-codestyle "$REPO" --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'legacy worktree runtime remains'
 
     printf '\n# END ai.skillz: bad\n' >> "$REPO/.gitignore"
     before="$(file_digest "$REPO/.gitignore")"
@@ -1518,6 +1541,13 @@ test_deployment_validator_failures() {
     mkdir -p "$REPO/.claude"
     printf runtime > "$REPO/.claude/review_regression.md"
     git -C "$REPO" add -f .claude/review_regression.md
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
+
+    new_repo validate-worktree-runtime
+    mkdir -p "$REPO/wkts/example"
+    printf runtime > "$REPO/wkts/example/file"
+    git -C "$REPO" add -f wkts/example/file
     assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
 

@@ -35,7 +35,7 @@ Close a worktree previously opened via `/open-wkt`.
 ### Parameters
 
 - **`name`** (optional): worktree name. If omitted,
-  infer from cwd (must be inside a `.claude/wkts/`
+  infer from cwd (must be inside a `wkts/`
   subtree).
 
 - **`--discard-worktree`** (optional): explicitly discard uncommitted and
@@ -70,11 +70,22 @@ files, preserve the branch unless the current prompt separately authorizes its
 deletion, report the recovered state, and release the guard. Never require
 deleted private-Git-dir metadata to recover a post-removal guard.
 
+When invoked from a linked worktree, derive the main repository root from the
+absolute common Git directory and verify it against `git worktree list
+--porcelain`; do not use the linked worktree's `--show-toplevel` as the main
+root. The resulting main root owns the canonical `wkts/` parent.
+
 1. **Validate the managed target and locate metadata**: require `<name>` to
    satisfy the same snake_case rule as `/open-wkt`; reject separators, `..`,
    leading dots/dashes, and any canonical path outside
-   `<repo-root>/.claude/wkts/<name>`. Verify `git worktree list --porcelain`
-   maps that exact path to `wkt/<name>` before destructive Git operations. Read
+   `<repo-root>/wkts/<name>`. Resolve the repository root first, reject a
+   symlinked or out-of-repository `wkts` parent, and use the absolute canonical
+   path for every command. Verify `git worktree list --porcelain`
+   maps that exact path to the branch recorded in metadata before destructive
+   Git operations. Newly created worktrees require `wkt/<name>`; a migrated
+   pre-existing branch is allowed only when metadata records
+   `branch_exception: true` and its exact branch matches both registration and
+   metadata. Read
    `<worktree-git-dir>/ai-skillz-wkt/meta.json` for lifecycle info (parent
    branch, notify preference, etc.). Resolve the private Git directory from
    the exact registered worktree path; do not use a literal `.git/` path.
@@ -99,13 +110,14 @@ deleted private-Git-dir metadata to recover a post-removal guard.
 
 3. **Notify** (if `notify_on_teardown` is true):
    - Show uncommitted changes:
-     `git -C .claude/wkts/<name> diff --stat`
+     `git -C <repo-root>/wkts/<name> diff --stat`
    - Show untracked files:
-     `git -C .claude/wkts/<name> status --short`
+     `git -C <repo-root>/wkts/<name> status --short`
+   - Resolve `<managed-branch>` from the exact registered branch and metadata.
    - Show commits made on this worktree branch:
-     `git log <parent_branch>..wkt/<name> --oneline`
+     `git log <parent_branch>..<managed-branch> --oneline`
    - Show commits unique to the branch with
-     `git log --oneline --decorate <parent>..wkt/<name>`.
+     `git log --oneline --decorate <parent>..<managed-branch>`.
    - If there are uncommitted or untracked changes and
       `--discard-worktree` is not present in the current request, stop and show
       the exact flag needed. Do not treat branch-deletion authorization as
@@ -117,16 +129,16 @@ deleted private-Git-dir metadata to recover a post-removal guard.
 
 5. **Remove the worktree** while retaining ownership until teardown starts:
    ```sh
-   git worktree remove .claude/wkts/<name>
+   git worktree remove <repo-root>/wkts/<name>
    # only with explicit --discard-worktree
-   git worktree remove --force .claude/wkts/<name>
+   git worktree remove --force <repo-root>/wkts/<name>
    ```
 
 6. **Delete the branch** (unless `--keep-branch`):
    ```sh
-   git branch -d wkt/<name>
+   git branch -d <managed-branch>
    # only after --delete-unmerged-branch and the unique-commit report
-   git branch -D wkt/<name>
+   git branch -D <managed-branch>
    ```
 
    Try `-d` first. If Git refuses because the branch is unmerged, preserve the
