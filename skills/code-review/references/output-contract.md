@@ -31,6 +31,12 @@ Then include, in order:
 3. Checks skipped, unavailable, failed, or delegated.
 4. Scope: target, requested base, merge base, head, paths, and generated-file
    exclusions.
+5. The final disclosure paragraph, using the active runtime values:
+
+   ```text
+   (this review was generated in some part by `<harness>` using `<model>`
+   (`<provider>`))
+   ```
 
 Do not open with a general summary. Do not add a finding for praise, style
 preference, or a hypothetical concern without a concrete failure path.
@@ -43,7 +49,15 @@ No actionable findings.
 Residual risks: ...
 Checks not run: ...
 Scope: ...
+
+(this review was generated in some part by `<harness>` using `<model>`
+(`<provider>`))
 ```
+
+Both findings and no-findings Markdown bodies contain exactly one disclosure
+footer. Replace a prior footer when updating a candidate; do not duplicate it.
+This footer belongs only to the complete review body, not ordinary chat
+summaries, review replies, PR descriptions, commit messages, or JSON exports.
 
 ## Forge Publication
 
@@ -53,8 +67,9 @@ received explicit follow-up approval under the skill's human-verification
 gate.
 
 - Persist the exact candidate as an ignored `_review.md` file only after a
-  follow-up message requests publication preparation. Compute its SHA-256
-  digest before requesting remote-publication approval.
+  follow-up message requests publication preparation. Add the disclosure
+  before computing its SHA-256 digest and requesting remote-publication
+  approval. The footer is part of the exact approved bytes and digest.
 - Bind approval to that digest, backend, repository, PR, reviewed head, and
   non-approving `comment` event.
 - Publish the approved Markdown body, not the JSON export.

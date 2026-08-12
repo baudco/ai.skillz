@@ -194,6 +194,22 @@ When there are no findings, state that explicitly and list residual risks,
 untested paths, and unavailable checks. Never claim the change is correct or
 safe merely because static review found nothing.
 
+Before showing any complete Markdown review body, append this disclosure as
+the final paragraph using the active runtime values:
+
+```text
+(this review was generated in some part by `<harness>` using `<model>`
+(`<provider>`))
+```
+
+Wrap it to the review body's normal Markdown line length. Apply it exactly once
+to findings-first and no-findings bodies. Ordinary chat summaries, JSON
+exports, PR descriptions, commit messages, and `/code-review-changes` replies
+are outside this contract. When revising or preparing republication, replace
+an existing review disclosure rather than appending a duplicate. Use
+`scripts/finalize-review.py` for persisted candidates, then compute the digest
+from the finalized bytes.
+
 Default to chat output. Write a JSON report under
 `.ai/code-review/reports/` only when the user explicitly requests an export.
 Validate it against `references/review-result-v1.schema.json` when a local
@@ -204,7 +220,8 @@ do not stage them.
 Only after a follow-up message explicitly requests preparation for
 publication, write the exact Markdown candidate beneath the same ignored
 reports directory using a `_review.md` suffix. That request authorizes the
-local candidate file, not remote publication. Compute and show its SHA-256
+local candidate file, not remote publication. Finalize its disclosure before
+computing and showing its SHA-256
 digest together with the complete body, target backend, repository, PR number,
 reviewed head, publishing account, and `comment` event. The digest binds later human approval to
 immutable bytes; it does not replace showing the body.
@@ -237,7 +254,8 @@ chat. Publication is a separate, human-verified action:
   message explicitly selects that fallback for the same body, digest, target,
   head, publishing account, and event. Never fall back silently.
 - Publish the approved body byte-for-byte apart from provider-required
-  transport encoding. Do not silently add findings, footers, or attribution.
+  transport encoding. `gish` must not add or alter disclosure because the
+  approved body already contains it.
 - Report the resulting review URL or identifier. Publication does not
   authorize source edits, task-state changes, or JSON export.
 
