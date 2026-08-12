@@ -208,6 +208,68 @@ class GishReviewPostTests(unittest.TestCase):
         self.assertIn('commit_id=abc123', post)
         self.assertIn(f'body=@{body}', post)
 
+    def test_validated_body_bytes_are_preserved(self):
+        '''
+        Publication transport must not append or rewrite attribution.
+
+        This test validates a disclosed candidate and proves the returned
+        payload is byte-for-byte identical, including its final footer.
+
+        '''
+        with tempfile.TemporaryDirectory() as value:
+            root = Path(value)
+            path = root / 'review.md'
+            expected = (
+                b'No actionable findings.\n\n'
+                b'(this review was generated in some part by '
+                b'`opencode` using `gpt` (`openai`))\n'
+            )
+            path.write_bytes(expected)
+            digest = hashlib.sha256(expected).hexdigest()
+            _, payload = MODULE.validate_body(str(path), root, digest)
+            self.assertEqual(payload, expected)
+
+    def test_main_publishes_exact_snapshot_bytes(self):
+        '''
+        Gish must publish the approved candidate without content mutation.
+
+        This test runs the adapter entry point with an arbitrary body and reads
+        the temporary upload file inside the mocked publisher, proving its
+        bytes equal the digest-bound source exactly.
+
+        '''
+        with tempfile.TemporaryDirectory() as value:
+            root = Path(value)
+            path = root / 'review.md'
+            expected = b'Arbitrary approved body without inferred footer.\n'
+            path.write_bytes(expected)
+            digest = hashlib.sha256(expected).hexdigest()
+
+            def publish(target, body_file, gh):
+                self.assertEqual(body_file.read_bytes(), expected)
+                return {'id': 9}
+
+            with mock.patch.object(
+                MODULE,
+                'publish_github',
+                side_effect=publish,
+            ):
+                result = MODULE.main(
+                    [
+                        '--backend', 'gh',
+                        '--repo', 'owner/repo',
+                        '--pr', '7',
+                        '--body-file', str(path),
+                        '--sha256', digest,
+                        '--head', 'abc123',
+                        '--event', 'comment',
+                        '--actor', 'reviewer',
+                        '--worktree', str(root),
+                    ]
+                )
+            self.assertEqual(result, 0)
+            self.assertEqual(path.read_bytes(), expected)
+
 
 if __name__ == '__main__':
     unittest.main()

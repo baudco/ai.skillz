@@ -1647,6 +1647,7 @@ test_code_review_contract_assets() {
         "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
         >/dev/null
     python "$ROOT/tests/test_gish_review_post.py"
+    python "$ROOT/tests/test_code_review_disclosure.py"
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'explicitly authorizes test execution.'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
@@ -1731,8 +1732,18 @@ test_code_review_contract_assets() {
         "$ROOT/skills/gish/references/review-publication.md" \
         '--raw-field event=COMMENT'
     assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        'this review was generated in some part by'
+    assert_file_contains \
+        "$ROOT/skills/gish/references/review-publication.md" \
+        'publishes the candidate byte-for-byte'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        '> response authored by `<harness>`'
+    assert_file_contains \
         "$ROOT/skills/gish/scripts/review-post.py" \
         'target PR head moved after review'
+    [ -f "$ROOT/skills/code-review/scripts/finalize-review.py" ] \
+        || fail 'code-review disclosure finalizer is missing'
     assert_file_contains "$ROOT/README.md" '| `code-review` |'
     pass 'code-review schema and human-control contracts are present'
 }

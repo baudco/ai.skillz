@@ -49,7 +49,10 @@ Before network access:
    source file after success or failure as the local publication record.
 
 Do not alter whitespace, append attribution, convert Markdown, or substitute
-the JSON review export.
+the JSON review export. `/code-review` owns its disclosure before approval and
+digesting; `gish` validates and publishes the candidate byte-for-byte. Do not
+infer a disclosure requirement for arbitrary `review-post` callers without an
+explicit content-kind or provenance contract.
 
 ## Target Validation
 
