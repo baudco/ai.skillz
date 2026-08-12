@@ -127,47 +127,6 @@ to see the full commit message body inline.
 
 When generating commit messages, always follow this process:
 
--1. **Session tracking** (`conf.toml`):
-
-   Determine the repo root (`git rev-parse
-   --show-toplevel`). Check for the file
-   `<root>/.claude/skills/commit-msg/conf.toml`.
-
-   Determine your current session/conversation ID
-   — this is the UUID from the conversation
-   transcript path shown in your system context
-   (e.g. from the `.jsonl` filename reference).
-
-   a) **File does NOT exist**:
-      - `mkdir -p` the skill dir if needed
-      - Write `conf.toml` containing:
-        ```toml
-        session = '<current-session-id>'
-        ```
-      - Tell the user:
-        "Created `conf.toml` with session `<id>`
-        — future `/commit-msg` runs will remind
-        you to resume this session for pre-approved
-        perms via `claude -r <id>`."
-      - Continue to step 0.
-
-   b) **File exists, session matches current**:
-      - Continue silently to step 0.
-
-   c) **File exists, session DIFFERS**:
-      - Warn the user:
-        ```
-        A `/commit-msg` session already exists:
-          claude -r <saved-session-id>
-
-        Current session: <current-session-id>
-        ```
-      - Ask (via `AskUserQuestion`) whether to:
-        1. "Update conf.toml" — overwrite with
-           current session ID, then continue.
-        2. "Keep existing" — continue without
-           changing the file.
-
 0. **Detect working context**: run
    `git rev-parse --show-toplevel` to find the repo
    root, then run both `git rev-parse --git-common-dir`

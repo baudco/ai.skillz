@@ -176,7 +176,6 @@ while read -r mode blob stage path; do
     fi
     case "$path" in
         .claude/skills/*/msgs|.claude/skills/*/msgs/*|\
-        .claude/skills/*/conf.toml|\
         .claude/git_commit_msg_LATEST.md|.claude/skills/pr-msg/pr_msg_LATEST.md|\
         .claude/review_context.md|.claude/review_regression.md|\
         .claude/review_replies|.claude/review_replies/*|\

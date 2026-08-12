@@ -835,8 +835,6 @@ test_status_health_templates_and_source_symlink() {
     [ ! -e "$source_repo/.opencode/skills/commit-msg" ] \
         || fail 'self-hosting fixture unexpectedly has explicit skill link'
     mkdir -p "$source_repo/.claude/skills/commit-msg/msgs"
-    printf 'session = "runtime"\n' \
-        > "$source_repo/.claude/skills/commit-msg/conf.toml"
     printf runtime > "$source_repo/.claude/skills/commit-msg/msgs/current.md"
     local source_link
     source_link="$(readlink "$source_repo/.opencode/commands/commit-msg.md")"
