@@ -106,6 +106,14 @@ every path as ordinary text.
 Keep the selected base, head, merge-base choice, included paths, and excluded
 generated files visible in the final review.
 
+Unless current forge head and base-tip OIDs were verified through separately
+authorized network access, label a checked-out PR branch review as
+`local/prospective review at SHA <head>`. State the local base-tip, merge-base,
+head, and exact two-dot or three-dot range used. Do not describe the checkout,
+same-named refs, or cached remote-tracking refs as the submitted PR. Keep a
+provider-reported diff base separate from the forge base tip and local merge
+base; report it as unavailable rather than inferring it.
+
 ## 4. Understand The Change Before Judging It
 
 Read each changed hunk with enough surrounding code to understand control
@@ -198,7 +206,7 @@ publication, write the exact Markdown candidate beneath the same ignored
 reports directory using a `_review.md` suffix. That request authorizes the
 local candidate file, not remote publication. Compute and show its SHA-256
 digest together with the complete body, target backend, repository, PR number,
-reviewed head, and `comment` event. The digest binds later human approval to
+reviewed head, publishing account, and `comment` event. The digest binds later human approval to
 immutable bytes; it does not replace showing the body.
 
 ## 8. Require Human Verification Before Publication
@@ -208,7 +216,8 @@ chat. Publication is a separate, human-verified action:
 
 - Require a follow-up message which explicitly approves the exact rendered
   review body, its SHA-256 digest, target backend/repository/PR, reviewed head,
-  and non-approving `comment` event and requests publication. The initial
+  publishing account, and non-approving `comment` event and requests
+  publication. The initial
   review request, advance blanket permission, silence, or approval of an
   earlier draft is not enough.
 - If the human requests any addition, removal, rewording, severity change, or
@@ -219,13 +228,14 @@ chat. Publication is a separate, human-verified action:
   merge base still match the reviewed scope. If any ref moved, stop and report
   the drift; do not publish a stale review.
 - Delegate publication to `/gish review-post` with the approved body file,
-  digest, reviewed head, backend, repository, PR, and `--event comment`.
+  digest, reviewed head, backend, repository, PR, publishing account, and
+  `--event comment`.
   `gish` must independently verify the digest and remote head before posting.
   Never infer approval, request changes, inline placement, or issue creation.
 - If `gish` or its selected backend adapter is unavailable, stop and disclose
   that limitation. Use a direct provider adapter only after a new human
   message explicitly selects that fallback for the same body, digest, target,
-  head, and event. Never fall back silently.
+  head, publishing account, and event. Never fall back silently.
 - Publish the approved body byte-for-byte apart from provider-required
   transport encoding. Do not silently add findings, footers, or attribution.
 - Report the resulting review URL or identifier. Publication does not

@@ -36,6 +36,7 @@ class GishReviewPostTests(unittest.TestCase):
             'pr': 7,
             'head': 'abc123',
             'event': 'comment',
+            'actor': 'reviewer',
         }
         values.update(changes)
         return MODULE.ReviewTarget(**values)
@@ -51,12 +52,13 @@ class GishReviewPostTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as value:
             root = Path(value)
             path, digest = self.body(root)
-            selected = MODULE.validate_body(
+            selected, payload = MODULE.validate_body(
                 str(path),
                 root,
                 digest,
             )
             self.assertEqual(selected, path)
+            self.assertEqual(payload, path.read_bytes())
             with self.assertRaisesRegex(
                 ValueError,
                 'digest changed',
@@ -122,7 +124,21 @@ class GishReviewPostTests(unittest.TestCase):
         with mock.patch.object(
             MODULE.subprocess,
             'run',
-            return_value=response,
+            side_effect=(
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout='secret-token\n',
+                    stderr='',
+                ),
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout='reviewer\n',
+                    stderr='',
+                ),
+                response,
+            ),
         ) as run:
             with self.assertRaisesRegex(
                 ValueError,
@@ -133,10 +149,22 @@ class GishReviewPostTests(unittest.TestCase):
                     Path('/repo/review.md'),
                     'gh',
                 )
-        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_count, 3)
 
     def test_post_uses_file_and_pinned_comment_event(self):
         responses = (
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout='secret-token\n',
+                stderr='',
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout='reviewer\n',
+                stderr='',
+            ),
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
@@ -175,7 +203,7 @@ class GishReviewPostTests(unittest.TestCase):
                 'gh',
             )
         self.assertEqual(result['id'], 9)
-        post = run.call_args_list[1].args[0]
+        post = run.call_args_list[3].args[0]
         self.assertIn('event=COMMENT', post)
         self.assertIn('commit_id=abc123', post)
         self.assertIn(f'body=@{body}', post)

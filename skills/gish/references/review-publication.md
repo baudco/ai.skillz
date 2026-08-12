@@ -12,7 +12,7 @@ creation, approval, change requests, source edits, commits, or Git pushes.
 ```text
 /gish review-post <backend> <pr-num> \
   --repo <owner/name> --body-file <path> --sha256 <digest> \
-  --head <commit> --event comment
+  --head <commit> --event comment --actor <login>
 ```
 
 All arguments are required. `comment` is the only accepted event in v1.
@@ -28,6 +28,7 @@ The current human message must explicitly request publication of:
 - the recorded SHA-256 digest;
 - the reviewed head commit;
 - a non-approving top-level review comment.
+- the authenticated account login which will publish it.
 
 An initial review request, standing permission, approval of an older digest,
 approval of a partial excerpt, or authorization to export JSON is not enough.
@@ -41,9 +42,11 @@ Before network access:
 1. Resolve `--body-file` without following an untrusted final symlink.
 2. Require a regular file physically inside the active worktree.
 3. Read it as UTF-8 and reject invalid encoding or NUL bytes.
-4. Compute SHA-256 over its exact bytes and compare it to `--sha256`.
+4. Snapshot the bytes into a mode-0600 temporary regular file, compute
+   SHA-256 over that snapshot, and compare it to `--sha256`.
 5. Refuse an empty body.
-6. Preserve the file after success or failure as the local publication record.
+6. Publish only from the validated snapshot, then remove it. Preserve the
+   source file after success or failure as the local publication record.
 
 Do not alter whitespace, append attribution, convert Markdown, or substitute
 the JSON review export.

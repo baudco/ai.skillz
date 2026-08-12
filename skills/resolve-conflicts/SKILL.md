@@ -35,6 +35,14 @@ process ALL unmerged files.
 Tell the user which operation is in progress and list
 the conflicted files.
 
+For a rebase, also establish authorization provenance before editing. A
+current-prompt request to resolve conflicts authorizes only the requested file
+edits; it does not authorize staging, continuing, or aborting. A handoff from
+`/git-mgmt` must include the exact authorized rebase/restack request. If the
+rebase was started by an unknown session, or no current-prompt authorization
+can be established, inspect and report the operation and conflicts only. Do
+not edit files or recommend continuing or aborting it.
+
 ## 1. For EACH conflicted file
 
 ### a. Locate conflict markers
@@ -64,14 +72,18 @@ was trying to accomplish:
 
 1. **Read the HEAD version** of the hunk in full.
 2. **Read the incoming version** of the hunk in full.
-3. **Find the merge base version** to understand what
-   the file looked like before either side changed it:
+3. **Read the index stages** to understand the exact
+   three-way inputs Git is resolving:
    ```
-   git merge-base HEAD MERGE_HEAD  # merge
-   git merge-base HEAD $(cat .git/rebase-merge/stopped-sha)  # rebase
+   git show :1:<file>  # merge base
+   git show :2:<file>  # ours
+   git show :3:<file>  # theirs
    ```
-   Then `git show <base>:<file>` to read the
-   original. If unavailable, infer from context.
+   A stage may be absent for add/delete conflicts. Use `git ls-files -u --
+   <file>` to verify available stages. Do not derive rebase state through a
+   literal `.git/` path; linked worktrees use a separate Git directory. When
+   operation metadata is needed, resolve it with `git rev-parse --git-path
+   <path>`.
 4. **Diff each side against the base** to isolate
    exactly what each side added, removed, or moved.
 
@@ -126,13 +138,14 @@ Summarize for the user:
 - Any changes propagated to destination files
   (code-movement cases).
 - Anything that needs manual review.
-- Remind them to `git add <files>` and continue
-  the rebase/merge/cherry-pick when ready.
+- State that staging and continuing are separate operations requiring the
+  user's explicit current-prompt request. Do not recommend either when rebase
+  authorization provenance is unknown.
 
 ## Important
 
-- **Never** `git add` or `git rebase --continue`
-  automatically — let the user do that.
+- **Never** `git add`, continue, or abort automatically. Require explicit
+  current-prompt authorization for that exact operation.
 - **Never** discard changes from either side without
   telling the user why.
 - When in doubt about intent, show both versions
