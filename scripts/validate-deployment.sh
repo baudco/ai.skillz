@@ -47,15 +47,16 @@ manifest_skill_dependency() {
 }
 
 skill_dependency_cycle() {
-    local start="$1" current="$1" dependency seen="|$1|"
-    while manifest_skill_dependency "$current"; do
-        dependency="$MANIFEST_SKILL_DEPENDENCY"
-        [ -n "$dependency" ] && [ "$dependency" != - ] || return 1
+    local current="$1" seen="${2:-|$1|}" dependency dependencies
+    manifest_skill_dependency "$current" || return 1
+    dependencies="$MANIFEST_SKILL_DEPENDENCY"
+    [ -n "$dependencies" ] && [ "$dependencies" != - ] || return 1
+    for dependency in ${dependencies//,/ }; do
         case "$seen" in
             *"|$dependency|"*) return 0 ;;
         esac
-        seen="$seen$dependency|"
-        current="$dependency"
+        skill_dependency_cycle \
+            "$dependency" "$seen$dependency|" && return 0
     done
     return 1
 }
@@ -104,14 +105,16 @@ while IFS='|' read -r kind name shape assets skill_dependency rest; do
     [ "$kind" = skill ] || continue
     [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ] \
         || continue
-    case "$skills" in
-        *"|$skill_dependency|"*) ;;
-        *)
-            printf 'ERROR: skill dependency missing from manifest: %s -> %s\n' \
-                "$name" "$skill_dependency" >&2
-            errors=$((errors + 1))
-            ;;
-    esac
+    for dependency in ${skill_dependency//,/ }; do
+        case "$skills" in
+            *"|$dependency|"*) ;;
+            *)
+                printf 'ERROR: skill dependency missing from manifest: %s -> %s\n' \
+                    "$name" "$dependency" >&2
+                errors=$((errors + 1))
+                ;;
+        esac
+    done
 done < "$MANIFEST"
 
 provider=""
@@ -176,6 +179,7 @@ while read -r mode blob stage path; do
         .claude/skills/*/conf.toml|\
         .claude/git_commit_msg_LATEST.md|.claude/skills/pr-msg/pr_msg_LATEST.md|\
         .claude/review_context.md|.claude/review_regression.md|\
+        .claude/review_replies|.claude/review_replies/*|\
         .claude/wkts/*|.claude/.current_session|claude_wkts|\
         .ai/code-review/reports|.ai/code-review/reports/*|\
         .ai/taken/exports|.ai/taken/exports/*)

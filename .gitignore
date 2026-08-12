@@ -8,6 +8,7 @@ Session.vim
 .claude/git_commit_msg_LATEST.md
 .claude/review_context.md
 .claude/review_regression.md
+.claude/review_replies/
 .claude/skills/commit-msg/conf.toml
 .claude/skills/commit-msg/msgs/
 .claude/skills/commit-msg/SKILL.md
@@ -33,6 +34,7 @@ claude_wkts
 # BEGIN ai.skillz: runtime:code-review-changes
 .claude/review_context.md
 .claude/review_regression.md
+.claude/review_replies/
 # END ai.skillz: runtime:code-review-changes
 
 # BEGIN ai.skillz: direct:symlink:claude:code-review-changes

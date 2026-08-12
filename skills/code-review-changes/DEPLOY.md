@@ -20,8 +20,9 @@ OpenCode skill deployment installs its dependent command shim automatically;
 use `--no-command` only for an intentional skill-only deployment.
 
 Existing `.claude/review_context.md` and
-`.claude/review_regression.md` files remain local and are never moved or
-overwritten by source deployment or migration. Track provider links only in
+`.claude/review_regression.md` files and `.claude/review_replies/` candidates
+remain local and are never moved or overwritten by source deployment or
+migration. Track provider links only in
 submodule mode, together with `.gitmodules` and the anchor gitlink. Nothing is
 staged unless `--stage` is explicitly supplied.
 
@@ -44,6 +45,10 @@ dry run before applying it. Use `update` only for a submodule anchor.
 
 ## Dependencies on other skills
 
+- `/gish` — required provider-neutral PR identity and reply transport. Deploy
+  it before this skill; manifest dependency checks enforce its availability.
+- `/open-wkt` — required companion for ownership-safe review worktrees. Stop
+  cleanly if it is unavailable rather than creating an unmanaged worktree.
 - `/run-tests` — called in step 5 for pre-commit test
   verification in every repository receiving fixes.
   Deploy it first; review fixes stop if it is absent.

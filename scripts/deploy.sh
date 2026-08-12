@@ -105,19 +105,20 @@ get_manifest_skill_dependency() {
 }
 
 validate_skill_dependency_chain() {
-    local start="$1" current="$1" dependency seen="|$1|"
-    while get_manifest_skill_dependency "$current"; do
-        dependency="$MANIFEST_SKILL_DEPENDENCY"
-        [ -n "$dependency" ] && [ "$dependency" != - ] || return 0
+    local current="$1" seen="${2:-|$1|}" dependency dependencies
+    get_manifest_skill_dependency "$current" \
+        || die "skill dependency record is missing: $current"
+    dependencies="$MANIFEST_SKILL_DEPENDENCY"
+    [ -n "$dependencies" ] && [ "$dependencies" != - ] || return 0
+    for dependency in ${dependencies//,/ }; do
         case "$seen" in
             *"|$dependency|"*)
                 die "skill dependency cycle includes '$dependency'"
                 ;;
         esac
-        seen="$seen$dependency|"
-        current="$dependency"
+        validate_skill_dependency_chain \
+            "$dependency" "$seen$dependency|"
     done
-    die "skill '$start' dependency record is missing: $current"
 }
 
 validate_manifest() {
@@ -135,9 +136,11 @@ validate_manifest() {
                      || die "invalid skill deployment manifest record"
                 validate_name "$a" skill
                 if [ -n "${d:-}" ] && [ "$d" != - ]; then
-                    validate_name "$d" skill
-                    [ "$d" != "$a" ] \
-                        || die "skill '$a' cannot depend on itself"
+                    for dependency in ${d//,/ }; do
+                        validate_name "$dependency" skill
+                        [ "$dependency" != "$a" ] \
+                            || die "skill '$a' cannot depend on itself"
+                    done
                 fi
                 case "$b" in
                     generic|template) [ "$c" = "-" ] \
@@ -178,10 +181,12 @@ validate_manifest() {
     while IFS='|' read -r kind a b c d extra; do
         [ "$kind" = skill ] || continue
         [ -n "${d:-}" ] && [ "$d" != - ] || continue
-        case "$seen_skills" in
-            *"|$d|"*) ;;
-            *) die "skill '$a' dependency missing from manifest: $d" ;;
-        esac
+        for dependency in ${d//,/ }; do
+            case "$seen_skills" in
+                *"|$dependency|"*) ;;
+                *) die "skill '$a' dependency missing from manifest: $dependency" ;;
+            esac
+        done
     done < "$MANIFEST"
     while IFS='|' read -r kind a b c d extra; do
         [ "$kind" = skill ] || continue
@@ -1272,6 +1277,7 @@ deploy_skill() {
     local skill="$1"
     shift
     local target_arg="" provider=claude method="" direct=no stage=no global=no
+    local dependency
     local auto_commands=yes
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -1306,8 +1312,10 @@ deploy_skill() {
         SOURCE_ROOT="$SKILLZ_ROOT"
         preflight_global_skill_base
         if [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ]; then
-            global_skill_deployment_healthy "$skill_dependency" \
-                || die "skill '$skill' requires healthy global skill '$skill_dependency'"
+            for dependency in ${skill_dependency//,/ }; do
+                global_skill_deployment_healthy "$dependency" \
+                    || die "skill '$skill' requires healthy global skill '$dependency'"
+            done
             get_skill_record "$skill"
         fi
         preflight_global_skill "$skill"
@@ -1344,9 +1352,11 @@ deploy_skill() {
     MANAGED_PATHS=()
     if [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ]; then
         for selected_provider in "${PROVIDERS[@]}"; do
-            skill_deployment_healthy \
-                "$TARGET" "$selected_provider" "$skill_dependency" \
-                || die "skill '$skill' requires healthy $selected_provider skill '$skill_dependency'"
+            for dependency in ${skill_dependency//,/ }; do
+                skill_deployment_healthy \
+                    "$TARGET" "$selected_provider" "$dependency" \
+                    || die "skill '$skill' requires healthy $selected_provider skill '$dependency'"
+            done
         done
         get_skill_record "$skill"
     fi
@@ -1400,7 +1410,7 @@ deploy_all() {
     direct="$DEPLOY_DIRECT"
 
     local kind skill shape assets dependency rest deployed=0 skipped=0
-    local selected_provider command_count=0 job
+    local selected_provider command_count=0 job required_skill
     set_providers "$provider"
     MANAGED_PATHS=()
     while IFS='|' read -r kind skill shape assets dependency rest; do
@@ -1427,9 +1437,11 @@ deploy_all() {
         SKILL_ASSETS="$assets"
         for selected_provider in "${PROVIDERS[@]}"; do
             if [ -n "$dependency" ] && [ "$dependency" != - ]; then
-                skill_deployment_healthy \
-                    "$TARGET" "$selected_provider" "$dependency" \
-                    || die "skill '$skill' requires healthy $selected_provider skill '$dependency'"
+                for required_skill in ${dependency//,/ }; do
+                    skill_deployment_healthy \
+                        "$TARGET" "$selected_provider" "$required_skill" \
+                        || die "skill '$skill' requires healthy $selected_provider skill '$required_skill'"
+                done
                 SKILL_SHAPE="$shape"
                 SKILL_ASSETS="$assets"
             fi
@@ -1710,6 +1722,7 @@ same_resolved_path() {
 
 skill_deployment_healthy() {
     local target="$1" provider="$2" skill="$3" shape assets dependency
+    local required_skill
     local asset destination source
     source="$SOURCE_ROOT/skills/$skill"
     get_skill_record "$skill" || return 1
@@ -1718,8 +1731,11 @@ skill_deployment_healthy() {
     dependency="$SKILL_DEPENDENCY"
     [ "$shape" != template ] || return 1
     if [ -n "$dependency" ] && [ "$dependency" != - ]; then
-        skill_deployment_healthy "$target" "$provider" "$dependency" \
-            || return 1
+        for required_skill in ${dependency//,/ }; do
+            skill_deployment_healthy \
+                "$target" "$provider" "$required_skill" \
+                || return 1
+        done
     fi
     provider_root "$provider"
     destination="$target/$PROVIDER_ROOT/skills/$skill"
@@ -2133,7 +2149,7 @@ status_provider() {
     local target="$1" provider="$2"
     provider_root "$provider"
     local root="$target/$PROVIDER_ROOT" kind name shape assets dependency
-    local rest path asset
+    local rest path asset required_skill
     local canonical_asset_present
     if [ ! -d "$root" ]; then
         printf 'Provider %s: disabled\n' "$provider"
@@ -2246,12 +2262,15 @@ status_provider() {
                 printf '\n'
             done
         fi
-        if [ -n "$dependency" ] && [ "$dependency" != - ] \
-            && ! skill_deployment_healthy \
-                "$target" "$provider" "$dependency"; then
-            printf '  skill %-24s dependency %s missing or unhealthy [UNHEALTHY]\n' \
-                "$name" "$dependency"
-            STATUS_UNHEALTHY=1
+        if [ -n "$dependency" ] && [ "$dependency" != - ]; then
+            for required_skill in ${dependency//,/ }; do
+                if ! skill_deployment_healthy \
+                    "$target" "$provider" "$required_skill"; then
+                    printf '  skill %-24s dependency %s missing or unhealthy [UNHEALTHY]\n' \
+                        "$name" "$required_skill"
+                    STATUS_UNHEALTHY=1
+                fi
+            done
         fi
     done < "$MANIFEST"
 

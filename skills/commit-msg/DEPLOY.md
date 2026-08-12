@@ -28,7 +28,8 @@ The workflow's persisted runtime contract remains under `.claude/`:
 - `.claude/skills/commit-msg/conf.toml`
 - `.claude/skills/commit-msg/msgs/`
 - `.claude/git_commit_msg_LATEST.md`
-- `.claude/review_context.md` and `.claude/review_regression.md`
+- `.claude/review_context.md`, `.claude/review_regression.md`, and
+  `.claude/review_replies/`
 
 This state remains local or ignored as appropriate. Source-anchor
 migration does not move, delete, or rewrite it.
