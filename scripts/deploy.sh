@@ -378,7 +378,7 @@ validate_ignore_markers() {
 }
 
 preflight_gitignore() {
-    local target="$1" resolved
+    local target="$1" resolved legacy_root legacy_alias worktree_path
     if [ -L "$target/.gitignore" ]; then
         resolve_existing_path "$target/.gitignore" \
             || die "refusing dangling .gitignore symlink: $target/.gitignore"
@@ -390,6 +390,22 @@ preflight_gitignore() {
         die "refusing symlinked .gitignore because Git does not follow it: $target/.gitignore"
     fi
     validate_ignore_markers "$target/.gitignore"
+    legacy_root="$target/.claude/wkts"
+    legacy_alias="$target/claude_wkts"
+    if [ -e "$legacy_root" ] || [ -L "$legacy_root" ] \
+        || [ -e "$legacy_alias" ] || [ -L "$legacy_alias" ]; then
+        die "legacy worktree runtime remains; migrate each owned worktree with '/open-wkt <name> --migrate-legacy' before deployment"
+    fi
+    while IFS= read -r worktree_path; do
+        case "$worktree_path" in
+            "$legacy_root"/*)
+                die "registered legacy worktree remains: $worktree_path; migrate it before deployment"
+                ;;
+        esac
+    done < <(git -C "$target" worktree list --porcelain 2>/dev/null \
+        | while IFS= read -r line; do
+            case "$line" in worktree\ *) printf '%s\n' "${line#worktree }" ;; esac
+        done)
 }
 
 preflight_gitmodules() {

@@ -19,7 +19,11 @@ skills/pr-msg/pr_msg_LATEST.md
 .ai/code-review/reports/
 .ai/taken/exports/
 
-# open-wkt worktrees + convenience symlink
+# provider-neutral worktree root
+/wkts/
+
+# Legacy registered worktrees owned by other sessions. Remove these only
+# after each guarded `/open-wkt --migrate-legacy` move completes.
 .claude/wkts/
 claude_wkts
 
@@ -64,8 +68,7 @@ claude_wkts
 # END ai.skillz: direct:symlink:claude:inter-skill-review
 
 # BEGIN ai.skillz: runtime:open-wkt
-.claude/wkts/
-claude_wkts
+/wkts/
 # END ai.skillz: runtime:open-wkt
 
 # BEGIN ai.skillz: direct:symlink:claude:open-wkt
