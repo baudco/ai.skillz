@@ -108,6 +108,7 @@ prepare_source_repo() {
     cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/commit-plan" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/gish" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/git-mgmt" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/opencode-cleaning" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
@@ -128,7 +129,7 @@ prepare_source_repo() {
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
         providers/opencode/commands skills/code-review skills/commit-plan \
-        skills/gish \
+        skills/gish skills/git-mgmt \
         skills/harness-perf \
         skills/opencode-cleaning \
         skills/commit-msg/SKILL.md skills/run-tests/SKILL.md \
@@ -1048,6 +1049,7 @@ test_gitignore_integrity_and_inventory() {
     assert_file_contains "$REPO/.gitignore" '.claude/.current_session'
     assert_file_contains "$REPO/.gitignore" '.claude/skills/commit-msg/msgs/'
     assert_file_contains "$REPO/.gitignore" '.claude/review_regression.md'
+    assert_file_contains "$REPO/.gitignore" '.claude/review_replies/'
 
     printf '\n# END ai.skillz: bad\n' >> "$REPO/.gitignore"
     before="$(file_digest "$REPO/.gitignore")"
@@ -1519,6 +1521,13 @@ test_deployment_validator_failures() {
     assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
 
+    new_repo validate-review-reply-runtime
+    mkdir -p "$REPO/.claude/review_replies"
+    printf runtime > "$REPO/.claude/review_replies/1_pending.md"
+    git -C "$REPO" add -f .claude/review_replies/1_pending.md
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
+
     new_repo validate-absolute-link
     mkdir -p "$REPO/.opencode/skills"
     ln -s "$ROOT/skills/py-codestyle" "$REPO/.opencode/skills/py-codestyle"
@@ -1585,7 +1594,7 @@ test_all_templates_invalid_args_and_idempotence() {
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
     assert_contains "$output" \
-        'Result: 38 deployed, 0 template skipped, 8 command deployment(s)'
+        'Result: 40 deployed, 0 template skipped, 8 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     local command

@@ -31,6 +31,7 @@ generalized for cross-repo deployment.
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
 | `gish` | Local-file-first forge transport, including approved reviews |
+| `git-mgmt` | Coordinate Git branches, worktrees, and stacked history safely |
 | `harness-perf` | Diagnose CPU, memory, latency, and hangs in AI coding harnesses |
 | `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
@@ -45,6 +46,12 @@ anchor in portable mode and ignored absolute links in local mode:
 |----------|--------|----------|
 | Claude Code | `.claude/skills/` | `.claude/commands/` |
 | OpenCode | `.opencode/skills/` | `.opencode/commands/` |
+
+These are the currently supported provider overlays. Canonical skill prose is
+provider-neutral, but frontmatter capability grants and command shims are
+implemented only for Claude Code and OpenCode. Other agentskills.io consumers
+must provide equivalent local-tool permissions and separately authorized
+forge adapters; deployment does not imply portable permission policy.
 
 Initialize the anchor, then deploy a skill to one or both providers:
 
