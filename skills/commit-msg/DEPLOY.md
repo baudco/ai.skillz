@@ -1,7 +1,7 @@
 # Deploying `/commit-msg`
 
 `commit-msg` is hybrid: canonical workflow content is shared, while its
-style guide, session configuration, and generated messages remain local
+style guide and generated messages remain local
 to each consumer repository.
 
 ## Deployment
@@ -25,7 +25,6 @@ migration and redeployment.
 The workflow's persisted runtime contract remains under `.claude/`:
 
 - `.claude/skills/commit-msg/style-guide-reference.md`
-- `.claude/skills/commit-msg/conf.toml`
 - `.claude/skills/commit-msg/msgs/`
 - `.claude/git_commit_msg_LATEST.md`
 - `.claude/review_context.md`, `.claude/review_regression.md`, and
@@ -96,20 +95,9 @@ the examples in
 models. The output should match the same structure
 as Option A's generated guide.
 
-### (Optional) Create session tracking config
-
-```bash
-cp <repo>/.ai/ai.skillz/templates/commit-msg/conf.toml.j2 \
-   .claude/skills/commit-msg/conf.toml
-```
-
-Edit to uncomment and set a fresh UUID, or let the
-skill generate one on first invocation.
-
 ## What stays local (per-repo)
 
 - `style-guide-reference.md` — your repo's commit style
-- `conf.toml` — session tracking UUID
 - `msgs/` — generated commit message archive
 
 ## What gets symlinked (from ai.skillz)

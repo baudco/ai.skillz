@@ -9,7 +9,6 @@ Session.vim
 .claude/review_context.md
 .claude/review_regression.md
 .claude/review_replies/
-.claude/skills/commit-msg/conf.toml
 .claude/skills/commit-msg/msgs/
 .claude/skills/commit-msg/SKILL.md
 .claude/skills/pr-msg/msgs/
@@ -47,7 +46,6 @@ claude_wkts
 
 # BEGIN ai.skillz: runtime:commit-msg
 .claude/skills/commit-msg/msgs/
-.claude/skills/commit-msg/conf.toml
 .claude/git_commit_msg_LATEST.md
 # END ai.skillz: runtime:commit-msg
 
