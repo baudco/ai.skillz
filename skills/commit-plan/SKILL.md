@@ -133,12 +133,23 @@ The command block must include, in execution order:
 - exact staging and unstaging commands for every boundary;
 - staged whitespace, statistics, and path checks before every commit;
 - required lint and test commands;
+- `git diff --staged` immediately before every commit command so the human can
+  review the exact staged patch at the final pre-commit gate;
 - `git commit --edit --file
   .claude/skills/commit-msg/msgs/<generated-file>` for every commit.
 
 Use each archived message path directly. Never use
 `.claude/git_commit_msg_LATEST.md` in a multi-commit sequence because later
 message generation overwrites it.
+
+Visually separate commit boundaries inside the command fence. Emit exactly one
+blank line after every non-final `git commit` command before the next commit's
+staging sequence. The final `git commit` normally terminates the fence, so do
+not require or add a trailing blank line after it.
+
+Keep `git diff --staged` as an intentional human review gate even when the
+earlier summary and path checks passed. It may open Git's pager; the human can
+press `q` immediately to continue when they do not need to inspect the patch.
 
 ## 7. Completion Gate
 
@@ -151,6 +162,9 @@ Before returning a finished plan, verify:
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
 - every commit command includes `--edit`;
+- every commit command is immediately preceded by `git diff --staged`;
+- every non-final commit command is followed by exactly one blank line, while
+  the final commit has no required trailing blank line;
 - no command commits automatically before the editor opens;
 - no push appears unless the human separately requests a push plan.
 
