@@ -120,8 +120,10 @@ prepare_source_repo() {
     chmod +x "$SOURCE_WORK/scripts/deploy.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     mkdir -p "$SOURCE_WORK/.opencode/commands"
-    for command in code-review code-review-changes commit-plan commit-msg \
-        opencode-cleaning pr-msg run-tests taken-export; do
+    for command in close-wkt code-review code-review-changes commit-plan \
+        commit-msg dep-supersede-scan gish git-mgmt harness-perf \
+        opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
+        taken-export yt-url-lookup; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
@@ -1622,12 +1624,14 @@ test_all_templates_invalid_args_and_idempotence() {
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
     assert_contains "$output" \
-        'Result: 40 deployed, 0 template skipped, 8 command deployment(s)'
+        'Result: 40 deployed, 0 template skipped, 16 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     local command
-    for command in code-review code-review-changes commit-plan commit-msg \
-        opencode-cleaning pr-msg run-tests taken-export; do
+    for command in close-wkt code-review code-review-changes commit-plan \
+        commit-msg dep-supersede-scan gish git-mgmt harness-perf \
+        opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
+        taken-export yt-url-lookup; do
         [ -L "$REPO/.opencode/commands/$command.md" ] \
             || fail "all did not deploy OpenCode command: $command"
     done
@@ -1762,6 +1766,31 @@ test_opencode_cleaning_contract() {
     pass 'OpenCode cleaning classifier and approval gate are safe'
 }
 
+test_opencode_command_adapter_contracts() {
+    local command
+    for command in close-wkt dep-supersede-scan gish git-mgmt \
+        harness-perf open-wkt resolve-conflicts yt-url-lookup; do
+        assert_file_contains \
+            "$ROOT/providers/opencode/commands/$command.md" \
+            "Load the \`$command\` skill"
+        assert_file_contains \
+            "$ROOT/providers/opencode/commands/$command.md" \
+            '$ARGUMENTS'
+    done
+    assert_file_contains "$ROOT/providers/opencode/commands/close-wkt.md" \
+        'authorize that exact operation.'
+    assert_file_contains "$ROOT/providers/opencode/commands/gish.md" \
+        'only when the user explicitly requests that exact write'
+    assert_file_contains "$ROOT/providers/opencode/commands/git-mgmt.md" \
+        'not authorize mutation;'
+    assert_file_contains \
+        "$ROOT/providers/opencode/commands/resolve-conflicts.md" \
+        'Do not stage, continue, skip, or abort'
+    assert_file_contains "$ROOT/providers/opencode/commands/harness-perf.md" \
+        'Begin with read-only measurements'
+    pass 'OpenCode command adapters preserve workflow authorization gates'
+}
+
 test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'Create a complete multi-commit package by composing with `/commit-msg`.'
@@ -1812,21 +1841,7 @@ test_opencode_debug_if_available() {
     fi
     new_repo opencode-debug
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
-    bash "$DEPLOY" code-review "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command code-review "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command commit-plan "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" opencode-cleaning "$REPO" \
-        --provider opencode >/dev/null
-    bash "$DEPLOY" command opencode-cleaning "$REPO" \
-        --provider opencode >/dev/null
-    bash "$DEPLOY" pr-msg "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command run-tests "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" taken-export "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command taken-export "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" all "$REPO" --provider opencode >/dev/null
     local config_output="$TMP_ROOT/opencode-config.out"
     local skill_output="$TMP_ROOT/opencode-skill.out"
     (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
@@ -1835,20 +1850,14 @@ test_opencode_debug_if_available() {
     (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
         opencode debug skill > "$skill_output")
-    assert_file_contains "$config_output" '"commit-msg"'
-    assert_file_contains "$config_output" '"commit-plan"'
-    assert_file_contains "$config_output" '"code-review"'
-    assert_file_contains "$config_output" '"opencode-cleaning"'
-    assert_file_contains "$config_output" '"pr-msg"'
-    assert_file_contains "$config_output" '"run-tests"'
-    assert_file_contains "$config_output" '"taken-export"'
-    assert_file_contains "$skill_output" '"name": "commit-msg"'
-    assert_file_contains "$skill_output" '"name": "commit-plan"'
-    assert_file_contains "$skill_output" '"name": "code-review"'
-    assert_file_contains "$skill_output" '"name": "opencode-cleaning"'
-    assert_file_contains "$skill_output" '"name": "pr-msg"'
-    assert_file_contains "$skill_output" '"name": "run-tests"'
-    assert_file_contains "$skill_output" '"name": "taken-export"'
+    local workflow
+    for workflow in close-wkt code-review code-review-changes commit-plan \
+        commit-msg dep-supersede-scan gish git-mgmt harness-perf \
+        opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
+        taken-export yt-url-lookup; do
+        assert_file_contains "$config_output" "\"$workflow\""
+        assert_file_contains "$skill_output" "\"name\": \"$workflow\""
+    done
     assert_file_contains "$skill_output" \
         "\"location\": \"$REPO/.opencode/skills/commit-msg/SKILL.md\""
     pass 'OpenCode debug config and skill resolve deployed fixture'
@@ -1892,6 +1901,7 @@ test_all_templates_invalid_args_and_idempotence
 test_code_review_contract_assets
 test_commit_plan_contract
 test_opencode_cleaning_contract
+test_opencode_command_adapter_contracts
 test_opencode_debug_if_available
 
 printf '1..%d\n' "$PASS"

@@ -105,9 +105,9 @@ repository owns `test-harness-reference.md`.
 
 Provider-specific reusable assets live under `providers/`. For example,
 the canonical OpenCode `/commit-msg` shim is
-`providers/opencode/commands/commit-msg.md`; code-review, review-changes,
-PR-message, Taken, and Run shims use the same layout. Local deployment links
-`.opencode/commands/<name>.md` directly to the
+`providers/opencode/commands/commit-msg.md`; every user-facing workflow command
+uses the same layout. Local deployment links `.opencode/commands/<name>.md`
+directly to the
 canonical provider asset and ignores that absolute link. Portable deployment
 uses a trackable relative link through `.ai/ai.skillz`. This repository
 self-hosts with tracked relative links from `.opencode/commands/` to
@@ -129,6 +129,13 @@ edit `opencode.json` or `opencode.jsonc`; `status` reports unportable
 `skills.paths` entries for manual review. Quit and restart OpenCode after
 deploying or updating skills or commands because discovery occurs at
 startup.
+
+OpenCode command shims are provided for user-invoked workflows: code review
+and remediation, commit/PR messages, worktree lifecycle, Git management,
+conflict resolution, forge operations, dependency supersedence scans, test
+runs, harness diagnostics, OpenCode cleanup, Taken export, and YouTube URL
+lookup. Support skills such as `plan-io`, `prompt-io`, `py-codestyle`, and
+`inter-skill-review` remain skill-only.
 
 ### Maintenance and migration
 
