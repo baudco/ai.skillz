@@ -1,0 +1,1 @@
+../../providers/opencode/commands/open-wkt.md
