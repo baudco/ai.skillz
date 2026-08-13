@@ -219,6 +219,52 @@ These rules apply globally to ALL python projects.
 
 ## Type annotations
 
+- Declare a local's type immediately before a control-flow statement
+  which binds its runtime value. Apply this to `for` targets, tuple
+  unpacking, comprehensions, and `with` / `async with` targets, where
+  the annotation cannot be written on the binding itself:
+
+  ```python
+  # GOOD - declaration precedes runtime binding
+  bstream: BroadcastReceiver
+  async with stream.subscribe() as bstream:
+      msg: dict[str, Any]
+      async for msg in bstream:
+          await consume(msg)
+
+  streams: tuple[BroadcastReceiver, ...]
+  async with gather_contexts(mngrs) as streams:
+      ...
+
+  # BAD - annotation follows the runtime binding
+  async with stream.subscribe() as bstream:
+      bstream: BroadcastReceiver
+      ...
+  ```
+
+- For ordinary local assignments and helper calls, keep the type and
+  value in ONE annotated assignment. Do not split them into adjacent
+  declaration and assignment statements. With multiline types, keep
+  `] = value` or `) = value` together on the final type line whenever
+  it fits:
+
+  ```python
+  # GOOD - one static declaration + runtime assignment
+  broker: str = flume.mkt.broker
+  local_feed: Feed = copy(feed)
+  broker2bstreams: dict[
+      str,
+      BroadcastReceiver,
+  ] = {}
+
+  # BAD - avoid splitting ordinary assignments
+  broker2bstreams: dict[
+      str,
+      BroadcastReceiver,
+  ]
+  broker2bstreams = {}
+  ```
+
 - No whitespace in union-style type annotations:
   `str|None` not `str | None`.
 - When a union expression exceeds 69 chars, use
