@@ -24,6 +24,7 @@ generalized for cross-repo deployment.
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
 | `run-tests` | Shared test workflow with repository-owned harness guidance |
+| `test-design` | Failure models, deterministic test design, and authored regressions |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
 | `opencode-cleaning` | Safely preview and remove stale OpenCode forks |
