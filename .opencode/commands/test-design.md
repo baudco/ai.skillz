@@ -1,0 +1,1 @@
+../../providers/opencode/commands/test-design.md

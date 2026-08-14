@@ -68,6 +68,8 @@ bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
 bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
+`/test-design` is optional and owns detailed test-adequacy analysis and
+authored regression coverage. Its required dependency is `/run-tests`.
 `/run-tests` is optional and owns runtime test execution. Deploy it when a
 review should be able to confirm findings with project-specific tests.
 `/py-codestyle` is optional and, when deployed by the target repository, owns

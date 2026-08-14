@@ -21,6 +21,22 @@ workflow plus repository-owned harness instructions.
 Never assume that a command, package name, test layout, backend, fixture, or
 known failure from another repository applies here.
 
+## Ownership Boundary
+
+`/run-tests` owns repository environment discovery, command construction,
+executable scope resolution, backend and environment matrices, timeouts,
+execution, runtime diagnosis, result classification, and cleanup.
+
+It does not design new tests or decide whether an authored test adequately
+proves a failure model. `/test-design` owns failure models, proof obligations,
+test-layer choice, deterministic orchestration, mock justification, authored
+regressions, and proof gaps. When `/test-design` supplies a proof obligation,
+selected layer, and required boundaries, retain them while resolving a
+repository-supported executable scope.
+
+`/run-tests` remains independently usable and must not invoke or require
+`/test-design`.
+
 ## 1. Establish Repository Context
 
 Use `git rev-parse --show-toplevel` when Git is available. Also inspect
@@ -60,6 +76,11 @@ Determine:
 - whether the user wants execution, collection only, failure inspection,
   or hang diagnosis;
 - whether recent changes imply a smaller first-pass subset.
+
+A proof obligation, selected layer, or required boundary is not itself a
+runnable command. Preserve each while resolving the smallest
+repository-supported executable scope. Report when the harness cannot execute
+the required boundary.
 
 Preserve explicit user flags. Do not silently broaden a targeted request or
 run every expensive backend when one was named.
@@ -105,6 +126,10 @@ Prefer a targeted progression:
 2. tests directly mapped to the changed code;
 3. related integration/backend coverage;
 4. the full suite only when requested or warranted.
+
+This progression chooses execution order, not test adequacy. Do not replace a
+`/test-design` proof obligation with a cheaper layer merely because it runs
+first.
 
 Do not invent flags from a shared runtime plugin. A project may rename,
 override, or conflict with plugin options; the local reference owns the
