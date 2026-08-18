@@ -128,6 +128,19 @@ for that shell. Never emit an unlabelled fence or hardcode POSIX syntax for a
 different shell. If `$SHELL` is unavailable or unknown, ask which shell to
 target before returning the plan.
 
+Never assume the user's shell is already in the repository or worktree being
+planned. The first command in the fence must change directory to the exact
+absolute root returned by `git rev-parse --show-toplevel`. Render it as a
+standalone shell-correct command, quoting the path when required; do not chain
+it to the first staging command. When a plan intentionally spans repositories
+or worktrees, emit another explicit directory-change command before each
+boundary whose root differs.
+
+Immediately before the command fence, state the exact repository/worktree
+root and checked-out branch where the sequence applies. This is especially
+important for linked worktrees whose branch and path differ from the caller's
+original working directory.
+
 The command block must include, in execution order:
 
 - exact staging and unstaging commands for every boundary;
@@ -161,6 +174,7 @@ Before returning a finished plan, verify:
 - exact-boundary checks and their outcomes are recorded;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
+- the command block starts in the exact absolute repository/worktree root;
 - every commit command includes `--edit`;
 - every commit command is immediately preceded by `git diff --staged`;
 - every non-final commit command is followed by exactly one blank line, while
@@ -173,9 +187,10 @@ as ready.
 
 ## 8. Report
 
-List each commit in order with its subject and scope, then provide the one
-shell-specific command block. Mention excluded changes, checks already run,
-checks that remain for execution time, and the restored index state.
+State the exact repository/worktree root and branch first. List each commit in
+order with its subject and scope, then provide the one shell-specific command
+block. Mention excluded changes, checks already run, checks that remain for
+execution time, and the restored index state.
 
 Do not repeat full commit-message bodies in chat unless the human requests
 them. The archived files are the reviewable source for each message.
