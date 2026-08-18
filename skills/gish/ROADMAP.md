@@ -21,7 +21,8 @@ generate *content* and `gish` handles *sync*.
 - Local markdown files as canonical source
   (`<backend>/<num>.md`)
 - GitHub backend via `gh` CLI (full support)
-- Gitea backend via `py-gitea` xontrib (issues)
+- Gitea backend via `py-gitea` xontrib (issues, PR create/body edit,
+  review publication, and normalized review-comment reads)
 - Backend detection from `git remote -v`
 - Read/edit/create/sync/list operations
 - Symlink-able into any repo
@@ -46,8 +47,10 @@ AI skills talk directly to GitHub via `gh api`.
 No abstraction for other services. Review
 comments are posted immediately with no local
 file trail. The `gish` local-file-first model
-would solve all of this but `gish` doesn't have
-review-comment operations yet.
+would solve all of this. The xontrib can already
+publish reviews and emit normalized review comments,
+but it does not yet persist structured review files
+or post/update replies from them.
 
 ---
 
@@ -181,8 +184,11 @@ Check CI/check-run status for a commit.
 
 ### `gish pr <backend> <num>`
 
-Full PR lifecycle: view, create, edit body.
-Currently a TODO stub in the xontrib.
+Normalize the existing PR lifecycle across the xontrib and standalone
+skill interfaces. The xontrib already creates PRs with `gish pr
+<head> [base]` and edits bodies with `gish pr edit <num> --body-file
+<file>` on GitHub and Gitea. A normalized view command and explicit
+`gish sync` surface remain future work.
 
 ### `gish pr clean <backend> [stack-tip]`
 
