@@ -320,8 +320,8 @@ installed and authenticated. No special env needed.
 When the gitea env is unavailable, write files locally
 and instruct the user how to sync:
 ```
-gish <num>        # from xonsh with gish loaded
-gish gitea <num>  # explicit backend
+gish <num>        # edit an issue through the default backend
+gish gitea <num>  # edit an issue through the gitea remote
 ```
 
 ## Symlink setup
@@ -341,15 +341,19 @@ The `gish` xontrib (`modden/xontrib/gish.xsh`)
 currently supports:
 - **issue body edit** — full read/edit/sync cycle
 - **issue create** — interactive title + body
+- **PR create** — `gish pr <head> [base]`
+- **PR body edit** — `gish pr edit <num>
+  --body-file <file>`
+- **PR review publication** — `gish review <num>
+  --body-file <file>`
+- **PR review-comment read** — `gish review-comments
+  <num>` emits normalized JSON
 - **remote detection** — `parse_remotes()` for
   multi-service repos
 
 **Not yet implemented** (future work):
 - `gish comment <num>` — append/edit comments
-- `gish pr <num>` — PR-specific operations
 - `gish sync <num>` — explicit pull/push sync
-- `gish review <be> <num>` — fetch PR review
-  comments to local file (for AI skill consumption)
 - `gish reply <be> <num>` — post review replies
   from local file to remote service
 - `gish ci <be> <sha>` — check CI status
@@ -359,9 +363,13 @@ currently supports:
 See [ROADMAP.md](ROADMAP.md) for the full phased
 plan covering AI skill integration.
 
-For operations beyond what `gish.xsh` supports,
-fall back to the `gh` CLI directly for GitHub, or
-instruct the user for other backends.
+The normalized `/gish sync` skill workflow is distinct from the
+xontrib CLI. For Gitea PR body updates it delegates to `gish pr edit`,
+whose `update_pr()` backend uses the repository-scoped pull-request
+API; it is not a direct-provider fallback.
+
+For operations beyond what `gish.xsh` supports, fall back to the `gh`
+CLI directly for GitHub, or instruct the user for other backends.
 
 The skill-level `review-post` adapter is an exception to that generic
 fallback: it has its own human-verification and immutable-input contract and
