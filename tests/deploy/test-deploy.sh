@@ -106,6 +106,7 @@ prepare_source_repo() {
     cp "$ROOT/skills/commit-msg/SKILL.md" \
         "$SOURCE_WORK/skills/commit-msg/SKILL.md"
     cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/code-location-refs" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/commit-plan" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/gish" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/git-mgmt" "$SOURCE_WORK/skills/"
@@ -130,7 +131,8 @@ prepare_source_repo() {
     done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
-        providers/opencode/commands skills/code-review skills/commit-plan \
+        providers/opencode/commands skills/code-location-refs \
+        skills/code-review skills/commit-plan \
         skills/gish skills/git-mgmt \
         skills/harness-perf \
         skills/opencode-cleaning \
@@ -1624,7 +1626,7 @@ test_all_templates_invalid_args_and_idempotence() {
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
     assert_contains "$output" \
-        'Result: 40 deployed, 0 template skipped, 16 command deployment(s)'
+        'Result: 42 deployed, 0 template skipped, 16 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     local command

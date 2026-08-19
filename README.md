@@ -21,6 +21,7 @@ generalized for cross-repo deployment.
 | `commit-plan` | Multi-commit orchestration using `commit-msg` messages |
 | `pr-msg` | PR description generation |
 | `code-review` | Read-only, Python-focused review with structured findings |
+| `code-location-refs` | Editor-jumpable repository file and line citations |
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
 | `run-tests` | Shared test workflow with repository-owned harness guidance |
