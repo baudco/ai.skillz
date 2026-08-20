@@ -7,7 +7,7 @@ description: >
 compatibility: Works with any harness that emits Markdown.
 metadata:
   author: goodboy
-  version: "0.1"
+  version: "0.2"
 ---
 
 # Code Location References
@@ -24,12 +24,20 @@ path/to/file.py:42-57
 path/to/file.py:42:8
 ```
 
-Use a repository-relative path by default. When citing another repository,
-prefix the path with that repository's checkout basename:
+Use a path relative to the active Git worktree root by default. Establish that
+root with `git rev-parse --show-toplevel` and verify that the rendered path
+exists beneath it.
+
+When citing a file in another worktree or repository checkout, use its
+absolute path:
 
 ```text
-other-repo/path/to/file.py:42-57
+/absolute/path/to/other-worktree/path/to/file.py:42-57
 ```
+
+Do not emit a path merely because it was relative to a tool call's temporary
+working directory. A relative citation must resolve from the active worktree
+root used by the human's editor.
 
 Place sentence punctuation outside the closing backtick. Keep a single
 location in each span so cursor-based navigation is unambiguous.
@@ -37,6 +45,10 @@ location in each span so cursor-based navigation is unambiguous.
 ## Accuracy
 
 - Cite only paths and line numbers verified from the current checkout.
+- Verify relative citations from the active worktree root, not from an
+  incidental command or file-reading directory.
+- Use an absolute path when the verified file is outside that active
+  worktree, even when it belongs to another worktree of the same repository.
 - Use the first substantive line for a single-location citation.
 - Use an inclusive range when the explanation depends on a whole section.
 - Prefer the narrowest range that supports the claim.
@@ -46,6 +58,9 @@ location in each span so cursor-based navigation is unambiguous.
 
 ## Portability
 
-The colon forms intentionally work as plain text, with Neovim `gF`, and with
-navigation plugins that add repository-aware resolution. Do not substitute
-web-only `#L42` fragments unless the user specifically requests forge URLs.
+The colon forms intentionally work as plain text, with Neovim `gF` for paths
+without whitespace, and with navigation plugins that add repository-aware
+resolution. Backtick-aware navigation is required when a path contains
+whitespace. Absolute paths are machine-local but preserve correctness for
+cross-worktree citations. Do not substitute web-only `#L42` fragments unless
+the user specifically requests forge URLs.
