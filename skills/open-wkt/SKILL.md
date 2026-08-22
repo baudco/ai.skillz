@@ -91,6 +91,14 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    parent which is a symlink, is not a directory, or canonicalizes outside the
    repository root. Create the real root-level parent only after validation.
 
+   Before creating a new branch or worktree, invoke `/git-mgmt`'s local
+   existing-work discovery gate with the requested semantic name, start point,
+   and known affected paths or issue/PR identifiers. This inspection authorizes
+   no network access or mutation. If `/git-mgmt` is unavailable, or equivalent
+   work is found, stop before acquiring the creation guard. Re-entry, recovery,
+   takeover and legacy migration of an already registered worktree do not
+   create new implementation work and skip this creation-only gate.
+
 1. **Validate name**: ensure `<name>` is snake_case,
    no spaces, no leading dots/dashes.
 

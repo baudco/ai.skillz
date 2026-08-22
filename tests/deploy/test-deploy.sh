@@ -43,6 +43,14 @@ assert_fails() {
     fi
 }
 
+deploy_commit_msg_dependencies() {
+    local target="$1" provider="${2:-claude}"
+    bash "$DEPLOY" resolve-conflicts "$target" \
+        --provider "$provider" >/dev/null
+    bash "$DEPLOY" git-mgmt "$target" \
+        --provider "$provider" >/dev/null
+}
+
 new_repo() {
     local name="$1"
     REPO="$TMP_ROOT/$name"
@@ -161,6 +169,7 @@ test_local_anchor_and_anchor_authority() {
     bash "$DEPLOY" py-codestyle "$REPO" --provider all >/dev/null
     grep -q anchor-specific "$REPO/.opencode/skills/py-codestyle/SKILL.md" \
         || fail 'anchored skill did not resolve through target anchor'
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
         --no-command >/dev/null
     printf '\nanchor-command\n' >> "$alternate/providers/opencode/commands/commit-msg.md"
@@ -286,6 +295,7 @@ test_submodule_init_boundaries() {
 test_phase0_and_global_compatibility() {
     new_repo phase0
     local output staged_names
+    deploy_commit_msg_dependencies "$REPO" claude
     bash "$DEPLOY" commit-msg "$REPO" >/dev/null
     bash "$DEPLOY" py-codestyle "$REPO" --provider opencode --method symlink >/dev/null
     [ "$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")" = \
@@ -432,6 +442,7 @@ test_exact_staging_and_index_preservation() {
     unrelated_before="$(index_entry "$REPO" unrelated.txt)"
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     printf 'unstaged-ignore-user-line\n' >> "$REPO/.gitignore"
+    deploy_commit_msg_dependencies "$REPO" all
     bash "$DEPLOY" commit-msg "$REPO" --provider all --stage >/dev/null
     assert_eq "$(index_entry "$REPO" .claude/skills/commit-msg/msgs/state.md)" "$runtime_before"
     assert_eq "$(index_entry "$REPO" unrelated.txt)" "$unrelated_before"
@@ -459,6 +470,7 @@ test_managed_replacement_safety() {
     assert_fails bash "$DEPLOY" py-codestyle "$REPO"
     assert_eq "$(readlink "$REPO/.claude/skills/py-codestyle")" "$REPO/unmanaged"
 
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
         --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
@@ -467,6 +479,7 @@ test_managed_replacement_safety() {
     assert_eq "$(<"$REPO/.opencode/commands/commit-msg.md")" 'user command'
 
     new_repo recognized-command-copy
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
         --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
@@ -491,6 +504,7 @@ test_managed_replacement_safety() {
     mkdir -p "$REPO/.ai"
     ln -s "$history_source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
         --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
@@ -584,7 +598,7 @@ test_external_provider_parent_refusal() {
     mkdir -p "$REPO/config/claude"
     ln -s config/claude "$REPO/.claude"
     target_before="$(tree_digest "$REPO")"
-    assert_fails bash "$DEPLOY" commit-msg "$REPO" --provider claude
+    assert_fails bash "$DEPLOY" py-codestyle "$REPO" --provider claude
     assert_contains "$(<"$TMP_ROOT/failure.out")" \
         'refusing symlinked provider parent'
     assert_eq "$(tree_digest "$REPO")" "$target_before"
@@ -593,10 +607,12 @@ test_external_provider_parent_refusal() {
 
 test_direct_opencode_with_existing_claude_and_config() {
     new_repo direct-both-existing
+    deploy_commit_msg_dependencies "$REPO" claude
     bash "$DEPLOY" commit-msg "$REPO" >/dev/null
     printf claude-state > "$REPO/.claude/skills/commit-msg/local-state.txt"
     local claude_link config_before output
     claude_link="$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode --method symlink >/dev/null
     assert_eq "$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")" "$claude_link"
     assert_eq "$(<"$REPO/.claude/skills/commit-msg/local-state.txt")" claude-state
@@ -645,6 +661,7 @@ test_runtime_ignores_and_state_preservation() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     mkdir -p "$REPO/.claude/skills/commit-msg/msgs"
     printf keep > "$REPO/.claude/skills/commit-msg/msgs/old.md"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     assert_eq "$(<"$REPO/.claude/skills/commit-msg/msgs/old.md")" keep
     assert_file_contains "$REPO/.gitignore" '.claude/skills/commit-msg/msgs/'
@@ -661,6 +678,7 @@ test_runtime_ignores_and_state_preservation() {
     local legacy_skill="$TMP_ROOT/runtime-legacy-commit-msg"
     mkdir -p "$legacy_skill" "$REPO/.claude/skills"
     ln -s "$legacy_skill" "$REPO/.claude/skills/commit-msg"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     local output
     output="$(bash "$DEPLOY" status "$REPO" --provider opencode 2>&1)"
@@ -796,6 +814,7 @@ test_command_dependency_all_and_hooks() {
     assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'dependency skill commit-msg missing or unhealthy'
     rm "$REPO/.opencode/commands/commit-msg.md"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     local output
     output="$(bash "$DEPLOY" command commit-msg "$REPO" --provider all)"
@@ -1097,6 +1116,7 @@ test_gitignore_integrity_and_inventory() {
 
 test_direct_migration_dry_run() {
     new_repo direct-migration
+    deploy_commit_msg_dependencies "$REPO" all
     bash "$DEPLOY" commit-msg "$REPO" --provider all >/dev/null
     bash "$DEPLOY" command branch-in-new-terminal "$REPO" >/dev/null
     mkdir -p "$REPO/.opencode"
@@ -1301,6 +1321,7 @@ test_migration_full_preflight_zero_mutation() {
 
 test_tracked_command_copy_transition() {
     new_repo tracked-command-copy
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
         --method symlink --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
@@ -1328,6 +1349,7 @@ test_migration_preserves_managed_command_link() {
     mkdir -p "$REPO/.ai"
     ln -s "$source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     local initial_digest dry
@@ -1476,6 +1498,7 @@ test_command_link_modes_and_updates() {
     mkdir -p "$REPO/.ai"
     ln -s "$update_source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     assert_eq "$(readlink "$REPO/.opencode/commands/commit-msg.md")" \
@@ -1800,8 +1823,22 @@ test_commit_plan_contract() {
         '**"COMMIT PLAN" compatibility redirect**'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'atomically restore the saved'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        "invoke \`/git-mgmt\`'s local existing-work"
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        "invoke \`/git-mgmt\`'s local"
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'git -C <registered-worktree> diff --cached --name-only'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        "git log --all --format='%H%x09%s%x09%D'"
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Do not propose, mention or ask about a'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'behavior already present at'
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
         'provider-neutral `/commit-plan` skill'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        "invoke \`/git-mgmt\`'s local"
     assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
         'without re-entering the compatibility redirect'
     new_repo commit-plan-dependency
@@ -1810,6 +1847,11 @@ test_commit_plan_contract() {
         --provider opencode
     assert_file_contains "$TMP_ROOT/failure.out" \
         "requires healthy opencode skill 'commit-msg'"
+    assert_fails bash "$DEPLOY" commit-msg "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'git-mgmt'"
+    bash "$DEPLOY" resolve-conflicts "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" git-mgmt "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-plan "$REPO" \
@@ -1824,16 +1866,18 @@ test_commit_plan_contract() {
     local home="$TMP_ROOT/commit-plan-global-home"
     mkdir -p "$home"
     assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
+    env HOME="$home" bash "$DEPLOY" resolve-conflicts --global >/dev/null
+    env HOME="$home" bash "$DEPLOY" git-mgmt --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
     local cycle="$TMP_ROOT/commit-plan-cycle"
     cp -a "$SOURCE_WORK" "$cycle"
-    sed -i 's#skill|commit-msg|hybrid|SKILL.md#skill|commit-msg|hybrid|SKILL.md|commit-plan#' \
+    sed -i 's#skill|commit-msg|hybrid|SKILL.md|git-mgmt#skill|commit-msg|hybrid|SKILL.md|git-mgmt,commit-plan#' \
         "$cycle/deploy-manifest.conf"
     assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
     assert_file_contains "$TMP_ROOT/failure.out" \
         'skill dependency cycle includes'
-    pass 'commit-plan composes with commit-msg without recursive ownership'
+    pass 'commit-plan composes with commit-msg and git-mgmt safely'
 }
 
 test_opencode_debug_if_available() {

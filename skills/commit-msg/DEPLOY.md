@@ -12,6 +12,10 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # Or portable, version-pinned anchor.
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
+bash /path/to/ai.skillz/scripts/deploy.sh resolve-conflicts <repo> \
+  --provider <claude|opencode|all>
+bash /path/to/ai.skillz/scripts/deploy.sh git-mgmt <repo> \
+  --provider <claude|opencode|all>
 bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
   --provider <claude|opencode|all>
 ```
@@ -21,6 +25,10 @@ Deployment creates hybrid directories at `.claude/skills/commit-msg/` and/or
 links; submodule mode uses trackable relative links through `.ai/ai.skillz`.
 It does not replace either directory, so existing local files survive
 migration and redeployment.
+
+`commit-msg` requires `git-mgmt` for its local existing-work commit-time
+backstop. Deployment stops rather than generating commit guidance without the
+gate; the manifest also installs `git-mgmt`'s `resolve-conflicts` dependency.
 
 The workflow's persisted runtime contract remains under `.claude/`:
 
