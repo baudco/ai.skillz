@@ -1847,18 +1847,10 @@ test_commit_plan_contract() {
         'lightweight structural boundary checks and their outcomes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'project checks are recorded as pending unless pre-executed'
-    local commit_plan_text
-    local commit_msg_text
-    commit_plan_text="$(<"$ROOT/skills/commit-plan/SKILL.md")"
-    commit_msg_text="$(<"$ROOT/skills/commit-msg/SKILL.md")"
-    assert_not_contains "$commit_plan_text" '/git-mgmt'
-    assert_not_contains "$commit_plan_text" 'receipt'
-    assert_not_contains "$commit_plan_text" 'active-task'
-    assert_not_contains "$commit_plan_text" 'discovery'
-    assert_not_contains "$commit_msg_text" '/git-mgmt'
-    assert_not_contains "$commit_msg_text" 'receipt'
-    assert_not_contains "$commit_msg_text" 'active-task'
-    assert_not_contains "$commit_msg_text" 'discovery'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        "invoke \`/git-mgmt\`'s local existing-work"
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        "invoke \`/git-mgmt\`'s local"
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         "use \`/git-mgmt\`'s exact-key policy lookup"
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
@@ -1948,6 +1940,11 @@ test_commit_plan_contract() {
         --provider opencode
     assert_file_contains "$TMP_ROOT/failure.out" \
         "requires healthy opencode skill 'commit-msg'"
+    assert_fails bash "$DEPLOY" commit-msg "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'git-mgmt'"
+    bash "$DEPLOY" resolve-conflicts "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" git-mgmt "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-plan "$REPO" \
@@ -1962,16 +1959,18 @@ test_commit_plan_contract() {
     local home="$TMP_ROOT/commit-plan-global-home"
     mkdir -p "$home"
     assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
+    env HOME="$home" bash "$DEPLOY" resolve-conflicts --global >/dev/null
+    env HOME="$home" bash "$DEPLOY" git-mgmt --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
     local cycle="$TMP_ROOT/commit-plan-cycle"
     cp -a "$SOURCE_WORK" "$cycle"
-    sed -i 's#skill|commit-msg|hybrid|SKILL.md$#skill|commit-msg|hybrid|SKILL.md|commit-plan#' \
+    sed -i 's#skill|commit-msg|hybrid|SKILL.md|git-mgmt#skill|commit-msg|hybrid|SKILL.md|git-mgmt,commit-plan#' \
         "$cycle/deploy-manifest.conf"
     assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
     assert_file_contains "$TMP_ROOT/failure.out" \
         'skill dependency cycle includes'
-    pass 'commit-plan composes with commit-msg without project pre-checks'
+    pass 'commit-plan composes with commit-msg and git-mgmt safely'
 }
 
 test_opencode_debug_if_available() {

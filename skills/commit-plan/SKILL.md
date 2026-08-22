@@ -45,6 +45,13 @@ If a trusted deployed `commit-msg` skill is unavailable, stop and give the
 canonical deployment command. Never invent or copy another repository's
 message conventions.
 
+Before materializing boundaries, invoke `/git-mgmt`'s local existing-work
+discovery gate using the changed paths, task terms, and issue/PR identifiers.
+Repeat its commit-time backstop when scope changed or another worktree may have
+advanced. This is read-only and authorizes no network access or Git mutation.
+If `/git-mgmt` is unavailable or equivalent work is found, preserve the index
+and stop before returning executable commit commands.
+
 ## 2. Interpret The Request
 
 The literal phrase **"commit plan"** (case-insensitive), a request to split
