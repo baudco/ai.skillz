@@ -1,5 +1,5 @@
 ---
-name: code-location-refs
+name: code-nav-refs
 description: >
   Format repository code locations as editor-jumpable Markdown references.
   Use when a response cites source files, definitions, diagnostics, tests, or
@@ -10,7 +10,7 @@ metadata:
   version: "0.2"
 ---
 
-# Code Location References
+# Code Navigation References
 
 Make source citations directly navigable without sacrificing readable prose.
 

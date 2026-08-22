@@ -1,4 +1,4 @@
-# Deploying `code-location-refs`
+# Deploying `code-nav-refs`
 
 This is a provider-neutral, generic whole-directory skill. It creates no
 runtime state and requires no provider-specific command.
@@ -9,12 +9,12 @@ runtime state and requires no provider-specific command.
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # or use the portable method: --method submodule
 
-bash /path/to/ai.skillz/scripts/deploy.sh code-location-refs <repo> \
+bash /path/to/ai.skillz/scripts/deploy.sh code-nav-refs <repo> \
   --provider <claude|opencode|all>
 ```
 
-Provider destinations are `.claude/skills/code-location-refs` and
-`.opencode/skills/code-location-refs`. Local mode uses ignored absolute links;
+Provider destinations are `.claude/skills/code-nav-refs` and
+`.opencode/skills/code-nav-refs`. Local mode uses ignored absolute links;
 submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
 Nothing is staged unless `--stage` is explicitly supplied. Quit and restart
