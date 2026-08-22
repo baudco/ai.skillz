@@ -11,6 +11,10 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # Or portable, version-pinned source anchor.
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
+bash /path/to/ai.skillz/scripts/deploy.sh resolve-conflicts <repo> \
+  --provider <claude|opencode|all>
+bash /path/to/ai.skillz/scripts/deploy.sh git-mgmt <repo> \
+  --provider <claude|opencode|all>
 bash /path/to/ai.skillz/scripts/deploy.sh open-wkt <repo> \
   --provider <claude|opencode|all>
 ```
@@ -68,6 +72,7 @@ local anchors follow updates to their source checkout.
 ## Prerequisites
 
 - `git` CLI
+- Deployed `/git-mgmt` skill for local existing-work discovery
 - Optional: `uv` (for `--fixturize` venv creation)
 
 ## Companion skill

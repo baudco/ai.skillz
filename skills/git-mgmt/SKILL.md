@@ -1,10 +1,11 @@
 ---
 name: git-mgmt
 description: >
-  Manage Git branches, worktrees, stacked PRs, divergence, rebases,
-  restacks, pushes, and other history-changing operations safely. Use when
-  inspecting or changing branch relationships, especially when stacked
-  branches may be operated on concurrently.
+  Discover existing branch/worktree implementations before substantial work,
+  then manage Git branches, stacked PRs, divergence, rebases, restacks,
+  pushes, and other history-changing operations safely. Use before starting
+  branch-bound implementation or committing it, and whenever inspecting or
+  changing branch relationships.
 compatibility: >
   Requires git CLI. Fresh forge inspection prefers the provider-neutral gish
   adapter, with explicit direct-provider or local-only fallbacks. Conflict
@@ -61,7 +62,134 @@ Mutation includes:
 Authorization is operation-specific. A request to inspect, review, plan,
 choose a likely base, or explain divergence does not authorize mutation.
 
-## 2. Stacked-branch coordination rule
+## 2. Existing-work discovery gate
+
+Run this gate before substantial branch-bound implementation, creating a new
+worktree or branch for it, or committing it. "Substantial" includes multi-file
+changes, a named feature/fix/migration, issue or PR work, and any task likely
+to have been attempted in another session. Tiny isolated edits do not require
+an exhaustive search.
+
+The purpose is to find prior local work before duplicating it. This is a
+read-only inspection and does not authorize switching branches, taking over a
+worktree, rewriting history, or fetching from a forge.
+
+### Search local work
+
+Establish the current repository state:
+
+```text
+git status --short --branch
+git worktree list --porcelain
+git branch --all
+```
+
+Record the active worktree's absolute path, branch and task-start HEAD when the
+gate first runs. Its dirty/staged changes and commits created after that marker
+are the implementation being checked, not duplicate work. Do not blanket-exempt
+older commits reachable from the active branch: behavior already present at
+task-start HEAD is existing work and must remain discoverable. If the gate first
+runs at commit time, treat only the current staged/dirty delta as the active
+implementation and inspect all HEAD history for prior equivalents. If the same
+commit is shared by several refs, report the ref relationship without treating
+identical history as multiple implementations.
+
+Before filtering candidates by topic, inspect every registered worktree from
+the porcelain list. This catches uncommitted implementations whose branch and
+commit names are generic:
+
+```text
+git -C <registered-worktree> status --short --branch
+git -C <registered-worktree> diff --name-only
+git -C <registered-worktree> diff --cached --name-only
+```
+
+Treat these as read-only path inventories. Do not read unrelated file contents
+unless a path or topic match makes that worktree a plausible candidate.
+
+Derive two or three distinctive search terms from the user's wording, issue
+or PR number, affected symbol, and intended behavior. Search both commit
+subjects and branch names:
+
+```text
+git log --all --format='%H%x09%s%x09%D'
+git for-each-ref --format='%(refname:short)' refs/heads refs/remotes
+```
+
+Compare the emitted subjects, decorations and ref names to each search term as
+literal text in the agent, not in the shell. Never interpolate user-derived
+text into command strings, shell assignments, globs, regular expressions,
+refspecs, revision expressions, or path options. If output volume requires a
+narrower command, derive the restriction only from already validated Git OIDs
+or repository paths, not raw user text.
+
+When likely affected paths are known, inspect their history across every
+local ref:
+
+```text
+git log --all --oneline -- <affected-paths...>
+```
+
+For each plausible candidate outside the task's active delta, establish where
+it lives and what it changes:
+
+```text
+git branch --all --contains <candidate-sha>
+git show --stat --oneline <candidate-sha>
+git diff-tree --no-commit-id --name-status -r <candidate-sha>
+```
+
+Use a three-dot candidate range only when a base is locally evidenced by
+explicit task context, branch configuration, or already verified forge
+metadata. Record that evidence and the exact range. Never guess the default
+branch, current branch, upstream, fork point, or PR base. When no base is
+authoritative, report it as unresolved and use the base-independent commit and
+dirty-path inspection above.
+
+If `git worktree list --porcelain` maps the candidate branch to another
+worktree, inspect that worktree's status without mutating it:
+
+```text
+git -C <candidate-worktree> status --short --branch
+git -C <candidate-worktree> diff --stat
+```
+
+Do not inspect arbitrary sibling repositories or fetch remote refs as part of
+this default gate. Expand beyond the current repository only when the user
+identifies another repository or separately authorizes forge/network access.
+
+### Decide before editing
+
+Classify discovered work before implementation:
+
+- **same task, complete or in progress**: stop duplicate implementation and
+  report the branch, worktree, commit and dirty state;
+- **same task, stale but reusable**: report the reusable branch, worktree,
+  commit, ownership and dirty state. Do not propose, mention or ask about a
+  rebase/restack unless the current prompt explicitly requested that operation;
+- **related dependency**: record the relationship and choose an explicit
+  stack/base rather than silently copying it;
+- **superseded or abandoned**: explain the evidence before starting fresh;
+- **no relevant work found**: proceed and state which local searches were
+  performed.
+
+A matching branch name alone is not proof. Read its diff or commit before
+deciding. Likewise, absence from commit history does not prove absence when a
+dirty candidate worktree exists.
+
+### Commit-time backstop
+
+Before creating a commit, repeat the topic and affected-path searches when:
+
+- this gate was not run earlier in the session;
+- the implementation scope or affected paths changed materially; or
+- another session/worktree may have advanced while the task was underway.
+
+If equivalent work is found at this point, stop before committing. Preserve
+the current index and worktree, report both implementations, and let the human
+choose whether to reuse, combine or discard either side.
+
+## 3. Stacked-branch coordination rule
 
 For stacked branches and PRs, assume every layer may be operated on
 concurrently unless the user says otherwise.
@@ -88,7 +216,7 @@ When a stacked base changes, report the exact old and new refs as facts. Keep
 working on non-history-mutating tasks when possible. If progress is blocked,
 state the blocker and leave branch coordination to the human.
 
-## 3. Refresh authoritative state
+## 4. Refresh authoritative state
 
 Do not infer current PR relationships from branch names or stale conversation
 context.
@@ -149,7 +277,7 @@ explicitly requested local or prospective inspection.
 Remote-tracking refs are cached observations. Never call them current merely
 because their names match the forge branches.
 
-## 4. Worktree and branch ownership
+## 5. Worktree and branch ownership
 
 Before any explicitly requested history mutation, inspect:
 
@@ -174,7 +302,7 @@ Never switch, reset, delete or rewrite a branch checked out in another
 worktree. Use its ref for read-only comparisons and let its owning worktree or
 human coordinate mutations.
 
-## 5. Explicit mutation authorization
+## 6. Explicit mutation authorization
 
 Require the requested verb and target to be unambiguous.
 
@@ -199,7 +327,7 @@ A rebase request does not authorize a push. A push request does not authorize
 a force-push. A conflict-resolution request does not authorize staging or
 continuing unless the active conflict workflow explicitly allows it.
 
-## 6. Rebase and restack protocol
+## 7. Rebase and restack protocol
 
 Apply this section only after explicit authorization.
 
@@ -222,7 +350,7 @@ operation and preserved state. Aborting is a separate mutation: require an
 explicit current-prompt request to abort before doing so, then verify
 restoration of the original head, index, and worktree.
 
-## 7. Commit, push and forge boundaries
+## 8. Commit, push and forge boundaries
 
 Treat these as separate human decisions:
 
@@ -238,7 +366,7 @@ Do not chain them merely because one preceding action was approved. In stacked
 workflows, batching PR messages and review links after the stack settles often
 avoids stale hashes, but the human owns when that stable point has arrived.
 
-## 8. Communication contract
+## 9. Communication contract
 
 Use precise state language:
 
