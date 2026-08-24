@@ -1824,9 +1824,9 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'atomically restore the saved'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        "invoke \`/git-mgmt\`'s local existing-work"
+        'read the fixed active-task'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
-        "invoke \`/git-mgmt\`'s local"
+        "use \`/git-mgmt\`'s exact-key policy lookup"
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'git -C <registered-worktree> diff --cached --name-only'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
@@ -1838,9 +1838,59 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'Potential concurrency by itself is not an invalidation signal.'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Present **No** as'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        '"scan_policy": "approved"'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'active-task.json'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Never list the receipt directory'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'prior work directly approves the scan'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Tiny isolated edits and continuations neither ask'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Policy survives content/index changes'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'null-write-republish sequence'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        '--recover-discovery-guard <writer-token>'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'A missing or declined policy permits'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'null` remains pending'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'never ask about or initiate'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Every creation or mutation of `extensions.commit-plan`'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'generation never asks about or'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'declined, corrupt or approved-but-pending policy'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'permits creation without discovery.'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'approved pending'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'pointer remains'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'pointer first with `receipt_sha256: null`'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'interrupted rebuild stops before implementation'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'Approved evidence must already cover'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'inspect `active-task.json` before switching'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'never reevaluate `HEAD` later'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'Reject `--start-point`'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'neither ask nor initiate new discovery'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'discovery-receipts/<task-sha256>.json'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
-        'one receipt per repository root'
+        'receipt per repository root'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'point-in-time discovery plus'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1850,15 +1900,19 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'match boundaries in'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
-        'acquisition or transfer is independent'
+        'transfer is independent'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
-        'seed the new private Git directory'
+        'fixed active-task'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
-        'active implementation, never as an external candidate'
+        'classify the new worktree as'
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
         'provider-neutral `/commit-plan` skill'
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
-        "invoke \`/git-mgmt\`'s local"
+        'read the fixed'
+    assert_not_contains "$(<"$ROOT/skills/git-mgmt/SKILL.md")" \
+        'no matching valid receipt exists; run the full local search'
+    assert_not_contains "$(<"$ROOT/skills/commit-plan/SKILL.md")" \
+        'every invocation requires a full scan'
     assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
         'without re-entering the compatibility redirect'
     new_repo commit-plan-dependency

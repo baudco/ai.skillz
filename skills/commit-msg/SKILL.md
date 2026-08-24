@@ -137,13 +137,15 @@ When generating commit messages, always follow this process:
    (e.g. "generating commit msg for worktree
    `remote-exc-registry-tests`").
 
-   Before analyzing or writing a message, invoke `/git-mgmt`'s local
-   existing-work commit-time backstop using the staged paths, task terms, and
-   issue/PR identifiers. Use a matching discovery receipt's cheap unchanged
-   refresh instead of rescanning all refs/worktrees. This read-only inspection
-   authorizes no network access or Git mutation. If `/git-mgmt` is unavailable
-   or equivalent work exists on a distinct ref/worktree, preserve the index
-   and stop before generating the message.
+   Before analyzing or writing a message, use `/git-mgmt` to read the fixed
+   active-task pointer, validate it against the staged paths, task terms and
+   issue/PR identifiers, then read only its exact-key policy receipt.
+   Commit-message generation never asks about or initiates discovery. A
+   missing, mismatched, declined, corrupt or approved-but-pending policy
+   continues without a scan; an approved completed policy may use its cheap
+   unchanged refresh. This authorizes no network access or Git mutation. If
+   approved discovery found equivalent work on a distinct ref/worktree,
+   preserve the index and stop before generating the message.
 
    When `/commit-plan` already recorded this exact staged tree/patch and the
    archived message digest still matches, reuse that message. A root-path or
