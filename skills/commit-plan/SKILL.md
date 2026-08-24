@@ -105,11 +105,52 @@ Never use `git reset --hard`, `git clean`, automatic stash, checkout-based
 discard, or any command that overwrites worktree content. Preserve unrelated
 staged entries and user changes.
 
-If exact boundaries require partial-file staging, use deterministic cached
-patches or equivalent non-interactive index plumbing. Do not use an interactive
-patch console. Store any generated staging helper beneath the ignored
-`commit-msg/msgs/` runtime directory and reference it explicitly in the final
-command sequence.
+Generate deterministic cached patches and a per-boundary execution helper
+beneath the ignored `commit-msg/msgs/` runtime directory for every plan, not
+only partial-file boundaries. Do not use an interactive patch console. The
+helper must construct a private boundary index from the evidenced parent tree
+and apply the exact cached patch there; it must never depend on the user's
+current staged state. Reference it explicitly in the final command sequence.
+
+The helper must support idempotent `ensure` and `run -- <command>` operations:
+
+- recognize an already completed boundary from the recorded parent/tree chain,
+  print a concise skip notice and exit successfully;
+- otherwise require the evidenced parent relationship, recreate the private
+  index from that parent and apply/verify the recorded patch and staged tree;
+- execute `run` commands with `GIT_INDEX_FILE` naming that private index, so
+  unrelated staged entries remain outside the commit;
+- reject unexpected `HEAD`, parent, patch, tree or message-digest changes
+  instead of guessing, duplicating a commit or overwriting worktree content;
+- before invoking the editor, durably journal the boundary ID, expected
+  parent/tree, patch and message digests, helper writer token, pointer/receipt
+  digests, real-index path/digest and exact stage entries, and phase;
+- after a successful wrapped commit, verify its parent/tree and reconcile the
+  real index with a temporary three-way transition using the expected parent as
+  base, the committed tree as the new base and the execution-time real index as
+  user state. Atomically install it only if the real-index digest still matches;
+  preserve all non-boundary and non-overlapping staged changes and all worktree
+  content. On overlap or compare-and-swap failure, leave the real index bytes
+  untouched and report the required reconciliation instead of replacing whole
+  entries by path;
+- make interruption before, during or after the editor safe to rerun. A helper
+  rerun must either resume the same pending boundary or recognize its exact
+  committed tree; it must never create a second commit for it.
+
+The durable journal authorizes the helper to resume only its own matching
+pointer/receipt transaction under `/git-mgmt`'s writer-continuation rule. On
+rerun after `HEAD` advanced, classify before doing anything else:
+
+- expected parent and tree: finish index reconciliation, receipt publication
+  and completion recording, then return successful already-complete no-ops;
+- expected parent but a different committed tree, including hook-modified
+  private-index content: record `diverged-after-commit`, never commit again and
+  stop for replanning;
+- any unrelated parent/ancestry change: stop without staging or committing.
+
+Hook-modified or unrelated commits are necessary errors, not idempotent skips.
+Message-only editor or hook changes remain valid because completion is based on
+parent/tree relationships rather than the final commit OID or message text.
 
 ## 4. Materialize Every Boundary
 
@@ -123,7 +164,7 @@ the receipt and rendered commands.
 
 For each planned commit, in dependency order:
 
-1. Materialize that commit's exact boundary in the index.
+1. Materialize that commit's exact boundary in its private execution index.
 2. Run `git diff --cached --check`, statistics, and name/status inspection.
 3. Read the staged diff and apply `/commit-msg`'s normal analysis.
 4. Run required checks against the exact staged tree. When unstaged later
@@ -133,7 +174,7 @@ For each planned commit, in dependency order:
 6. Archive it beneath `.claude/skills/commit-msg/msgs/` using the
    `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
    timestamp and unchanged HEAD would otherwise produce a duplicate path.
-7. Record the exact staging transition needed after the preceding commit.
+7. Record the exact helper transition needed after the preceding commit.
 
 Do not defer message generation or tell the human to rerun `/commit-msg` after
 each commit. If any boundary cannot be safely materialized or verified, stop
@@ -179,7 +220,10 @@ digest, tree, staged paths, stage/debug metadata, and staged diff before
 presenting the plan. Remove the temporary index backup only after every check
 matches.
 
-Message archives and ignored cached patches may remain. Do not stage them
+Message archives, execution journals, private indexes and ignored cached
+patches may remain. Planning-time index backups are removed only after restore;
+execution-time journal/index snapshots remain until their boundary reaches a
+durable completed or explicitly divergent state. Do not stage runtime artifacts
 unless they are intended provenance files in a planned commit.
 
 ## 6. Render For The User's Shell
@@ -214,13 +258,23 @@ original working directory.
 
 The command block must include, in execution order:
 
-- exact staging and unstaging commands for every boundary;
+- each boundary helper's `ensure` command, independent of the current index;
 - staged whitespace, statistics, and path checks before every commit;
 - required lint and test commands;
 - `git diff --staged` immediately before every commit command so the human can
   review the exact staged patch at the final pre-commit gate;
 - `git commit --edit --file
   .claude/skills/commit-msg/msgs/<generated-file>` for every commit.
+
+Wrap every per-boundary check, review and commit command as
+`<boundary-helper> run -- <command>`. This keeps `git diff --staged` and the
+mandatory `git commit --edit --file ...` visible in the rendered sequence while
+running them against the exact private index. Do not render raw `git add`,
+`git restore --staged`, `git reset` or `git apply --cached` commands whose
+result depends on the caller's staged state. Every rendered line must succeed
+as a no-op when its boundary is already complete, so the full command block can
+be rerun after partial or complete execution without needless errors or
+duplicate commits.
 
 Use each archived message path directly. Never use
 `.claude/git_commit_msg_LATEST.md` in a multi-commit sequence because later
@@ -242,12 +296,16 @@ Before returning a finished plan, verify:
 - every changed path belongs to one planned commit or is explicitly excluded;
 - every commit has one archived message generated from its exact staged diff;
 - every boundary is atomic and ordered after its dependencies;
+- every boundary helper reconstructs and verifies its private index without
+  assuming the current staged state;
 - exact-boundary checks and their outcomes are recorded;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
 - the command block starts in the exact absolute repository/worktree root;
 - every commit command includes `--edit`;
 - every commit command is immediately preceded by `git diff --staged`;
+- every check, review and commit is helper-wrapped and the complete command
+  sequence is safe to rerun after any completed boundary;
 - every non-final commit command is followed by exactly one blank line, while
   the final commit has no required trailing blank line;
 - no command commits automatically before the editor opens;

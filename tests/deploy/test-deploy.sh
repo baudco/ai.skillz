@@ -1856,6 +1856,8 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         '--recover-discovery-guard <writer-token>'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'exact writer may resume its own interrupted transaction'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'A missing or declined policy permits'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'null` remains pending'
@@ -1899,6 +1901,24 @@ test_commit_plan_contract() {
         'cross-repository dependency'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'match boundaries in'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'must never depend on the user'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'idempotent `ensure` and `run -- <command>`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`GIT_INDEX_FILE` naming that private index'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'must never create a second commit'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'durably journal the boundary ID'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'temporary three-way transition'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'record `diverged-after-commit`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'full command block can'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Do not render raw `git add`'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         'transfer is independent'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \

@@ -350,6 +350,12 @@ the exact interrupted rename when its token and prior digest still match or
 remove only the unchanged guard. Any mismatch stops recovery; never overwrite
 a live writer or infer approval from recovery.
 
+An exact writer may resume its own interrupted transaction without that human
+recovery flow when a durable journal supplies the same task, target, prior
+digest, writer token and intended replacement digest. Re-read and compare every
+field before continuing the recorded next phase. This is owner continuation,
+not stale-guard takeover: any mismatch stops and requires explicit recovery.
+
 The worktree root is relocatable metadata. If all identity and content fields
 still match but the registered absolute path changed, update only the stored
 root and commands rendered from it. Worktree ownership is deliberately absent
