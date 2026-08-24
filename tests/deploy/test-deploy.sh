@@ -1889,6 +1889,14 @@ test_commit_plan_contract() {
         'does not opt in and must not trigger any pointer or receipt lookup'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'null` remains pending'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'never ask about or initiate'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Every creation or mutation of `extensions.commit-plan`'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'generation never asks about or'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'declined, corrupt or approved-but-pending policy'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         'permits creation without discovery.'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
@@ -1915,6 +1923,12 @@ test_commit_plan_contract() {
         'receipt per repository root'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'point-in-time discovery plus'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'reuse the exact boundaries'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'cross-repository dependency'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'match boundaries in'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         'transfer is independent'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \

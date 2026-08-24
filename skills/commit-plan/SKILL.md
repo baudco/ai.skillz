@@ -47,10 +47,26 @@ message conventions.
 
 Before materializing boundaries, invoke `/git-mgmt`'s local existing-work
 discovery gate using the changed paths, task terms, and issue/PR identifiers.
-Repeat its commit-time backstop when scope changed or another worktree may have
-advanced. This is read-only and authorizes no network access or Git mutation.
-If `/git-mgmt` is unavailable or equivalent work is found, preserve the index
-and stop before returning executable commit commands.
+Use its initial, unchanged-refresh or invalidated mode rather than assuming
+every invocation requires a full scan. This is read-only and authorizes no
+network access or Git mutation. If `/git-mgmt` is unavailable or equivalent
+work is found, preserve the index and stop before returning executable commit
+commands.
+
+For a plan refresh, load the worktree-private discovery receipt before doing
+expensive boundary work. A reusable commit-plan receipt must additionally
+store a versioned `extensions.commit-plan` object. It records a stable plan ID,
+starting index-stage/cached-patch digests and, for each stable boundary ID, the
+repository identity, sorted path set, expected parent OID or prior-boundary ID,
+expected parent tree, staged tree, patch digest relative to that parent,
+pre/post-index fingerprints, archived message path/digest, exact
+checks/outcomes, dependency IDs and completion state.
+
+For a cross-repository plan, also write an ignored plan manifest beneath the
+`commit-msg/msgs/` runtime directory. It maps the plan ID to canonical
+repository IDs, receipt digests, boundary IDs and cross-repository dependency
+edges. Validate repository receipts independently, then invalidate only the
+changed repository's boundaries and their transitive dependants.
 
 ## 2. Interpret The Request
 
@@ -95,6 +111,15 @@ explicitly in the final command sequence.
 
 ## 4. Materialize Every Boundary
 
+Materialize every boundary on an initial plan. On an invalidated plan,
+materialize every affected boundary and its transitive dependants. For an
+unchanged refresh, first compare the receipt's evidenced base OID, task/scope,
+scoped content, starting index-stage/cached-patch digests and every archived
+message digest. If they all match, reuse the exact boundaries, checks and
+messages without staging them again. Only update relocatable worktree roots in
+the receipt and rendered commands.
+
+When boundary materialization or check selection is required, do the following.
 Resolve the repository's project-check command catalog once per plan, before
 the boundary loop. Use only a repository-owned run-tests harness reference,
 documented project commands and CI/build configuration already in the current
@@ -126,6 +151,38 @@ For each planned commit, in dependency order:
 Do not defer message generation or tell the human to rerun `/commit-msg` after
 each commit. If any boundary cannot be safely materialized or verified, stop
 and report the blocker instead of returning a partial plan.
+
+Invalidate work proportionally:
+
+- root relocation only: update command paths;
+- missing message: regenerate it from its unchanged recorded staged boundary,
+  without repeating discovery or tests;
+- changed message digest: preserve the human-owned file, report the mismatch
+  and ask whether to use it or generate a separate candidate file;
+- changed relevant ref/worktree: rerun `/git-mgmt` for that evidence first;
+- changed content, scope, base or starting index: rematerialize and reverify
+  affected boundaries and their transitive dependants, checks and messages;
+- changed repository in a cross-repository plan: invalidate only that
+  repository's receipt and dependent boundaries.
+
+Ownership acquisition or transfer is a separate lifecycle concern. It neither
+validates nor invalidates commit boundaries; check it independently before any
+command that requires worktree ownership.
+
+When refreshing after the human executed part of a plan, recognize completed
+boundaries before applying normal invalidation. Walk first-parent commits from
+the recorded initial parent through current `HEAD` and match boundaries in
+order by parent relationship and committed tree, not commit OID or final
+message text. For boundary 1, require its commit parent to equal the recorded
+initial OID and its tree to equal the recorded staged tree. For each later
+boundary, require its parent commit to be the commit matched to the prior
+boundary and its tree to equal the recorded staged tree. This permits `--edit`
+to change commit OIDs while proving exact content and order. Mark matched
+boundaries completed, advance `discovery_head_oid`, and recompute baseline
+index/content fingerprints for the remaining boundaries. Treat this
+active-branch advancement as expected execution, not a new duplicate
+candidate. Any nonmatching commit, tree or parent invalidates that boundary
+and its transitive dependants.
 
 ## 5. Verify The Starting Index
 
@@ -223,6 +280,10 @@ Before returning a finished plan, verify:
   the final commit has no required trailing blank line;
 - no command commits automatically before the editor opens;
 - no push appears unless the human separately requests a push plan.
+
+For an unchanged refresh, a valid receipt containing these exact outcomes
+satisfies the checks already completed. Checks explicitly marked for execution
+time remain in the rendered command sequence.
 
 If any item is false, the commit plan is incomplete and must not be presented
 as ready.
