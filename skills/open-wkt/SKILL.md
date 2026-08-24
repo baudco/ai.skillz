@@ -97,7 +97,9 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    no network access or mutation. If `/git-mgmt` is unavailable, or equivalent
    work is found, stop before acquiring the creation guard. Re-entry, recovery,
    takeover and legacy migration of an already registered worktree do not
-   create new implementation work and skip this creation-only gate.
+   create new implementation work and skip this creation-only gate. Ownership
+   acquisition or transfer is independent from discovery receipts and must not
+   invalidate cached implementation or commit-boundary analysis.
 
 1. **Validate name**: ensure `<name>` is snake_case,
    no spaces, no leading dots/dashes.
@@ -161,6 +163,17 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    guard.
    Never refresh, delete, or overwrite another owner's lock merely because the
    directory already exists.
+
+   After ownership is durable, seed the new private Git directory with a
+   derived discovery receipt for the creation task. Preserve the initial
+   search evidence and related candidates, record its source receipt digest,
+   rewrite the repository root/branch/task-start/discovery OIDs for the new
+   worktree, and recompute its empty-or-current scope and index fingerprints.
+   Rebuild the ref/worktree inventory after creation and classify the new
+   worktree as the active implementation, never as an external candidate. Do
+   not copy unrelated task receipts. If the requested scope was unknown at
+   creation, the later implementation must extend and invalidate that scope,
+   but it need not rescan unchanged unrelated refs/worktrees.
 
 7. **Copy `.claude/settings.local.json`** from the
    main repo into the worktree's `.claude/` dir so
