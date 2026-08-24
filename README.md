@@ -29,6 +29,7 @@ generalized for cross-repo deployment.
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
 | `opencode-cleaning` | Safely preview and remove stale OpenCode forks |
 | `plan-io` | Plan file conventions |
+| `privacy-opsec` | Design and verify privacy-preserving internet sessions |
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
 | `gish` | Local-file-first forge transport, including approved reviews |
