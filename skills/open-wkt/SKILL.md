@@ -63,7 +63,9 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
 
 - **`--start-point <oid>`** (optional): create the worktree branch from this
   exact local commit instead of current `HEAD`. Require a full OID that resolves
-  to a commit; this option does not authorize fetching a missing object.
+  to a commit; this option does not authorize fetching a missing object. When
+  omitted, resolve current `HEAD` to a full OID once and use that pinned OID for
+  discovery and creation.
 
 - **`--fixturize`** (optional, default: false): when
   set, run `UV_PROJECT_ENVIRONMENT=.venv uv sync`
@@ -90,16 +92,26 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    `<repo-root>/wkts/<name>` path for every check and command. Reject a `wkts`
    parent which is a symlink, is not a directory, or canonicalizes outside the
    repository root. Create the real root-level parent only after validation.
+   Resolve the effective start point to one full commit OID now, even when the
+   option was omitted; never reevaluate `HEAD` later in this protocol.
 
-   Before creating a new branch or worktree, invoke `/git-mgmt`'s local
-   existing-work discovery gate with the requested semantic name, start point,
-   and known affected paths or issue/PR identifiers. This inspection authorizes
-   no network access or mutation. If `/git-mgmt` is unavailable, or equivalent
-   work is found, stop before acquiring the creation guard. Re-entry, recovery,
-   takeover and legacy migration of an already registered worktree do not
-   create new implementation work and skip this creation-only gate. Ownership
-   acquisition or transfer is independent from discovery receipts and must not
-   invalidate cached implementation or commit-boundary analysis.
+   Before creating a new branch or worktree for newly scoped substantial work,
+   use `/git-mgmt`'s exact-key policy lookup with the requested semantic name,
+   start point and known affected paths or issue/PR identifiers. If no policy
+   exists, ask once whether to scan and present **No** as the default. Declining
+   permits creation without discovery. Explicit scan requests are already
+   approved. Re-entry, continuation, tiny work, recovery, takeover and legacy
+   migration neither ask nor initiate new discovery; re-entry must still resume
+   an already approved handoff or inventory transaction. If approved discovery
+   finds equivalent work, stop before acquiring the creation guard. This
+   authorizes no network access or mutation. Complete approved pending
+   discovery before acquiring the creation guard; an interrupted scan stops
+   creation. Resolve the requested
+   start point to an OID before discovery. Approved evidence must already cover
+   that exact start point; otherwise revalidate it under the existing approval
+   before acquiring the guard. Ownership acquisition or transfer is independent
+   from discovery receipts and must not invalidate cached implementation or
+   commit-boundary analysis.
 
 1. **Validate name**: ensure `<name>` is snake_case,
    no spaces, no leading dots/dashes.
@@ -121,11 +133,11 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
 
 4. **Create the worktree** while holding the guard:
    ```sh
-    git worktree add \
-      <repo-root>/wkts/<name> \
-      -b wkt/<name> [<start-point-oid>]
+     git worktree add \
+       <repo-root>/wkts/<name> \
+       -b wkt/<name> <start-point-oid>
     ```
-   Without `--start-point`, this branches from current HEAD.
+   The pinned OID is mandatory in the rendered command.
 
 5. **Write lifecycle metadata outside the worktree**: resolve the linked
    worktree's private Git directory with `git -C <repo-root>/wkts/<name> rev-parse
@@ -164,16 +176,24 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    Never refresh, delete, or overwrite another owner's lock merely because the
    directory already exists.
 
-   After ownership is durable, seed the new private Git directory with a
-   derived discovery receipt for the creation task. Preserve the initial
-   search evidence and related candidates, record its source receipt digest,
-   rewrite the repository root/branch/task-start/discovery OIDs for the new
-   worktree, and recompute its empty-or-current scope and index fingerprints.
-   Rebuild the ref/worktree inventory after creation and classify the new
-   worktree as the active implementation, never as an external candidate. Do
-   not copy unrelated task receipts. If the requested scope was unknown at
-   creation, the later implementation must extend and invalidate that scope,
-   but it need not rescan unchanged unrelated refs/worktrees.
+   After ownership is durable, atomically transfer the fixed active-task
+   pointer first with `receipt_sha256: null` and a `handoff` object naming the
+   source and `receipt_pending` phase. Then write its exact matching policy
+   receipt. Preserve `scan_policy`; for an approved completed scan, also
+   preserve its evidence and related candidates, verify the source receipt
+   digest, rewrite the repository root, branch and discovery OID, preserve the
+   already validated task-start OID, and recompute empty-or-current scope and
+   index fingerprints. A declined policy carries no discovery inventory.
+   If transfer is interrupted, stop before implementation; the pointer remains
+   authoritative and a missing or mismatched receipt is pending, never approval
+   to scan.
+   Before publishing the final pointer digest, set `handoff.phase` to
+   `inventory_pending`, rebuild an approved receipt's ref/worktree inventory,
+   and classify the new worktree as the active implementation, never as an
+   external candidate. Then atomically publish the final receipt digest and
+   clear `handoff`. An interrupted rebuild stops before implementation. Do not
+   copy unrelated task receipts. Later scope refinement must not ask again or
+   scan after a decline.
 
 7. **Copy `.claude/settings.local.json`** from the
    main repo into the worktree's `.claude/` dir so
@@ -191,7 +211,8 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
 
 If `/open-wkt <name>` is called and `<repo-root>/wkts/<name>/` exists:
 
-1. Verify the git worktree is still valid
+1. Reject `--start-point`; it is creation-only and must not be silently ignored
+   during re-entry. Verify the git worktree is still valid
    and require `git worktree list --porcelain` to map the exact absolute
    canonical path to the exact branch recorded in metadata. Require
    `wkt/<name>` unless `branch_exception: true` records a guarded legacy
@@ -201,7 +222,11 @@ If `/open-wkt <name>` is called and `<repo-root>/wkts/<name>/` exists:
    its exact token with the current owner token.
 3. If the tokens differ, stop. Re-entry is allowed only after an explicit
    `--takeover` request records the ownership transfer.
-4. If the tokens match, preserve the lock and switch to the worktree.
+4. If the tokens match, inspect `active-task.json` before switching. A non-null
+   `handoff`, null/mismatched receipt digest, or pending approved inventory must
+   resume the recorded transfer/rebuild transaction under its guards. Stop if
+   its recorded source or digest cannot be validated. Switch to the worktree
+   only after `handoff` is null and any published receipt digest matches.
 
 ## Legacy path migration
 

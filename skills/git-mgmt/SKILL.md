@@ -1,11 +1,11 @@
 ---
 name: git-mgmt
 description: >
-  Discover existing branch/worktree implementations before substantial work,
-  then manage Git branches, stacked PRs, divergence, rebases, restacks,
-  pushes, and other history-changing operations safely. Use before starting
-  branch-bound implementation or committing it, and whenever inspecting or
-  changing branch relationships.
+  Optionally discover existing branch/worktree implementations before
+  substantial work, then manage Git branches, stacked PRs, divergence,
+  rebases, restacks, pushes, and other history-changing operations safely.
+  Use when starting branch-bound implementation or inspecting or changing
+  branch relationships.
 compatibility: >
   Requires git CLI. Fresh forge inspection prefers the provider-neutral gish
   adapter, with explicit direct-provider or local-only fallbacks. Conflict
@@ -64,11 +64,11 @@ choose a likely base, or explain divergence does not authorize mutation.
 
 ## 2. Existing-work discovery gate
 
-Run this gate before substantial branch-bound implementation, creating a new
-worktree or branch for it, or committing it. "Substantial" includes multi-file
-changes, a named feature/fix/migration, issue or PR work, and any task likely
-to have been attempted in another session. Tiny isolated edits do not require
-an exhaustive search.
+Consult this gate before substantial branch-bound implementation or creating a
+new worktree or branch for it. "Substantial" includes multi-file changes, a
+named feature/fix/migration, issue or PR work, and any task likely to have been
+attempted in another session. Tiny isolated edits and continuations neither ask
+about nor initiate discovery.
 
 The purpose is to find prior local work before duplicating it. Repository and
 worktree inspection is read-only and does not authorize switching branches,
@@ -77,15 +77,35 @@ from a forge. Writing private runtime receipts is separately authorized
 coordination metadata; it must not change repository content, refs or index
 state.
 
-Classify each invocation before searching:
+First read only the fixed `active-task.json` pointer. If its canonical task
+context matches, honor its policy and read the exact receipt named by its key
+and digest. Otherwise treat the task as having no policy. Do not list or glob
+the receipt directory, inspect other receipts, or run Git discovery commands
+merely to decide whether a matching policy exists. Then classify the invocation:
 
-- **initial discovery**: no matching valid receipt exists; run the full local
-  search below;
+- **newly scoped substantial work**: when no matching pointer policy exists, ask once
+  whether to scan local work for an existing implementation. Present **No** as
+  the default. Persist the answer before proceeding;
+- **explicit discovery**: a current-prompt request to scan for, find or reuse
+  prior work directly approves the scan without another question;
+- **approved pending discovery**: a valid approved receipt with `discovery:
+  null` resumes before implementation, but commit-time consumers proceed
+  without discovery rather than introducing late latency;
 - **unchanged refresh**: the task, base, scope, content and index fingerprints
-  match a prior successful receipt; use the cheap refresh below and do not
-  repeat the full search;
+  match a prior successful approved receipt; use the cheap refresh below and
+  do not repeat the full search;
 - **invalidated discovery**: a concrete fingerprint or relevant-candidate
-  signal changed; rerun only the affected discovery and verification work.
+  signal changed under an approved policy; rerun only the affected discovery
+  and verification work;
+- **declined or bypassed discovery**: a declined policy, tiny edit,
+  continuation or commit-time invocation performs no scan and proceeds without
+  discovery evidence.
+
+Only an approved policy authorizes the commands under **Search local work**.
+Do not treat a request to implement, create a worktree, generate a commit
+message or prepare a commit plan as implicit scan approval. A genuinely new
+semantic task gets a new decision; learning affected paths, editing content,
+staging changes or continuing the same task does not ask again.
 
 Potential concurrency by itself is not an invalidation signal. Do not repeat
 all-ref logs or statuses for every registered worktree merely because another
@@ -194,16 +214,42 @@ A matching branch name alone is not proof. Read its diff or commit before
 deciding. Likewise, absence from commit history does not prove absence when a
 dirty candidate worktree exists.
 
-### Persist the discovery receipt
+### Persist scan policy and discovery evidence
 
-After an initial or invalidated search finds no equivalent work, or the human
-separately approves a reusable relationship, write a JSON receipt beneath the
-active worktree's private Git directory at
+Immediately after the human approves or declines discovery, write the
+authoritative policy pointer and then a receipt beneath the active worktree's
+private Git directory at
 `ai-skillz-git-mgmt/discovery-receipts/<task-sha256>.json`. This is runtime
 coordination metadata, not repository content. Resolve the private directory
 with `git rev-parse --absolute-git-dir`; never put the receipt in another
 worktree's private directory except `/open-wkt`'s explicit post-ownership
 creation handoff for the same task.
+
+The fixed `ai-skillz-git-mgmt/active-task.json` pointer is authoritative for
+scan authorization and uses this version-1 canonical JSON schema:
+
+```json
+{
+  "schema": 1,
+  "task_sha256": "<task-sha256>",
+  "task": {},
+  "repository_common_dir": "<canonical-path>",
+  "scope_paths": [],
+  "scan_policy": "declined",
+  "receipt_sha256": null,
+  "handoff": null
+}
+```
+
+`task` contains the same normalized request, sorted identifiers and ordered
+repository-local boundaries used to derive the key. `scope_paths` is a sorted
+repository-relative array and may be refined without changing policy.
+`handoff` is normally `null`. During `/open-wkt` transfer it contains the
+canonical source private-Git-dir path, source receipt digest and phase.
+Serialize with sorted keys, no optional whitespace and UTF-8 encoding.
+Composing skills read this fixed pointer, verify its repository identity and
+canonical task context, then read only the named receipt when its SHA-256
+matches `receipt_sha256`. Never list the receipt directory to recover a key.
 
 Compute `<task-sha256>` from SHA-256 of canonical UTF-8 JSON containing the
 normalized explicit request, sorted issue/PR identifiers and ordered intended
@@ -215,30 +261,35 @@ order, and separators contain no optional whitespace. Paths remain separate
 scope data so a scope change invalidates the receipt rather than silently
 selecting a different task file.
 
-Use this version-1 top-level schema:
+Use this version-2 top-level schema:
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
+  "scan_policy": "approved",
   "task": {},
   "repository": {},
   "scope": {},
-  "discovery": {},
+  "discovery": null,
   "extensions": {}
 }
 ```
 
-`task` contains `sha256`, normalized request text, issue/PR identifiers and
+`scan_policy` is exactly `approved` or `declined` and records authorization,
+not a discovery result. `discovery` remains `null` until an approved scan
+completes; a declined receipt is valid without search terms, ref/worktree
+inventories or a result. `task` contains `sha256`, normalized request text,
+issue/PR identifiers and
 boundary descriptions. `repository` contains canonical common-directory and
 worktree-root paths, branch, immutable `task_start_oid`, observed
 `discovery_head_oid` and separately evidenced `base_oid` (or `null`). `scope`
 contains sorted repository-relative paths, `content_sha256`,
-`index_stage_sha256` and `cached_patch_sha256`. `discovery` contains completion
-time, search terms, inspected path histories, ref/worktree inventory, related
-candidates and result. `extensions` is an object keyed by composing skill name;
-unknown extension keys must be preserved.
+`index_stage_sha256` and `cached_patch_sha256`. After an approved scan,
+`discovery` contains completion time, search terms, inspected path histories,
+ref/worktree inventory, related candidates and result. `extensions` is an
+object keyed by composing skill name; unknown extension keys must be preserved.
 
-The receipt must identify:
+An approved completed receipt must identify:
 
 - schema version, repository common directory, worktree root and branch;
 - a stable task fingerprint derived from the explicit request, issue/PR IDs
@@ -252,6 +303,11 @@ The receipt must identify:
 - the successful classification (`no relevant work found` or a separately
   approved reusable relationship).
 
+Policy survives content/index changes, ordinary scope refinement and
+continuation. Only a genuinely new semantic task or an explicit human policy
+change replaces it. Tiny work and continuations without a receipt proceed
+without creating one; absence at commit time is not approval to ask or scan.
+
 Use SHA-256 for every `*_sha256` field. Fingerprint tracked scope from
 `git diff HEAD --binary --
 <affected-paths...>`. Include mode and `git hash-object` output for validated
@@ -263,16 +319,36 @@ receipt data, never interpolate them into shell commands. A composing skill
 may extend the receipt with exact boundary trees, check outcomes and
 message-file digests.
 
-Serialize updates with an atomically created sibling `<task-sha256>.guard`
-directory. Its receipt-writer token combines current provider/session/agent
-identity with a fresh nonce and is independent of worktree lifecycle ownership.
-An existing guard blocks acquisition. After acquiring it, re-read the prior
-receipt digest, write complete JSON to a same-directory temporary file, and
-re-read the guard to verify the writer token before atomically renaming the
-file over the receipt. Stop on a token or prior-digest mismatch; never merge
-concurrent updates heuristically. Verify the same writer token again before
-removing the guard after the replacement is durable. A corrupt receipt is
-invalid, not permission to overwrite another writer's guard.
+Serialize receipt updates with an atomically created sibling
+`<task-sha256>.guard` directory. Serialize pointer updates independently with
+`active-task.guard`. Each writer token combines current
+provider/session/agent identity with a fresh nonce and is independent of
+worktree lifecycle ownership. An existing corresponding guard blocks
+acquisition. After acquiring it, re-read the prior digest, write complete JSON
+to a same-directory temporary file, and re-read the guard to verify the writer
+token before atomically renaming the file over its target. Stop on a token or
+prior-digest mismatch; never merge concurrent updates heuristically. Verify the
+same writer token again before removing the guard after replacement is durable.
+
+Persist a decision by atomically replacing the pointer first with
+`receipt_sha256: null`; this alone preserves `scan_policy`. Then write the
+exact-key receipt and update the pointer with its digest. If interrupted, the
+pointer still prevents another question or unauthorized scan, while missing or
+mismatched receipt evidence is treated as pending. A corrupt artifact is not
+permission to overwrite another writer's guard.
+
+Apply that null-write-republish sequence to every receipt mutation, including
+composing-skill extensions, boundary completion, relocated paths and refreshed
+inventories. The final pointer digest must name the complete durable receipt;
+never mutate a published receipt without republishing its pointer.
+
+Recover an abandoned receipt or pointer guard only after an explicit
+current-prompt `--recover-discovery-guard <writer-token>` request. Report the
+recorded owner/token, target, prior digest, temporary file and current final
+digest first. Age alone is insufficient. Re-read all state, then either finish
+the exact interrupted rename when its token and prior digest still match or
+remove only the unchanged guard. Any mismatch stops recovery; never overwrite
+a live writer or infer approval from recovery.
 
 The worktree root is relocatable metadata. If all identity and content fields
 still match but the registered absolute path changed, update only the stored
@@ -282,8 +358,8 @@ where a lifecycle operation requires it.
 
 ### Cheap unchanged refresh
 
-Before reusing a receipt, compare the current values for the same repository
-and task:
+For an approved receipt with completed discovery, compare the current values
+for the same repository and task:
 
 1. branch, immutable task-start OID, discovery `HEAD` and evidenced base OID;
 2. normalized affected-path set and scoped content fingerprint;
@@ -307,9 +383,10 @@ uncoordinated overlapping edits; do not claim exhaustive concurrent detection
 from the cheap path.
 
 When every required field matches, refresh relocatable worktree paths and
-reuse the discovery result. For plans spanning repositories, keep and verify
-one receipt per repository root. A transition in one repository must not
-trigger scans of unrelated refs or worktrees in another repository.
+reuse the discovery result. A declined receipt returns immediately without
+inventory comparison. For plans spanning repositories, keep and verify one
+receipt per repository root. A transition in one repository must not trigger
+scans of unrelated refs or worktrees in another repository.
 
 ### Invalidation
 
@@ -323,27 +400,32 @@ boundaries are invalid. New or changed refs/worktrees invalidate discovery only
 when their names, commits, dirty paths or coordination receipts provide
 concrete task or affected-path overlap.
 
-After invalidation, rerun the full local search only when task, base or scope
-changed. For a changed relevant candidate, inspect that candidate and its
-relationship first; broaden to the full search only if that evidence makes the
-prior classification unreliable. Content or index changes require composing
-skills to rematerialize and reverify affected boundaries, but do not by
-themselves require rescanning unchanged unrelated worktrees.
+After invalidation under an approved policy, rerun the full local search only
+when task, base or semantic scope changed. For a changed relevant candidate,
+inspect that candidate and its relationship first; broaden to the full search
+only if that evidence makes the prior classification unreliable. A declined
+policy never enters invalidated discovery. Content or index changes require
+composing skills to rematerialize and reverify affected boundaries, but do not
+by themselves require rescanning unchanged unrelated worktrees.
 
 ### Commit-time backstop
 
-Before creating a commit, verify or create the discovery receipt. Repeat topic
-and affected-path searches only when:
+Before creating a commit, perform only the exact-key policy receipt lookup.
+Never ask about discovery at commit time. A missing or declined policy permits
+the commit workflow to continue without discovery; it must not trigger topic,
+path-history, ref or worktree scans. Under an approved policy with intact
+completed evidence, repeat topic and affected-path searches only when:
 
-- no valid receipt exists and this gate was not run earlier in the session;
-- the receipt is corrupt;
 - the task, base, implementation scope or affected paths changed materially;
 - a new or changed ref/worktree has concrete task or path-overlap evidence.
 
-An unchanged valid receipt satisfies the backstop. Do not rescan all refs and
-registered worktrees at every commit boundary. A content/index-only mismatch
-returns control to the composing skill for rematerialization and checks without
-repeating topic, path-history or unrelated-worktree searches.
+An unchanged valid approved receipt satisfies the backstop. Do not rescan all
+refs and registered worktrees at every commit boundary. A content/index-only
+mismatch returns control to the composing skill for rematerialization and
+checks without repeating topic, path-history or unrelated-worktree searches. A
+corrupt or mismatched receipt evidence leaves the authoritative pointer policy
+intact and is pending at commit time. An approved receipt with `discovery:
+null` remains pending and does not start a late scan.
 
 If equivalent work is found at this point, stop before committing. Preserve
 the current index and worktree, report both implementations, and let the human
