@@ -1835,6 +1835,26 @@ test_commit_plan_contract() {
         'Do not propose, mention or ask about a'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'behavior already present at'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Potential concurrency by itself is not an invalidation signal.'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'discovery-receipts/<task-sha256>.json'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'one receipt per repository root'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'point-in-time discovery plus'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'reuse the exact boundaries'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'cross-repository dependency'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'match boundaries in'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'acquisition or transfer is independent'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'seed the new private Git directory'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'active implementation, never as an external candidate'
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
         'provider-neutral `/commit-plan` skill'
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \

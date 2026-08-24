@@ -70,9 +70,26 @@ changes, a named feature/fix/migration, issue or PR work, and any task likely
 to have been attempted in another session. Tiny isolated edits do not require
 an exhaustive search.
 
-The purpose is to find prior local work before duplicating it. This is a
-read-only inspection and does not authorize switching branches, taking over a
-worktree, rewriting history, or fetching from a forge.
+The purpose is to find prior local work before duplicating it. Repository and
+worktree inspection is read-only and does not authorize switching branches,
+taking over a worktree, changing the index, rewriting history, or fetching
+from a forge. Writing private runtime receipts is separately authorized
+coordination metadata; it must not change repository content, refs or index
+state.
+
+Classify each invocation before searching:
+
+- **initial discovery**: no matching valid receipt exists; run the full local
+  search below;
+- **unchanged refresh**: the task, base, scope, content and index fingerprints
+  match a prior successful receipt; use the cheap refresh below and do not
+  repeat the full search;
+- **invalidated discovery**: a concrete fingerprint or relevant-candidate
+  signal changed; rerun only the affected discovery and verification work.
+
+Potential concurrency by itself is not an invalidation signal. Do not repeat
+all-ref logs or statuses for every registered worktree merely because another
+session exists or time passed.
 
 ### Search local work
 
@@ -177,13 +194,156 @@ A matching branch name alone is not proof. Read its diff or commit before
 deciding. Likewise, absence from commit history does not prove absence when a
 dirty candidate worktree exists.
 
+### Persist the discovery receipt
+
+After an initial or invalidated search finds no equivalent work, or the human
+separately approves a reusable relationship, write a JSON receipt beneath the
+active worktree's private Git directory at
+`ai-skillz-git-mgmt/discovery-receipts/<task-sha256>.json`. This is runtime
+coordination metadata, not repository content. Resolve the private directory
+with `git rev-parse --absolute-git-dir`; never put the receipt in another
+worktree's private directory except `/open-wkt`'s explicit post-ownership
+creation handoff for the same task.
+
+Compute `<task-sha256>` from SHA-256 of canonical UTF-8 JSON containing the
+normalized explicit request, sorted issue/PR identifiers and ordered intended
+boundary descriptions assigned to this repository. For a cross-repository
+plan, project the global request onto each repository before computing its task
+key; boundaries in another repository belong only in the plan manifest. JSON
+is canonical here when object keys are sorted, arrays preserve their specified
+order, and separators contain no optional whitespace. Paths remain separate
+scope data so a scope change invalidates the receipt rather than silently
+selecting a different task file.
+
+Use this version-1 top-level schema:
+
+```json
+{
+  "schema": 1,
+  "task": {},
+  "repository": {},
+  "scope": {},
+  "discovery": {},
+  "extensions": {}
+}
+```
+
+`task` contains `sha256`, normalized request text, issue/PR identifiers and
+boundary descriptions. `repository` contains canonical common-directory and
+worktree-root paths, branch, immutable `task_start_oid`, observed
+`discovery_head_oid` and separately evidenced `base_oid` (or `null`). `scope`
+contains sorted repository-relative paths, `content_sha256`,
+`index_stage_sha256` and `cached_patch_sha256`. `discovery` contains completion
+time, search terms, inspected path histories, ref/worktree inventory, related
+candidates and result. `extensions` is an object keyed by composing skill name;
+unknown extension keys must be preserved.
+
+The receipt must identify:
+
+- schema version, repository common directory, worktree root and branch;
+- a stable task fingerprint derived from the explicit request, issue/PR IDs
+  and normalized intended boundary descriptions;
+- immutable task-start OID, observed discovery `HEAD`, separately evidenced
+  base OID, sorted affected-path set and a content fingerprint;
+- initial index-stage and cached-patch digests;
+- the full search time and the exact terms and path histories inspected;
+- only plausible related refs/worktrees, with their observed OIDs, dirty-path
+  inventories and ownership records;
+- the successful classification (`no relevant work found` or a separately
+  approved reusable relationship).
+
+Use SHA-256 for every `*_sha256` field. Fingerprint tracked scope from
+`git diff HEAD --binary --
+<affected-paths...>`. Include mode and `git hash-object` output for validated
+untracked paths. Fingerprint the index from both the canonical byte output of
+`git ls-files --stage -z` and `git diff --cached --binary`; hashing only path
+names is insufficient. Do not use `git write-tree` for discovery
+fingerprinting because it may write objects. Pass user-derived terms only as
+receipt data, never interpolate them into shell commands. A composing skill
+may extend the receipt with exact boundary trees, check outcomes and
+message-file digests.
+
+Serialize updates with an atomically created sibling `<task-sha256>.guard`
+directory. Its receipt-writer token combines current provider/session/agent
+identity with a fresh nonce and is independent of worktree lifecycle ownership.
+An existing guard blocks acquisition. After acquiring it, re-read the prior
+receipt digest, write complete JSON to a same-directory temporary file, and
+re-read the guard to verify the writer token before atomically renaming the
+file over the receipt. Stop on a token or prior-digest mismatch; never merge
+concurrent updates heuristically. Verify the same writer token again before
+removing the guard after the replacement is durable. A corrupt receipt is
+invalid, not permission to overwrite another writer's guard.
+
+The worktree root is relocatable metadata. If all identity and content fields
+still match but the registered absolute path changed, update only the stored
+root and commands rendered from it. Worktree ownership is deliberately absent
+from the content fingerprint: validate ownership independently at the point
+where a lifecycle operation requires it.
+
+### Cheap unchanged refresh
+
+Before reusing a receipt, compare the current values for the same repository
+and task:
+
+1. branch, immutable task-start OID, discovery `HEAD` and evidenced base OID;
+2. normalized affected-path set and scoped content fingerprint;
+3. initial index tree and cached-patch digest;
+4. OID and dirty-path state of previously related candidate refs/worktrees;
+5. any exact-boundary, check-result and message digests required by the
+   composing skill.
+
+Also compare the current ref/worktree inventory to the receipt, but inspect
+only new or changed entries for relevance. Do not rerun status in unchanged,
+previously unrelated worktrees, and do not rerun path history for unchanged
+refs. A new coordination receipt for the same task or overlapping affected
+paths is concrete evidence worth inspecting; an unrelated receipt is not.
+
+This cheap refresh intentionally provides point-in-time discovery plus
+coordinated-change detection. An unmanaged edit can make a previously
+unrelated worktree dirty without changing its ref or registration and cannot
+be detected without polling every worktree again. Run an explicit exhaustive
+refresh when the user requests it or concrete external evidence suggests
+uncoordinated overlapping edits; do not claim exhaustive concurrent detection
+from the cheap path.
+
+When every required field matches, refresh relocatable worktree paths and
+reuse the discovery result. For plans spanning repositories, keep and verify
+one receipt per repository root. A transition in one repository must not
+trigger scans of unrelated refs or worktrees in another repository.
+
+### Invalidation
+
+Invalidate the corresponding receipt component when evidenced base OID,
+branch, task/scope, scoped content, index-stage digest or cached patch changes.
+Content or index changes invalidate boundary materialization, not discovery
+searches, unless scope changed or candidate-overlap evidence also exists. An
+advanced current `HEAD` updates `discovery_head_oid`; first compare it to
+recorded boundary completion transitions before deciding which later
+boundaries are invalid. New or changed refs/worktrees invalidate discovery only
+when their names, commits, dirty paths or coordination receipts provide
+concrete task or affected-path overlap.
+
+After invalidation, rerun the full local search only when task, base or scope
+changed. For a changed relevant candidate, inspect that candidate and its
+relationship first; broaden to the full search only if that evidence makes the
+prior classification unreliable. Content or index changes require composing
+skills to rematerialize and reverify affected boundaries, but do not by
+themselves require rescanning unchanged unrelated worktrees.
+
 ### Commit-time backstop
 
-Before creating a commit, repeat the topic and affected-path searches when:
+Before creating a commit, verify or create the discovery receipt. Repeat topic
+and affected-path searches only when:
 
-- this gate was not run earlier in the session;
-- the implementation scope or affected paths changed materially; or
-- another session/worktree may have advanced while the task was underway.
+- no valid receipt exists and this gate was not run earlier in the session;
+- the receipt is corrupt;
+- the task, base, implementation scope or affected paths changed materially;
+- a new or changed ref/worktree has concrete task or path-overlap evidence.
+
+An unchanged valid receipt satisfies the backstop. Do not rescan all refs and
+registered worktrees at every commit boundary. A content/index-only mismatch
+returns control to the composing skill for rematerialization and checks without
+repeating topic, path-history or unrelated-worktree searches.
 
 If equivalent work is found at this point, stop before committing. Preserve
 the current index and worktree, report both implementations, and let the human

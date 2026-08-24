@@ -139,10 +139,20 @@ When generating commit messages, always follow this process:
 
    Before analyzing or writing a message, invoke `/git-mgmt`'s local
    existing-work commit-time backstop using the staged paths, task terms, and
-   issue/PR identifiers. This read-only scan authorizes no network access or
-   Git mutation. If `/git-mgmt` is unavailable or equivalent work exists on a
-   distinct ref/worktree, preserve the index and stop before generating the
-   message.
+   issue/PR identifiers. Use a matching discovery receipt's cheap unchanged
+   refresh instead of rescanning all refs/worktrees. This read-only inspection
+   authorizes no network access or Git mutation. If `/git-mgmt` is unavailable
+   or equivalent work exists on a distinct ref/worktree, preserve the index
+   and stop before generating the message.
+
+   When `/commit-plan` already recorded this exact staged tree/patch and the
+   archived message digest still matches, reuse that message. A root-path or
+   ownership change alone does not require rediscovery or regeneration. If only
+   the message is missing, regenerate it from the unchanged staged boundary
+   without rerunning boundary tests. If its digest changed, preserve the
+   human-owned file and ask whether to use it or write a separate candidate;
+   never overwrite it automatically. Content, scope, base or index changes
+   invalidate the matching receipt component as defined by `/git-mgmt`.
 
    Then check for staged changes: if
    `git diff --staged` is empty, STOP and tell the
