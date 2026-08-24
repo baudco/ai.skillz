@@ -1848,9 +1848,7 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'project checks are recorded as pending unless pre-executed'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        "invoke \`/git-mgmt\`'s local existing-work"
-    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
-        "invoke \`/git-mgmt\`'s local"
+        'read the fixed active-task'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         "use \`/git-mgmt\`'s exact-key policy lookup"
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
@@ -1937,6 +1935,8 @@ test_commit_plan_contract() {
         'classify the new worktree as'
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
         'provider-neutral `/commit-plan` skill'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'read the fixed'
     assert_not_contains "$(<"$ROOT/skills/git-mgmt/SKILL.md")" \
         'no matching valid receipt exists; run the full local search'
     assert_not_contains "$(<"$ROOT/skills/commit-plan/SKILL.md")" \

@@ -45,22 +45,30 @@ If a trusted deployed `commit-msg` skill is unavailable, stop and give the
 canonical deployment command. Never invent or copy another repository's
 message conventions.
 
-Before materializing boundaries, invoke `/git-mgmt`'s local existing-work
-discovery gate using the changed paths, task terms, and issue/PR identifiers.
-Use its initial, unchanged-refresh or invalidated mode rather than assuming
-every invocation requires a full scan. This is read-only and authorizes no
-network access or Git mutation. If `/git-mgmt` is unavailable or equivalent
-work is found, preserve the index and stop before returning executable commit
-commands.
+Before materializing boundaries, use `/git-mgmt` to read the fixed active-task
+pointer, validate it against the changed paths, task terms and issue/PR
+identifiers, then read only its exact-key policy receipt. Commit planning is
+continuation work: never ask about or initiate discovery merely because the
+pointer or receipt is missing, mismatched, declined, corrupt or approved but
+pending. Reuse or narrowly refresh completed evidence only under an approved
+policy. This authorizes no network access or Git mutation. If an approved scan
+found equivalent work, preserve the index and stop before returning executable
+commit commands.
 
-For a plan refresh, load the worktree-private discovery receipt before doing
-expensive boundary work. A reusable commit-plan receipt must additionally
+For a plan refresh, load any worktree-private policy receipt before doing
+expensive boundary work. Discovery may be absent or declined; that does not
+block planning. A reusable commit-plan receipt must additionally
 store a versioned `extensions.commit-plan` object. It records a stable plan ID,
 starting index-stage/cached-patch digests and, for each stable boundary ID, the
 repository identity, sorted path set, expected parent OID or prior-boundary ID,
 expected parent tree, staged tree, patch digest relative to that parent,
 pre/post-index fingerprints, archived message path/digest, exact
 checks/outcomes, dependency IDs and completion state.
+
+Every creation or mutation of `extensions.commit-plan`, including completion
+updates after human commits, must use `/git-mgmt`'s pointer transaction: publish
+`receipt_sha256: null`, atomically replace the receipt, then publish its new
+digest. The pointer's scan policy remains authoritative throughout.
 
 For a cross-repository plan, also write an ignored plan manifest beneath the
 `commit-msg/msgs/` runtime directory. It maps the plan ID to canonical
