@@ -37,6 +37,16 @@ assert_file_contains() {
     grep -qF -- "$2" "$1" || fail "$1 does not contain: $2"
 }
 
+assert_file_order() {
+    local file="$1" first="$2" second="$3" first_match second_match
+    first_match="$(grep -nF -m1 -- "$first" "$file")" \
+        || fail "$file does not contain: $first"
+    second_match="$(grep -nF -m1 -- "$second" "$file")" \
+        || fail "$file does not contain: $second"
+    [ "${first_match%%:*}" -lt "${second_match%%:*}" ] \
+        || fail "$file does not order '$first' before '$second'"
+}
+
 assert_fails() {
     if "$@" >"$TMP_ROOT/failure.out" 2>&1; then
         fail "command unexpectedly succeeded: $*"
@@ -2068,6 +2078,41 @@ test_commit_plan_contract() {
     assert_file_contains "$deferred" \
         'Do not render raw `git add`'
     assert_file_contains "$deferred" 'not current operational policy'
+    assert_file_contains "$deferred" \
+        'harness-reported command parser metadata'
+    assert_file_contains "$deferred" \
+        'the basename of `$SHELL`, only as a last-resort hint'
+    assert_file_contains "$deferred" \
+        'Report every conflicting signal'
+    assert_file_contains "$deferred" \
+        'every command on one physical line for every parser'
+    assert_file_contains "$deferred" \
+        'env KEY=value command'
+    assert_file_contains "$deferred" \
+        'Never emit a leading `KEY=value command`'
+    assert_not_contains "$(<"$deferred")" \
+        'Determine the configured `$SHELL`'
+    assert_file_order "$deferred" \
+        'an explicit parser or shell selected' \
+        'harness-reported command parser metadata'
+    assert_file_order "$deferred" \
+        'harness-reported command parser metadata' \
+        'parser semantics already demonstrated'
+    assert_file_order "$deferred" \
+        'parser semantics already demonstrated' \
+        'actual parent/ancestor command interpreter'
+    assert_file_order "$deferred" \
+        'actual parent/ancestor command interpreter' \
+        'the basename of `$SHELL`, only as a last-resort hint'
+    assert_not_contains "$(<"$deferred")" \
+        'git commit --edit --file \'
+    local parser
+    for parser in sh bash zsh fish xonsh; do
+        command -v "$parser" >/dev/null 2>&1 || continue
+        assert_eq \
+            "$("$parser" -c 'env AI_SKILLZ_OVERLAY=ok printenv AI_SKILLZ_OVERLAY')" \
+            'ok'
+    done
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         'transfer is independent'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \

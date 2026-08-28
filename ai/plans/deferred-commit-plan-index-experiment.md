@@ -6,6 +6,8 @@ provider: openai
 model: gpt-6.1-sol
 created: 2026-10-04
 source_commit: 8fd71ed12e32beabbc7011f308bf5ebcf700d613
+additional_source_commits:
+  - 7796acbe2d4d914d863d21ba71079ddb629afd73
 source_harness: opencode
 source_model: gpt-5.6-sol
 source_provider: openai
@@ -13,7 +15,7 @@ source_provider: openai
 
 # Deferred private-index execution experiment
 
-This reference preserves the first slice of the older bot-generated
+This reference preserves historical slices of the older bot-generated
 design while rebasing it onto the shipped builder/executor. It is
 design evidence, not an active skill instruction or a claim that the
 interfaces below are implemented. Source generation metadata remains
@@ -124,6 +126,64 @@ recovery flow when a durable journal supplies the same task, target, prior
 digest, writer token and intended replacement digest. Re-read and compare every
 field before continuing the recorded next phase. This is owner continuation,
 not stale-guard takeover: any mismatch stops and requires explicit recovery.
+
+## Original parser-safe rendering proposal
+
+Source: `7796acbe2d4d914d863d21ba71079ddb629afd73`, generated with
+OpenCode / OpenAI / `gpt-5.6-sol`, as recorded by the source commit.
+This second slice is deferred comparison evidence. The shipped skill
+already selects the parser by evidence and validates native rendering;
+its Xonsh and Bash renderers use native bindings and continuations.
+The blanket single-line and environment-overlay rules below conflict
+with that shipped interface and are not activated by this reference.
+
+Choose the active command parser from evidence in this order:
+
+1. an explicit parser or shell selected by the user for this command block;
+2. harness-reported command parser metadata from the active provider session;
+3. parser semantics already demonstrated by successful or failed commands in
+   the current session;
+4. the actual parent/ancestor command interpreter reported by process metadata
+   or an equivalent provider diagnostic;
+5. the basename of `$SHELL`, only as a last-resort hint.
+
+Do not equate inherited login-shell metadata with the active parser. In
+particular, `$SHELL=sh` does not override harness or observed xonsh evidence.
+Report every conflicting signal and which higher-priority evidence won. If
+equal-priority evidence remains ambiguous, ask which parser to target before
+rendering rather than silently choosing `$SHELL`.
+
+Use the selected parser as the single Markdown fence language and command
+syntax. Render every command on one physical line for every parser. Never use
+a trailing `\` or any other newline-continuation syntax; pasted continuation
+lines are parser-sensitive and can become separate or invalid commands.
+
+Render environment overlays portably as `env KEY=value command` (and
+`env KEY1=value1 KEY2=value2 command` for multiple values) in every shell.
+Never emit a leading `KEY=value command` assignment or parser-specific
+environment syntax. When the target is a shell builtin or function that
+cannot run through `env`, put the overlay inside a generated helper or an
+explicit parser subprocess instead.
+
+The returned sequence must use one explicitly labelled fence and valid syntax
+for the selected parser. Never emit an unlabelled fence or hardcode POSIX
+syntax for a different parser.
+
+The slice also proposed checking the evidence hierarchy, reporting
+conflicting signals, and requiring every command to occupy one physical
+line with every environment overlay using `env` or a generated helper.
+Its standalone commit-message example collapsed the editor-backed
+commit to one line, but used the historical hardcoded Claude path.
+For comparison, retain the current runtime-neutral placeholder:
+
+```text
+git commit --edit --file <commit_latest>
+```
+
+Historical deployment assertions now inspect this reference for parser
+precedence and rendering rules. The available-shell `env` smoke check
+is retained as a portability check, not evidence that the deferred
+policy is required or implemented by the active renderer.
 
 ## Comparison questions
 
