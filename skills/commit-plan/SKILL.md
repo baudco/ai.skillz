@@ -251,20 +251,37 @@ artifacts unless they are intended provenance files in a planned commit.
 
 ## 6. Render For The User's Shell
 
-Determine the configured `$SHELL` and use its basename as the single Markdown
-fence language and command syntax. Examples: `/bin/zsh` becomes `zsh`,
-`/bin/bash` becomes `bash`, `/usr/bin/fish` becomes `fish`, and
-`/usr/bin/xonsh` becomes `xonsh`.
+Choose the active command parser from evidence in this order:
 
-For `xonsh`, render every command on one physical line. Never use a trailing
-`\` or any other newline-continuation syntax: pasted continuation lines can
-be parsed as indented Python instead of subprocess arguments. Keep a runnable
-sequence as one command per line inside the same `xonsh` fence.
+1. an explicit parser or shell selected by the user for this command block;
+2. harness-reported command parser metadata from the active provider session;
+3. parser semantics already demonstrated by successful or failed commands in
+   the current session;
+4. the actual parent/ancestor command interpreter reported by process metadata
+   or an equivalent provider diagnostic;
+5. the basename of `$SHELL`, only as a last-resort hint.
+
+Do not equate inherited login-shell metadata with the active parser. In
+particular, `$SHELL=sh` does not override harness or observed xonsh evidence.
+Report every conflicting signal and which higher-priority evidence won. If
+equal-priority evidence remains ambiguous, ask which parser to target before
+rendering rather than silently choosing `$SHELL`.
+
+Use the selected parser as the single Markdown fence language and command
+syntax. Render every command on one physical line for every parser. Never use
+a trailing `\` or any other newline-continuation syntax; pasted continuation
+lines are parser-sensitive and can become separate or invalid commands.
+
+Render environment overlays portably as `env KEY=value command` (and
+`env KEY1=value1 KEY2=value2 command` for multiple values) in every shell.
+Never emit a leading `KEY=value command` assignment or parser-specific
+environment syntax. When the target is a shell builtin or function that
+cannot run through `env`, put the overlay inside a generated helper or an
+explicit parser subprocess instead.
 
 The returned sequence must use one explicitly labelled fence and valid syntax
-for that shell. Never emit an unlabelled fence or hardcode POSIX syntax for a
-different shell. If `$SHELL` is unavailable or unknown, ask which shell to
-target before returning the plan.
+for the selected parser. Never emit an unlabelled fence or hardcode POSIX
+syntax for a different parser.
 
 Never assume the user's shell is already in the repository or worktree being
 planned. The first command in the fence must change directory to the exact
@@ -340,6 +357,10 @@ Before returning a finished plan, verify:
   not rendered again;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
+- the fence parser follows the evidence hierarchy and any conflicting signals
+  are reported;
+- every rendered command occupies one physical line and every environment
+  overlay uses `env` or a generated helper;
 - the command block starts in the exact absolute repository/worktree root;
 - every commit command includes `--edit`;
 - every commit command is immediately preceded by `git diff --staged`;

@@ -397,8 +397,7 @@ changes, use subject line only.
    After writing the commit message files, tell the
    user to commit:
    ```
-   git commit --edit --file \
-     .claude/git_commit_msg_LATEST.md
+   git commit --edit --file .claude/git_commit_msg_LATEST.md
    ```
 
    Once the user confirms the commit (or a new HEAD is detected), the real
