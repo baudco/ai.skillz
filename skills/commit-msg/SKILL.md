@@ -400,9 +400,18 @@ changes, use subject line only.
    git commit --edit --file .claude/git_commit_msg_LATEST.md
    ```
 
-   Once the user confirms the commit (or a new HEAD is detected), the real
-   commit hash is known. For each reply ID, read its exact local source body
-   from the corresponding `reply_files` entry written by
+   When composed by `/commit-plan`, do not render this standalone handoff.
+   Preserve the review-reply lifecycle, but let `/commit-plan` render the
+   archived message path and helper-wrapped `git commit --edit --file ...`
+   command for the exact boundary index. Assign every `reply_id` to one stable
+   boundary before rendering the plan; if repository evidence cannot determine
+   ownership, ask rather than attaching it to the next commit. A new `HEAD`
+   processes only replies assigned to the exact boundary whose parent/tree
+   completion `/commit-plan` verified. Defer replies owned by later boundaries.
+
+   For a standalone commit, once the user confirms it (or a new HEAD is
+   detected), the real commit hash is known. For each reply ID, read its exact
+   local source body from the corresponding `reply_files` entry written by
    `/code-review-changes`. If an entry is missing, stop for that reply; do not
    fetch remote content or reconstruct it from memory.
 

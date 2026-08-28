@@ -63,7 +63,10 @@ starting index-stage/cached-patch digests and, for each stable boundary ID, the
 repository identity, sorted path set, expected parent OID or prior-boundary ID,
 expected parent tree, staged tree, patch digest relative to that parent,
 pre/post-index fingerprints, archived message path/digest, exact
-checks/outcomes, dependency IDs and completion state.
+checks/outcomes, dependency IDs, assigned review-reply IDs and completion
+state. Assign each pending reply to exactly one stable boundary using review
+context and changed-path evidence. Ask when ownership is ambiguous; never let
+the first new `HEAD` consume replies owned by later boundaries.
 
 Every creation or mutation of `extensions.commit-plan`, including completion
 updates after human commits, must use `/git-mgmt`'s pointer transaction: publish
@@ -199,6 +202,9 @@ For each planned commit, in dependency order:
    `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
    timestamp and unchanged HEAD would otherwise produce a duplicate path.
 7. Record the exact helper transition needed after the preceding commit.
+8. Record boundary-owned review replies and defer their candidate generation
+   until that exact boundary's parent/tree completion is verified. Completion
+   of another boundary must not consume them.
 
 Do not defer message generation or tell the human to rerun `/commit-msg` after
 each commit. If any boundary cannot be safely materialized or verified, stop

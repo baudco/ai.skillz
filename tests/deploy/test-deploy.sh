@@ -1983,6 +1983,18 @@ test_commit_plan_contract() {
     assert_file_order "$ROOT/skills/commit-plan/SKILL.md" \
         'actual parent/ancestor command interpreter' \
         'the basename of `$SHELL`, only as a last-resort hint'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'When composed by `/commit-plan`, do not render'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'archived message path and helper-wrapped'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'command for the exact boundary index'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'processes only replies assigned to the exact boundary'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Assign each pending reply to exactly one stable boundary'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'another boundary must not consume them.'
     assert_not_contains "$(<"$ROOT/skills/commit-msg/SKILL.md")" \
         'git commit --edit --file \'
     local parser
