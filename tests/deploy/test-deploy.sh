@@ -2104,6 +2104,18 @@ test_commit_plan_contract() {
     assert_file_order "$deferred" \
         'actual parent/ancestor command interpreter' \
         'the basename of `$SHELL`, only as a last-resort hint'
+    assert_file_contains "$deferred" \
+        'When composed by `/commit-plan`, do not render'
+    assert_file_contains "$deferred" \
+        'archived message path and helper-wrapped'
+    assert_file_contains "$deferred" \
+        'command for the exact boundary index'
+    assert_file_contains "$deferred" \
+        'processes only replies assigned to the exact boundary'
+    assert_file_contains "$deferred" \
+        'Assign each pending reply to exactly one stable boundary'
+    assert_file_contains "$deferred" \
+        'another boundary must not consume them.'
     assert_not_contains "$(<"$deferred")" \
         'git commit --edit --file \'
     local parser

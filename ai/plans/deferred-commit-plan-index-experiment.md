@@ -8,6 +8,7 @@ created: 2026-10-04
 source_commit: 8fd71ed12e32beabbc7011f308bf5ebcf700d613
 additional_source_commits:
   - 7796acbe2d4d914d863d21ba71079ddb629afd73
+  - 5424f11f63206ce0856c241f3672d77ee927f147
 source_harness: opencode
 source_model: gpt-5.6-sol
 source_provider: openai
@@ -184,6 +185,52 @@ Historical deployment assertions now inspect this reference for parser
 precedence and rendering rules. The available-shell `env` smoke check
 is retained as a portability check, not evidence that the deferred
 policy is required or implemented by the active renderer.
+
+## Original boundary-owned review-reply proposal
+
+Source: `5424f11f63206ce0856c241f3672d77ee927f147`, generated with
+OpenCode / OpenAI / `gpt-5.6-sol`, as recorded by the source commit.
+This third slice proposes reply ownership as part of the deferred
+receipt/helper design. It is not an implemented reply-ownership API
+in the shipped builder/executor. Preserve the active local-candidate
+and separately approved publication lifecycle during comparison.
+
+The historical receipt proposal added assigned review-reply IDs to
+each stable boundary's `extensions.commit-plan` record alongside
+checks/outcomes, dependency IDs and completion state:
+
+Assign each pending reply to exactly one stable boundary using review
+context and changed-path evidence. Ask when ownership is ambiguous;
+never let the first new `HEAD` consume replies owned by later boundaries.
+
+Its materialization step added:
+
+Record boundary-owned review replies and defer their candidate generation
+until that exact boundary's parent/tree completion is verified. Completion
+of another boundary must not consume them.
+
+The incoming commit-message composition paragraph was moved here:
+
+When composed by `/commit-plan`, do not render this standalone handoff.
+Preserve the review-reply lifecycle, but let `/commit-plan` render the
+archived message path and helper-wrapped `git commit --edit --file ...`
+command for the exact boundary index. Assign every `reply_id` to one stable
+boundary before rendering the plan; if repository evidence cannot determine
+ownership, ask rather than attaching it to the next commit. A new `HEAD`
+processes only replies assigned to the exact boundary whose parent/tree
+completion `/commit-plan` verified. Defer replies owned by later boundaries.
+
+For a standalone commit, once the user confirms it (or a new `HEAD` is
+detected), the real commit hash is known. For each reply ID, read its exact
+local source body from the corresponding `reply_files` entry written by
+`/code-review-changes`. If an entry is missing, stop for that reply; do not
+fetch remote content or reconstruct it from memory.
+
+Historical ownership/deferral assertions now inspect this reference.
+Compare a minimal reply-to-boundary mapping bound to immutable plan
+evidence with the old receipt extension before choosing storage or
+adding helper machinery. Neither verified completion nor candidate
+generation authorizes publication or changes human-owned task states.
 
 ## Comparison questions
 
