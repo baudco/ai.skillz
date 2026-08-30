@@ -1651,7 +1651,7 @@ test_all_templates_invalid_args_and_idempotence() {
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
     assert_contains "$output" \
-        'Result: 44 deployed, 0 template skipped, 17 command deployment(s)'
+        'Result: 46 deployed, 0 template skipped, 17 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     local command
@@ -1773,6 +1773,16 @@ test_code_review_contract_assets() {
         'publishes the candidate byte-for-byte'
     assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
         '> response authored by `<harness>`'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Address remote forge or persisted local Tuicr review'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'configured gish runtime'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Bash(sha256sum *)'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Bash(tuicr *)'
+    [ -f "$ROOT/skills/code-review-changes/references/tuicr-local.md" ] \
+        || fail 'Tuicr local review workflow reference is missing'
     assert_file_contains \
         "$ROOT/skills/gish/scripts/review-post.py" \
         'target PR head moved after review'
