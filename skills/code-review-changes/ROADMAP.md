@@ -1,5 +1,15 @@
 # `/code-review-changes` Roadmap
 
+## Tuicr local reply support
+
+Two optional Tuicr changes would tighten the local-session contract, but are
+not required by the current independent-comment workflow:
+
+- Expose `author` from `tuicr review comments` so agents do not need the
+  supported persisted session JSON for authorship evidence.
+- Add native local reply relationships and resolution state so parent markers
+  and independent colocated response comments are no longer necessary.
+
 ## `gish` transport integration
 
 Currently fetches review comments via `gh api` and
