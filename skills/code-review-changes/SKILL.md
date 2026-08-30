@@ -4,8 +4,8 @@ description: >
   Address remote forge or persisted local Tuicr review
   comments: triage suggestions, apply valid fixes, and
   add responses through the matching reply sink. Use
-  when the user provides a forge review, a Tuicr session
-  slug/path, or asks to address review feedback.
+  when the user provides forge review feedback, a local
+  Tuicr session slug/path, or a pasted lowercase-`y` export.
 compatibility: >
   Requires git CLI. Remote reviews require authenticated gh CLI and a
   configured gish runtime. Local reviews require the user's existing tuicr
@@ -13,7 +13,7 @@ compatibility: >
 metadata:
   author: goodboy
   version: "0.1"
-argument-hint: "<forge-review-or-Tuicr-session>"
+argument-hint: "<forge-review> | [-r|--respond] <local-Tuicr-session-or-y-export>"
 disable-model-invocation: true
 allowed-tools:
   - Bash(gh *)
@@ -37,19 +37,19 @@ When addressing review comments, always follow this process:
 
 Keep review transport separate from remediation:
 
-- **Review source**: a remote forge review, or a persisted local Tuicr
-  session.
+- **Review source**: a remote forge review or persisted local Tuicr session.
 - **Reply sink**: a remote thread reply, or an independent colocated Tuicr
   comment.
 
 Both sources use the triage actions in step 2, minimal fixes in step 4,
 mandatory verification in step 5, and the final summary in step 8.
 
-A Tuicr session slug/path, or a request to address comments in a Tuicr
-session, selects the local workflow in
-[`references/tuicr-local.md`](references/tuicr-local.md). Local review access
-needs no network authorization and MUST NOT create another worktree. The
-numbered forge workflow below remains unchanged for remote reviews.
+A local Tuicr slug/path, or a lowercase-`y` export whose first payload line
+names a local session, selects
+[`references/tuicr-local.md`](references/tuicr-local.md). Forge-prefixed Tuicr
+slugs remain remote input. Local access needs no network authorization and MUST
+NOT create another worktree. `-r`/`--respond` authorizes only the local reply
+sink as defined there; the numbered remote workflow remains unchanged.
 
 ## 0. Parse input and fetch review data
 
