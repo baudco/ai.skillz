@@ -120,6 +120,7 @@ prepare_source_repo() {
     cp -R "$ROOT/skills/git-mgmt" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/opencode-cleaning" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/test-design" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
     cp "$ROOT/.gitignore" "$SOURCE_WORK/.gitignore"
@@ -132,7 +133,7 @@ prepare_source_repo() {
     for command in close-wkt code-review code-review-changes commit-plan \
         commit-msg dep-supersede-scan gish git-mgmt harness-perf \
         opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
-        taken-export yt-url-lookup; do
+        test-design taken-export yt-url-lookup; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
@@ -144,6 +145,7 @@ prepare_source_repo() {
         skills/gish skills/git-mgmt \
         skills/harness-perf \
         skills/opencode-cleaning \
+        skills/test-design \
         skills/commit-msg/SKILL.md skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
@@ -1649,17 +1651,19 @@ test_all_templates_invalid_args_and_idempotence() {
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
     assert_contains "$output" \
-        'Result: 42 deployed, 0 template skipped, 16 command deployment(s)'
+        'Result: 46 deployed, 0 template skipped, 17 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     local command
     for command in close-wkt code-review code-review-changes commit-plan \
         commit-msg dep-supersede-scan gish git-mgmt harness-perf \
         opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
-        taken-export yt-url-lookup; do
+        test-design taken-export yt-url-lookup; do
         [ -L "$REPO/.opencode/commands/$command.md" ] \
             || fail "all did not deploy OpenCode command: $command"
     done
+    [ -L "$REPO/.opencode/skills/test-design" ] \
+        || fail 'all did not deploy OpenCode test-design skill'
     before="$(tree_digest "$REPO")"
     bash "$DEPLOY" all "$REPO" --provider all >/dev/null
     after="$(tree_digest "$REPO")"
@@ -1679,11 +1683,11 @@ test_code_review_contract_assets() {
     python "$ROOT/tests/test_code_review_disclosure.py"
     python "$ROOT/tests/test_gish_xontrib.py"
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
-        'explicitly authorizes test execution.'
+        'only after the user explicitly authorizes'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         '-c core.fsmonitor=false'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
-        'Test selection remains owned by `/run-tests`'
+        'Test adequacy, failure models, proof-layer choice'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'trusted target-local deployment, including a safely resolved'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
@@ -1769,6 +1773,16 @@ test_code_review_contract_assets() {
         'publishes the candidate byte-for-byte'
     assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
         '> response authored by `<harness>`'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Address remote forge or persisted local Tuicr comments:'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'configured gish runtime'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Bash(sha256sum *)'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Bash(tuicr *)'
+    [ -f "$ROOT/skills/code-review-changes/references/tuicr-local.md" ] \
+        || fail 'Tuicr local review workflow reference is missing'
     assert_file_contains \
         "$ROOT/skills/gish/scripts/review-post.py" \
         'target PR head moved after review'
@@ -1794,7 +1808,8 @@ test_opencode_cleaning_contract() {
 test_opencode_command_adapter_contracts() {
     local command
     for command in close-wkt dep-supersede-scan gish git-mgmt \
-        harness-perf open-wkt resolve-conflicts yt-url-lookup; do
+        harness-perf open-wkt resolve-conflicts test-design \
+        yt-url-lookup; do
         assert_file_contains \
             "$ROOT/providers/opencode/commands/$command.md" \
             "Load the \`$command\` skill"
@@ -1813,6 +1828,12 @@ test_opencode_command_adapter_contracts() {
         'Do not stage, continue, skip, or abort'
     assert_file_contains "$ROOT/providers/opencode/commands/harness-perf.md" \
         'Begin with read-only measurements'
+    assert_file_contains \
+        "$ROOT/providers/opencode/commands/test-design.md" \
+        'command and runtime diagnosis to `run-tests`'
+    assert_file_contains \
+        "$ROOT/providers/opencode/commands/test-design.md" \
+        'do not execute tests without explicit authorization'
     pass 'OpenCode command adapters preserve workflow authorization gates'
 }
 
@@ -1954,6 +1975,102 @@ test_commit_plan_contract() {
     pass 'commit-plan composes with commit-msg and git-mgmt safely'
 }
 
+test_test_design_contract() {
+    new_repo test-design-dependency
+    assert_fails bash "$DEPLOY" test-design "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'run-tests'"
+
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" test-design "$REPO" --provider opencode >/dev/null
+    [ -L "$REPO/.opencode/skills/test-design" ] \
+        || fail 'test-design skill was not deployed'
+    [ -L "$REPO/.opencode/commands/test-design.md" ] \
+        || fail 'test-design command was not automatically deployed'
+    assert_eq "$(readlink "$REPO/.opencode/commands/test-design.md")" \
+        "$ROOT/providers/opencode/commands/test-design.md"
+
+    rm "$REPO/.opencode/skills/run-tests/SKILL.md"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'dependency run-tests missing or unhealthy'
+    assert_fails bash "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_fails bash "$DEPLOY" command test-design "$REPO" \
+        --provider opencode
+
+    new_repo test-design-claude-dependency
+    assert_fails bash "$DEPLOY" test-design "$REPO" --provider claude
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy claude skill 'run-tests'"
+    bash "$DEPLOY" run-tests "$REPO" --provider claude >/dev/null
+    bash "$DEPLOY" test-design "$REPO" --provider claude >/dev/null
+    [ -L "$REPO/.claude/skills/test-design" ] \
+        || fail 'Claude test-design skill was not deployed'
+
+    new_repo test-design-provider-all-atomic
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
+    assert_fails bash "$DEPLOY" test-design "$REPO" --provider all
+    [ ! -e "$REPO/.claude/skills/test-design" ] \
+        || fail 'provider-all failure partially deployed Claude test-design'
+    [ ! -e "$REPO/.opencode/skills/test-design" ] \
+        || fail 'provider-all failure partially deployed OpenCode test-design'
+    [ ! -e "$REPO/.opencode/commands/test-design.md" ] \
+        || fail 'provider-all failure partially deployed test-design command'
+
+    new_repo test-design-portable
+    bash "$DEPLOY" init "$REPO" --method submodule \
+        --url "$SOURCE_URL" >/dev/null
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode \
+        --method submodule >/dev/null
+    bash "$DEPLOY" test-design "$REPO" --provider opencode \
+        --method submodule >/dev/null
+    case "$(readlink "$REPO/.opencode/skills/test-design")" in
+        /*) fail 'portable test-design skill link is absolute' ;;
+    esac
+    case "$(readlink "$REPO/.opencode/commands/test-design.md")" in
+        /*) fail 'portable test-design command link is absolute' ;;
+    esac
+    bash "$DEPLOY" status "$REPO" --provider opencode >/dev/null
+
+    local home="$TMP_ROOT/test-design-global-home"
+    mkdir -p "$home"
+    assert_fails env HOME="$home" bash "$DEPLOY" test-design --global
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy global skill 'run-tests'"
+    env HOME="$home" bash "$DEPLOY" run-tests --global >/dev/null
+    env HOME="$home" bash "$DEPLOY" test-design --global >/dev/null
+
+    local cycle="$TMP_ROOT/test-design-cycle"
+    cp -a "$SOURCE_WORK" "$cycle"
+    sed -i \
+        's#skill|run-tests|hybrid|SKILL.md#skill|run-tests|hybrid|SKILL.md|test-design#' \
+        "$cycle/deploy-manifest.conf"
+    assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'skill dependency cycle includes'
+
+    assert_file_contains "$ROOT/skills/test-design/SKILL.md" \
+        'Delegate every test command'
+    assert_file_contains "$ROOT/skills/test-design/SKILL.md" \
+        'Inspection and test design do not authorize file edits.'
+    assert_file_contains "$ROOT/skills/test-design/SKILL.md" \
+        'regression test authorizes test-file edits'
+    assert_file_contains "$ROOT/skills/test-design/SKILL.md" \
+        'Test execution requires separate authorization'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        '`/run-tests` remains independently usable and must not invoke or require'
+    assert_file_contains "$ROOT/skills/test-design/SKILL.md" \
+        'not independently reclassify execution failures'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        'repository-supported executable scope'
+    assert_file_contains "$ROOT/templates/run-tests/SKILL.md.j2" \
+        'authored regressions in `/test-design`'
+    assert_file_contains "$ROOT/README.md" '| `test-design` |'
+    assert_file_contains "$ROOT/commands/README.md" \
+        'test-design additionally requires run-tests'
+    pass 'test-design composes one-way with run-tests'
+}
+
 test_opencode_debug_if_available() {
     if ! command -v opencode >/dev/null 2>&1; then
         pass 'OpenCode debug validation skipped (opencode unavailable)'
@@ -1974,7 +2091,7 @@ test_opencode_debug_if_available() {
     for workflow in close-wkt code-review code-review-changes commit-plan \
         commit-msg dep-supersede-scan gish git-mgmt harness-perf \
         opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
-        taken-export yt-url-lookup; do
+        test-design taken-export yt-url-lookup; do
         assert_file_contains "$config_output" "\"$workflow\""
         assert_file_contains "$skill_output" "\"name\": \"$workflow\""
     done
@@ -2020,6 +2137,7 @@ test_deployment_validator_failures
 test_all_templates_invalid_args_and_idempotence
 test_code_review_contract_assets
 test_commit_plan_contract
+test_test_design_contract
 test_opencode_cleaning_contract
 test_opencode_command_adapter_contracts
 test_opencode_debug_if_available

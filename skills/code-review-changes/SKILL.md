@@ -1,17 +1,18 @@
 ---
 name: code-review-changes
 description: >
-  Address PR review comments: triage suggestions,
-  apply valid code fixes in a worktree, and post
-  inline reply comments via `gh`. Use when the user
-  provides a GH review URL or asks to address PR
-  review feedback.
+  Address remote forge or persisted local Tuicr comments:
+  triage suggestions, apply fixes, and add responses through
+  the matching sink. Use for forge feedback, a local Tuicr
+  slug/path, or a pasted lowercase-`y` export.
 compatibility: >
-  Requires authenticated gh CLI and git CLI.
+  Requires git CLI. Remote reviews require authenticated gh CLI and a
+  configured gish runtime. Local reviews require the user's existing tuicr
+  executable and persisted session.
 metadata:
   author: goodboy
   version: "0.1"
-argument-hint: "<PR-review-URL | PR# --repo owner/name>"
+argument-hint: "<forge-review> | [-r|--respond] <local-Tuicr-session-or-y-export>"
 disable-model-invocation: true
 allowed-tools:
   - Bash(gh *)
@@ -20,6 +21,9 @@ allowed-tools:
   - Bash(mkdir *)
   - Bash(ls *)
   - Bash(sha256sum *)
+  - Bash(command *)
+  - Bash(xonsh *)
+  - Bash(tuicr *)
   - Read
   - Grep
   - Glob
@@ -27,8 +31,25 @@ allowed-tools:
   - Edit
 ---
 
-When addressing PR review comments, always follow
-this process:
+When addressing review comments, always follow this process:
+
+## Integration model
+
+Keep review transport separate from remediation:
+
+- **Review source**: a remote forge review or persisted local Tuicr session.
+- **Reply sink**: a remote thread reply, or an independent colocated Tuicr
+  comment.
+
+Both sources use the triage actions in step 2, minimal fixes in step 4,
+mandatory verification in step 5, and the final summary in step 8.
+
+A local Tuicr slug/path, or a lowercase-`y` export whose first payload line
+names a local session, selects
+[`references/tuicr-local.md`](references/tuicr-local.md). Forge-prefixed Tuicr
+slugs remain remote input. Local access needs no network authorization and MUST
+NOT create another worktree. `-r`/`--respond` authorizes only the local reply
+sink as defined there; the numbered remote workflow remains unchanged.
 
 ## 0. Parse input and fetch review data
 
@@ -324,7 +345,7 @@ commit-ref footer link (e.g.
 `https://github.com/baudco/ai.skillz/commit/`
 instead of the PR repo's URL).
 
-## 7. Post inline reply comments
+## 7. Post remote inline reply comments
 
 Do not post remote replies until a current human message explicitly approves
 the complete reply body, backend, repository, PR, parent comment, and publish
@@ -461,7 +482,12 @@ footer), omit `reply_ids` from the file.
 
 ## 8. Summary
 
-After all comments are addressed, present:
+After all comments are addressed, present the applicable source/sink result.
+For local Tuicr reviews, first perform the final refresh and verification in
+the local workflow reference. Report local responses as **added** or
+**addressed**, never resolved.
+
+For remote reviews, present:
 
 - Worktree path + list of modified files
 - Reminder to review, stage, commit, and push

@@ -53,9 +53,14 @@ dry run before applying it. Use `update` only for a submodule anchor.
   verification in every repository receiving fixes.
   Deploy it first; review fixes stop if it is absent.
 - `/commit-msg` — review context files are written for
-  this skill to consume during commit generation.
+  this skill to consume during remote-review commit
+  generation. Local Tuicr reviews do not write the
+  forge-specific context file.
 
 ## Prerequisites
 
 - `gh` CLI (authenticated)
 - `git` CLI
+- For local reviews, the user's existing `tuicr` command
+  and its normal `HOME`/XDG environment. No forge login is
+  required.

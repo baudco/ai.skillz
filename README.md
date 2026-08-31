@@ -25,10 +25,12 @@ generalized for cross-repo deployment.
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
 | `run-tests` | Shared test workflow with repository-owned harness guidance |
+| `test-design` | Failure models, deterministic test design, and authored regressions |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
 | `opencode-cleaning` | Safely preview and remove stale OpenCode forks |
 | `plan-io` | Plan file conventions |
+| `privacy-opsec` | Design and verify privacy-preserving internet sessions |
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
 | `gish` | Local-file-first forge transport, including approved reviews |

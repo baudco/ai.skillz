@@ -24,6 +24,7 @@ commands/<name>/
 | `branch-in-new-terminal` | Claude Code | Fork the current session and open the branch in a new terminal window (precise-id via `SessionStart` hook, or `--continue` fallback). |
 | `commit-msg` | OpenCode | Load the canonical `commit-msg` skill for staged changes. |
 | `run-tests` | OpenCode | Load the canonical test workflow and repository harness. |
+| `test-design` | OpenCode | Design deterministic tests and author regression coverage. |
 | `taken-export` | OpenCode | Export repository work as Taken-compatible Org tasks. |
 
 Reusable OpenCode shims are stored at
@@ -53,6 +54,12 @@ bash /path/to/ai.skillz/scripts/deploy.sh \
   run-tests <repo> --provider opencode
 bash /path/to/ai.skillz/scripts/deploy.sh command \
   run-tests <repo> --provider opencode
+
+# test-design additionally requires run-tests:
+bash /path/to/ai.skillz/scripts/deploy.sh \
+  test-design <repo> --provider opencode
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  test-design <repo> --provider opencode
 
 bash /path/to/ai.skillz/scripts/deploy.sh \
   taken-export <repo> --provider opencode
