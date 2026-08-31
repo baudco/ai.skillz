@@ -8,12 +8,13 @@ skill.
 ## 1. Resolve The User's Tuicr
 
 Use the same executable and `HOME`/XDG environment as the user's TUI. Do not
-install Tuicr, run a repository build, substitute another binary, or hardcode
-a machine-local executable or storage path.
+install Tuicr, independently run a repository build, substitute another
+binary, or hardcode a machine-local executable or storage path.
 
-1. Resolve the command in the harness shell and show the executable and
-   relevant `HOME`, `XDG_CONFIG_HOME`, and `XDG_DATA_HOME` values before using
-   it. Preserve any environment assignments from the user's command.
+1. Resolve the command in the harness shell and show the executable or adapter
+   and relevant `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and
+   `XDG_STATE_HOME` values before using it. Preserve any environment
+   assignments from the user's command.
 2. If the user's command is a shell alias, function, or wrapper unavailable to
    the harness, ask for its concrete command expansion. Do not approximate it
    with the first `tuicr` on `PATH`.
@@ -25,6 +26,46 @@ a machine-local executable or storage path.
 All commands below use that resolved command and environment, represented as
 `<tuicr>`.
 
+### Xonsh Local Adapter
+
+Before asking for an unavailable alias expansion, check the portable XDG
+candidate `${XDG_CONFIG_HOME:-$HOME/.config}/xonsh/tuicr.xsh`. This is a
+user-specific optional adapter location, not a Tuicr binary or storage path.
+Use it only when the file exists and its script interface explicitly accepts
+`--agent-cli` followed by a `review` command without building or selecting a
+different binary.
+
+Do not source xonsh startup files or invoke an interactive alias such as `tcr`.
+Set the resolved command prefix to the following structured argv, preserving
+the quoted adapter path as one argument:
+
+```text
+xonsh --no-rc "<adapter-path>" --agent-cli
+```
+
+Then preserve argument boundaries and invoke the review CLI from the reviewed
+worktree, for example:
+
+```text
+xonsh --no-rc "<adapter-path>" --agent-cli review list \
+  --repo "<absolute-worktree>"
+xonsh --no-rc "<adapter-path>" --agent-cli review comments \
+  --session "<session>" --repo "<absolute-worktree>"
+```
+
+The adapter owns executable selection and its isolated `HOME`/XDG setup.
+`--no-rc` prevents unrelated xonsh startup configuration. `--agent-cli` must
+reuse an existing binary and fail rather than build or fetch; it must accept
+only `review` commands. Reuse the exact prefix for every command and do not
+extract its internal binary or replace its environment. An absent binary means
+the user must launch their normal TUI wrapper once before retrying.
+
+The quoted absolute `--repo` value and session selector are authoritative, so
+the adapter does not depend on the harness working directory. If the candidate
+is absent or does not declare this interface, use the existing concrete-
+expansion or live-process fallback; request any additional shell-tool permission
+needed for a user-supplied non-xonsh wrapper.
+
 ## 2. Select The Session
 
 The worktree being reviewed is the existing worktree supplied by the user or
@@ -34,7 +75,7 @@ the current worktree containing the requested session. Do not invoke
 Run:
 
 ```bash
-<tuicr> review list --repo <absolute-worktree>
+<tuicr> review list --repo "<absolute-worktree>"
 ```
 
 Consider only entries with `"kind": "local"`. A path selector matches the
@@ -52,6 +93,10 @@ The `path` emitted by `review list` is the supported persisted session file;
 read it only for fields omitted by `review comments`. Never derive or guess a
 storage path. Ask the user to select when more than one session remains
 plausible after the exact worktree, anchor, and mode checks.
+
+After selection, use the absolute session `path` emitted by `review list` for
+every `comments` and `add` command. Never pass a relative session JSON path;
+this keeps session resolution independent of the harness working directory.
 
 ### Pasted Export Handoff
 
@@ -110,7 +155,8 @@ not by itself authorize adding responses.
 
 Before editing source code:
 
-1. Run `review comments --session <session> --repo <absolute-worktree>`.
+1. Run `review comments --session "<session>" --repo
+   "<absolute-worktree>"`.
 2. Read the selected session JSON at the `path` returned by `review list`.
 3. Once selection is safely established, snapshot every selected comment's
    immutable persisted identity and anchor: `id`, target kind, `path`, storage
@@ -211,9 +257,9 @@ For an inline comment, invoke the resolved command with the original anchor:
 
 ```bash
 <tuicr> review add \
-  --session <session> \
-  --repo <absolute-worktree> \
-  --target-file <original-path> \
+  --session "<session>" \
+  --repo "<absolute-worktree>" \
+  --target-file "<original-path>" \
   --line <original-start-line> \
   --side <original-side> \
   --username "<harness/model>" \

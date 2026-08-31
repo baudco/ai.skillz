@@ -1,11 +1,10 @@
 ---
 name: code-review-changes
 description: >
-  Address remote forge or persisted local Tuicr review
-  comments: triage suggestions, apply valid fixes, and
-  add responses through the matching reply sink. Use
-  when the user provides forge review feedback, a local
-  Tuicr session slug/path, or a pasted lowercase-`y` export.
+  Address remote forge or persisted local Tuicr comments:
+  triage suggestions, apply fixes, and add responses through
+  the matching sink. Use for forge feedback, a local Tuicr
+  slug/path, or a pasted lowercase-`y` export.
 compatibility: >
   Requires git CLI. Remote reviews require authenticated gh CLI and a
   configured gish runtime. Local reviews require the user's existing tuicr
@@ -23,6 +22,7 @@ allowed-tools:
   - Bash(ls *)
   - Bash(sha256sum *)
   - Bash(command *)
+  - Bash(xonsh *)
   - Bash(tuicr *)
   - Read
   - Grep
