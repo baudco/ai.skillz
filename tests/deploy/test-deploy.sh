@@ -1774,7 +1774,7 @@ test_code_review_contract_assets() {
     assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
         '> response authored by `<harness>`'
     assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
-        'Address remote forge or persisted local Tuicr review'
+        'Address remote forge or persisted local Tuicr comments:'
     assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
         'configured gish runtime'
     assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
