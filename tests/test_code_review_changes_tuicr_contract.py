@@ -172,6 +172,56 @@ class TuicrReviewContractTests(unittest.TestCase):
             LOCAL,
         )
 
+    def test_xonsh_adapter_works_without_interactive_dotrc(self):
+        '''
+        Agent harnesses do not load the user's interactive xonsh
+        setup.
+
+        The skill must discover the optional adapter through XDG,
+        invoke its script interface directly, and preserve its
+        command prefix and isolated environment. This prevents a
+        regression to aliases or a substituted Tuicr binary.
+
+        '''
+        self.assertIn('Bash(command *)', SKILL)
+        self.assertIn('Bash(xonsh *)', SKILL)
+        self.assertIn(
+            '${XDG_CONFIG_HOME:-$HOME/.config}/xonsh/tuicr.xsh',
+            LOCAL,
+        )
+        self.assertIn(
+            'xonsh --no-rc "<adapter-path>" --agent-cli review list',
+            LOCAL,
+        )
+        self.assertIn(
+            'Do not source xonsh startup files or invoke an '
+            'interactive alias',
+            LOCAL,
+        )
+        self.assertIn(
+            '`--no-rc` prevents unrelated xonsh startup '
+            'configuration',
+            LOCAL,
+        )
+        self.assertIn(
+            '`--agent-cli` must\nreuse an existing binary and fail '
+            'rather than build or fetch',
+            LOCAL,
+        )
+        self.assertIn(
+            'must accept\nonly `review` commands',
+            LOCAL,
+        )
+        self.assertIn(
+            'does not depend on the harness working directory',
+            LOCAL,
+        )
+        self.assertIn(
+            'use the absolute session `path` emitted by '
+            '`review list`',
+            LOCAL,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
