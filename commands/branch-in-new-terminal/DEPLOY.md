@@ -1,6 +1,6 @@
 # Deploying `/branch-in-new-terminal`
 
-A custom Claude Code **slash command** that forks the current
+A Claude Code-only slash command that forks the current
 conversation (`claude --resume <id> --fork-session`) and opens the
 branch in a new terminal window. Unlike skills, commands deploy as a
 flat `.md` file under `.claude/commands/`.
@@ -13,25 +13,43 @@ Two pieces:
 The command degrades gracefully: without the hook, use the commented
 `--continue` fallback inside the `.md`.
 
-## 1. Command file
+## 1. Source anchor and command file
 
-### Method A — symlink (single machine)
-
-```bash
-mkdir -p <target-repo>/.claude/commands
-ln -s /path/to/ai.skillz/commands/branch-in-new-terminal/branch-in-new-terminal.md \
-      <target-repo>/.claude/commands/branch-in-new-terminal.md
-```
-
-### Global (available in every project)
+Initialize the provider-neutral source anchor once per target repo:
 
 ```bash
-mkdir -p ~/.claude/commands
-ln -s /path/to/ai.skillz/commands/branch-in-new-terminal/branch-in-new-terminal.md \
-      ~/.claude/commands/branch-in-new-terminal.md
+# Local development: ignored .ai/ai.skillz symlink.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+
+# Or portable, version-pinned deployment:
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 ```
 
-Restart Claude Code (commands are discovered at session start).
+Deploy the command to its supported provider:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  branch-in-new-terminal <repo> --provider claude
+```
+
+Local deployment creates an ignored absolute
+`.claude/commands/branch-in-new-terminal.md` link. Submodule deployment
+creates a trackable relative link through `.ai/ai.skillz`; track that link,
+`.gitmodules`, and the anchor gitlink. The script does not stage files unless
+`--stage` is explicitly supplied.
+
+There is no OpenCode implementation of this Claude session-forking
+command. Do not deploy it with `--provider opencode`. Restart Claude
+Code after deployment because commands are discovered at session start.
+
+For a global Claude-only installation, no repo anchor is required:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh command \
+  branch-in-new-terminal --global --provider claude
+```
+
+Global command deployment does not accept a target repo or `--stage`.
 
 ## 2. `SessionStart` hook (for the precise-id variant)
 
@@ -75,15 +93,20 @@ A new terminal should open running a forked copy of the session. If
 nothing opens, the `SessionStart` hook is probably not installed (the
 precise variant reads `.claude/.current_session`).
 
-## Automated deploy
-
-`scripts/deploy.sh` has a `command` mode that automates the symlink:
+## Maintenance
 
 ```bash
-deploy.sh command branch-in-new-terminal <repo>   # into .claude/commands/
-deploy.sh command branch-in-new-terminal --global # into ~/.claude/commands/
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
-It symlinks the `.md` and prints the companion `SessionStart` hook for
-you to merge into `settings.json` (the hook merge stays manual, per
-above).
+`migrate` normalizes legacy source links to ignored absolute links for a
+local checkout or anchor-relative links for a submodule, while leaving the
+manual hook configuration and per-machine session stash intact.
+`update` advances a submodule anchor; update a local source checkout
+directly. These commands do not edit OpenCode configuration.
+The validator checks status, committed absolute provider links, and the
+Git index for runtime state such as `.claude/.current_session`.

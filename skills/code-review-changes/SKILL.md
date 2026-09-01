@@ -7,8 +7,7 @@ description: >
   provides a GH review URL or asks to address PR
   review feedback.
 compatibility: >
-  Requires gh CLI (or gish when available).
-  Requires git CLI.
+  Requires authenticated gh CLI and git CLI.
 metadata:
   author: goodboy
   version: "0.1"
@@ -135,20 +134,28 @@ When a fix targets a symlinked file with
 
 ## 5. Verify: run tests (mandatory)
 
-**Before staging or committing**, run `/run-tests`
-targeting the modules touched by your fixes (see
-the change-type -> test mapping in that skill).
+**Before staging or committing**, group changed files
+by the repository that receives them. From each
+repository/worktree root, run `/run-tests` targeting
+the modules changed there. This ensures cross-repo
+fixes use the canonical repository's environment and
+`test-harness-reference.md`, not the PR repository's.
 
-- If the worktree doesn't have its own venv, set
-  one up first. For `uv`-managed projects:
-  ```
-  UV_PROJECT_ENVIRONMENT=py<MINOR> uv sync
-  ```
-  where `<MINOR>` matches the active cpython
-  minor version (e.g. `py313` for 3.13, `py314`
-  for 3.14). Detect via `python --version`.
-- Use the worktree's Python binary to run pytest
-  (e.g. `py<MINOR>/bin/python -m pytest ...`).
+The active provider session must have the canonical
+`/run-tests` skill available. Each changed repository
+must provide its own harness reference or sufficient
+project metadata. Deploying into another repository
+does not hot-load that skill into the current session;
+stop and request a restart when it is unavailable.
+
+- Delegate environment selection and validation to
+  `/run-tests` and the repository's local harness
+  reference. If the required environment is missing,
+  report the missing prerequisite and ask before
+  creating it or running `uv sync`.
+- Never modify a lock file as an implicit test setup
+  step. When the user approves an existing-lockfile
+  sync, prefer the repository-documented locked mode.
 
 ### Establish CI baseline
 
@@ -188,17 +195,24 @@ Determine whether the failure is:
      `.claude/review_regression.md` so that
      `/commit-msg` can incorporate it. Format:
      ```
-     guilty: <short-hash of your review commit>
+      guilty: pending
      test: <test_name(s) that failed>
      cause: <1-line description of what broke>
      ```
      Example:
      ```
-     guilty: 85457cb8
+      guilty: pending
      test: test_stale_entry_is_deleted
      cause: `registry_addrs` change routes
        `addr` through msgpack -> list, not tuple
-     ```
+      ```
+      `pending` is intentional because verification
+      occurs before the review-fix commit exists.
+      Write this file under the repository where the
+      failing review fix lands, using the same
+      placement rule as `review_context.md`. For
+      multi-repository fixes, write one scoped artifact
+      per receiving repository.
      The `/commit-msg` skill reads this file and
      folds its content into the commit message
      body, then deletes it after use.
@@ -232,13 +246,15 @@ the PR repo. This ensures `/commit-msg` finds
 the context when run from the correct repo.
 
 If fixes span multiple repos (rare), write a copy
-to each repo that received changes.
+to each repo that received changes and identify that
+repository in `commit_repo`.
 
 Initial contents (before GH replies are posted):
 
 ```
 pr: <N>
 repo: <owner>/<repo>
+commit_repo: <owner>/<repository-receiving-the-fix>
 review_url: <full-review-URL-or-PR-URL>
 reviewer: <reviewer-login>
 actions: fix=<n> ack=<n> wontfix=<n>
@@ -284,6 +300,12 @@ instead of the PR repo's URL).
 
 ## 7. Post inline reply comments
 
+Do not post remote replies until the user explicitly
+accepts the proposed fixes and reply text. If the user
+has not committed yet, also ask whether to wait for the
+real hash or post approved placeholders. A review
+handoff is not authorization to publish comments.
+
 For EVERY review comment (not just `fix` items),
 post an inline reply via `gh api` using the
 `in_reply_to` field (NOT the `/replies`
@@ -302,10 +324,11 @@ gh api \
 
 ### Reply format
 
-Every reply MUST start with an attribution header:
+Every reply MUST start with an attribution header
+derived from the active coding harness:
 
 ```
-> 🤖 *response authored by `claude-code`*
+> response authored by `<harness>`
 ```
 
 Followed by a blank line, then the reply body.

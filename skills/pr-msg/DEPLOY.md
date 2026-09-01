@@ -1,50 +1,37 @@
 # Deploying `/pr-msg`
 
-## Method A: Absolute symlinks (single machine)
+`pr-msg` is hybrid: its workflow, references, and scripts are canonical,
+while generated PR descriptions remain local to the consumer repo.
+
+## Deployment
 
 ```bash
-mkdir -p .claude/skills/pr-msg/msgs
-ln -s /path/to/ai.skillz/skills/pr-msg/SKILL.md \
-      .claude/skills/pr-msg/SKILL.md
-ln -s /path/to/ai.skillz/skills/pr-msg/references \
-      .claude/skills/pr-msg/references
-ln -s /path/to/ai.skillz/skills/pr-msg/scripts \
-      .claude/skills/pr-msg/scripts
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# or use a portable, version-pinned anchor: --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh pr-msg <repo> \
+  --provider <claude|opencode|all>
 ```
 
-Or use the deploy script:
+Both methods select source content through `.ai/ai.skillz`. Deployment
+creates `.claude/skills/pr-msg/` and/or `.opencode/skills/pr-msg/` as local
+hybrid directories. Local mode uses ignored absolute links for `SKILL.md`,
+`references/`, and `scripts/`; submodule mode uses trackable relative links
+through the anchor. The directories themselves are not replaced.
 
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh pr-msg <your-repo>
-```
+The existing persisted runtime contract remains under
+`.claude/skills/pr-msg/`, including `msgs/` and `pr_msg_LATEST.md`.
+These generated files stay local and ignored. Migration preserves them
+byte-for-byte rather than moving them into `.ai` or `.opencode`.
 
-## Method B: Git submodule (portable, version-pinned)
+Track the canonical provider links only in submodule mode, along with
+`.gitmodules` and the `.ai/ai.skillz` gitlink. Local mode ignores its
+absolute provider links and anchor. Nothing is staged unless `--stage` is
+explicitly supplied.
 
-### One-time setup
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
-```
-
-### Deploy this skill
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh pr-msg <your-repo>
-```
-
-### What gets committed
-
-- `.gitmodules`, `.claude/ai.skillz` (gitlink)
-- `.claude/skills/pr-msg/SKILL.md` → relative symlink
-  to `../../ai.skillz/skills/pr-msg/SKILL.md`
-- `.claude/skills/pr-msg/references` → relative symlink
-  to `../../ai.skillz/skills/pr-msg/references`
-- `.claude/skills/pr-msg/scripts` → relative symlink
-  to `../../ai.skillz/skills/pr-msg/scripts`
-
-### What gets gitignored
-
-- `msgs/`, `pr_msg_LATEST.md`
+Quit and restart OpenCode after deployment or update. Default
+`.opencode/skills/` discovery needs no `opencode.json` or
+`opencode.jsonc` mutation.
 
 ## What stays local (per-repo)
 
@@ -56,6 +43,20 @@ bash /path/to/ai.skillz/scripts/deploy.sh pr-msg <your-repo>
 - `SKILL.md` — the generic workflow definition
 - `references/format-reference.md` — PR format spec
 - `scripts/rewrap.py` — line-width enforcement tool
+
+## Maintenance
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
+```
+
+Review the dry run before migrating legacy absolute or
+`.claude/ai.skillz` links. `update` advances a submodule anchor; local
+anchors follow their source checkout.
 
 ## Prerequisites
 

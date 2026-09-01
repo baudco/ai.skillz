@@ -3,36 +3,52 @@
 `taken-export` is a generic whole-directory skill with no generated
 runtime state inside its skill directory.
 
-## Deployment Script
+## Deployment
 
-For the existing Claude-compatible deployment:
+```bash
+# Local: provider links point directly to this checkout and stay ignored.
+bash /path/to/ai.skillz/scripts/deploy.sh taken-export <repo> \
+  --provider <claude|opencode|all> --method symlink
 
-```sh
-bash /path/to/ai.skillz/scripts/deploy.sh taken-export /path/to/repo
+# Portable: initialize a version-pinned anchor and use relative links.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
+bash /path/to/ai.skillz/scripts/deploy.sh taken-export <repo> \
+  --provider <claude|opencode|all> --method submodule
 ```
 
-This links the canonical directory into:
+Provider destinations are `.claude/skills/taken-export` and
+`.opencode/skills/taken-export`. Local mode creates ignored absolute links;
+portable mode creates trackable relative links through `.ai/ai.skillz`.
 
-```text
-<repo>/.claude/skills/taken-export
+OpenCode also needs its command shim:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh command taken-export <repo> \
+  --provider opencode --method symlink
+# Use --method submodule after portable initialization.
 ```
 
-## OpenCode
+The canonical shim is tracked at
+`providers/opencode/commands/taken-export.md`. Local provider links stay
+ignored. In submodule mode, track the relative links, `.gitmodules`, and the
+anchor gitlink. Nothing is staged unless `--stage` is explicitly supplied.
 
-Until provider-aware deployment lands, link the canonical directory into
-OpenCode's project discovery tree:
+Quit and restart OpenCode after deploying or updating the skill. It
+uses default `.opencode/skills/` discovery; deployment does not mutate
+`opencode.json` or `opencode.jsonc`.
 
-```sh
-mkdir -p /path/to/repo/.opencode/skills
-ln -s /path/to/ai.skillz/skills/taken-export \
-  /path/to/repo/.opencode/skills/taken-export
+## Maintenance
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
-Keep absolute development links untracked. Portable consumers should use
-the repository's `ai.skillz` submodule/anchor and a relative link.
-
-Restart OpenCode after deploying or updating the skill; skills are
-loaded at session startup.
+Review migration output before applying it. `update` advances a
+submodule anchor; local anchors follow their source checkout.
 
 ## Optional Dependencies
 
@@ -53,5 +69,6 @@ The default artifact location is worktree-local:
 .ai/taken/exports/
 ```
 
-Decide per repository whether exports are ephemeral, ignored, or durable.
-Deployment does not add ignore rules and the skill does not stage exports.
+Deployment ignores this directory by default. Remove that pattern only when
+exports are intentionally durable repository artifacts. The skill itself
+does not stage exports or change ignore policy during an export.

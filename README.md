@@ -21,7 +21,7 @@ generalized for cross-repo deployment.
 | `pr-msg` | PR description generation |
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
-| `run-tests` | Test runner (template-based) |
+| `run-tests` | Shared test workflow with repository-owned harness guidance |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
 | `plan-io` | Plan file conventions |
@@ -33,17 +33,119 @@ generalized for cross-repo deployment.
 
 ## Deployment
 
-Each skill has a `DEPLOY.md` with setup instructions.
-Two methods are supported:
+Portable deployment uses a provider-neutral source anchor at
+`<repo>/.ai/ai.skillz`. Provider discovery trees use relative links to that
+anchor in portable mode and ignored absolute links in local mode:
 
-- **Symlinks** — absolute links from your repo's
-  `.claude/skills/` to this checkout (dev machines)
-- **Submodule** — `git submodule add` for portable,
-  version-pinned deployment (see `scripts/`)
+| Provider | Skills | Commands |
+|----------|--------|----------|
+| Claude Code | `.claude/skills/` | `.claude/commands/` |
+| OpenCode | `.opencode/skills/` | `.opencode/commands/` |
 
-For development in this checkout, `opencode.json` loads
-the canonical `skills/` tree directly and
-`.opencode/commands/commit-msg.md` exposes `/commit-msg`.
+Initialize the anchor, then deploy a skill to one or both providers:
+
+```bash
+# Local development: .ai/ai.skillz is an ignored absolute symlink.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+
+# Portable deployment: .ai/ai.skillz is a versioned git submodule.
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh <skill> <repo> \
+  --provider <claude|opencode|all>
+
+# Claude-only global deployment; no target repository or staging.
+bash /path/to/ai.skillz/scripts/deploy.sh <skill> --global
+```
+
+`--provider claude` writes `.claude` links, `--provider opencode`
+writes `.opencode` links, and `--provider all` writes both. Local symlink
+deployment creates ignored absolute provider links. Submodule deployment
+creates trackable relative links through the anchor. Nothing is staged unless
+`--stage` is explicitly supplied, and the script never commits.
+
+Skill and command deployment defaults to `--provider claude`, `init`
+defaults to `--method submodule`, and `status` defaults to
+`--provider all`. Portable deployments initialize an anchor explicitly.
+When no anchor exists, an omitted method or `--method symlink` uses ignored
+absolute links; `--direct` remains an explicit compatibility alias.
+
+Global skill deployment is Claude-only and links beneath
+`~/.claude/skills/`. It converts missing destinations or byte-identical
+canonical copies, preserves non-canonical files in hybrid directories, and
+refuses divergent content. An existing `~/.claude/skills` link to this
+checkout's canonical `skills/` tree is accepted as an already-complete global
+deployment; other symlinked parent directories are refused.
+
+Generic skills are linked as whole directories. Hybrid skills such as
+`commit-msg` and `pr-msg` keep local directories for generated state and
+link only canonical files and resources. Existing runtime paths under
+`.claude/` remain in place; source deployment does not migrate or delete
+message archives, configuration, review context, or worktree state.
+`run-tests` is hybrid: its canonical `SKILL.md` is linked while each
+repository owns `test-harness-reference.md`.
+
+### Commands
+
+Provider-specific reusable assets live under `providers/`. For example,
+the canonical OpenCode `/commit-msg` shim is
+`providers/opencode/commands/commit-msg.md`; Taken and Run shims use the same
+layout. Local deployment links `.opencode/commands/<name>.md` directly to the
+canonical provider asset and ignores that absolute link. Portable deployment
+uses a trackable relative link through `.ai/ai.skillz`. This repository
+self-hosts with tracked relative links from `.opencode/commands/` to
+`providers/opencode/commands/`.
+
+```bash
+# The command dependency is enforced: deploy the OpenCode skill first.
+bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
+  --provider opencode
+bash /path/to/ai.skillz/scripts/deploy.sh command commit-msg <repo> \
+  --provider opencode
+```
+
+OpenCode discovers `.opencode/skills/` and `.opencode/commands/`
+without configuration changes. The deploy and migration commands do not
+edit `opencode.json` or `opencode.jsonc`; `status` reports unportable
+`skills.paths` entries for manual review. Quit and restart OpenCode after
+deploying or updating skills or commands because discovery occurs at
+startup.
+
+### Maintenance and migration
+
+```bash
+# Inspect the anchor, both provider trees, broken links, legacy layouts,
+# command shims, and unportable OpenCode skills.paths entries.
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+
+# Preview every legacy-layout migration change, then apply it.
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+
+# Advance a submodule anchor, optionally to a specific ref.
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+
+# Validate the manifest, deployed paths, status, and Git index.
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
+```
+
+Always review migration output first. Migration preserves hybrid local
+state and unrelated files. For a local symlink anchor, update the source
+checkout directly instead of using `update`.
+
+`validate-deployment.sh` validates manifest sources and command
+dependencies, runs deployment status, rejects committed absolute
+provider links, and inspects the Git index for tracked or staged runtime
+state such as message archives, session configuration, review context,
+worktrees, and command session files.
+
+The read-only
+[consumer deployment inventory](docs/deployment-consumer-inventory.md)
+records the observed migration state of known consumers and recommended
+follow-up commands.
+
+Each active skill has a `DEPLOY.md` with its prerequisites and any
+skill-specific local setup.
 
 ## License
 

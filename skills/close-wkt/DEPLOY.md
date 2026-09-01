@@ -1,49 +1,47 @@
 # Deploying `/close-wkt`
 
-## Method A: Absolute symlinks (single machine)
+The skill source is provider-neutral and shares `/open-wkt`'s existing
+`.claude/wkts/` runtime state.
 
-### 1. Create skill directory in your repo
-
-```bash
-mkdir -p .claude/skills/close-wkt
-```
-
-### 2. Symlink the generic SKILL.md
+## Deployment
 
 ```bash
-ln -s /path/to/ai.skillz/skills/close-wkt/SKILL.md \
-      .claude/skills/close-wkt/SKILL.md
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# or use the portable method: --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh close-wkt <repo> \
+  --provider <claude|opencode|all>
 ```
 
-Or use the deploy script:
+Provider links are created at `.claude/skills/close-wkt` and
+`.opencode/skills/close-wkt`. Local mode uses ignored absolute links;
+submodule mode uses trackable relative links through a version-pinned
+`.ai/ai.skillz` anchor.
 
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh close-wkt <your-repo>
-```
-
-## Method B: Git submodule (portable, version-pinned)
-
-### One-time setup
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
-```
-
-### Deploy this skill
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh close-wkt <your-repo>
-```
-
-### What gets committed
-
-- `.gitmodules`, `.claude/ai.skillz` (gitlink)
-- `.claude/skills/close-wkt/SKILL.md` → relative symlink
-  to `../../ai.skillz/skills/close-wkt/SKILL.md`
+Track provider links, `.gitmodules`, and the anchor gitlink only in submodule
+mode. Without `--stage`, deployment does not stage files. It
+does not alter existing worktree state. Quit and restart OpenCode after
+deployment or update;
+default discovery requires no `opencode.json` or `opencode.jsonc`
+mutation.
 
 ## What gets symlinked (from ai.skillz)
 
 - `SKILL.md` — the generic workflow definition
+
+## Maintenance
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
+```
+
+Review the dry run before migration. Migration preserves
+`.claude/wkts/` and `claude_wkts`. `update` advances a submodule anchor;
+update a local checkout directly.
 
 ## Prerequisites
 

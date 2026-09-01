@@ -1,41 +1,40 @@
 # Deploying `/dep-supersede-scan`
 
-This skill is fully generic — no per-repo customization
-needed. It reads the branch diff + queries the repo's
-GitHub dependabot API.
+This generic whole-directory skill reads the branch diff and queries
+GitHub's Dependabot API. It has no per-repo skill state.
 
-## Method A: Absolute symlinks (single machine)
-
-```bash
-ln -s /path/to/ai.skillz/skills/dep-supersede-scan \
-      .claude/skills/dep-supersede-scan
-```
-
-Or use the deploy script:
+## Deployment
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy.sh dep-supersede-scan <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
+# or use a portable anchor: --method submodule
+
+bash /path/to/ai.skillz/scripts/deploy.sh dep-supersede-scan <repo> \
+  --provider <claude|opencode|all>
 ```
 
-## Method B: Git submodule (portable, version-pinned)
+Local mode creates ignored absolute provider links at
+`.claude/skills/dep-supersede-scan` and
+`.opencode/skills/dep-supersede-scan`. Submodule mode creates trackable
+relative links through a version-pinned `.ai/ai.skillz` anchor.
 
-### One-time setup
+Track provider links and submodule artifacts only in portable mode. The
+script stages only when `--stage` is explicitly supplied. Quit and
+restart OpenCode after deployment or update; no `opencode.json` or
+`opencode.jsonc` edit is performed.
+
+## Maintenance
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo> --dry-run
+bash /path/to/ai.skillz/scripts/deploy.sh migrate <repo>
+bash /path/to/ai.skillz/scripts/deploy.sh update <repo> [--ref <ref>]
+bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 ```
 
-### Deploy this skill
-
-```bash
-bash /path/to/ai.skillz/scripts/deploy.sh dep-supersede-scan <your-repo>
-```
-
-### What gets committed
-
-- `.gitmodules`, `.claude/ai.skillz` (gitlink)
-- `.claude/skills/dep-supersede-scan` → relative symlink
-  to `../ai.skillz/skills/dep-supersede-scan`
+Review dry-run output before migration. `update` advances a submodule;
+local anchors follow updates to their source checkout.
 
 ## Prerequisites
 
