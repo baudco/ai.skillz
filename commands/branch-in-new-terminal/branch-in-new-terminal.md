@@ -9,7 +9,7 @@ from `.claude/.current_session`, which the `SessionStart` hook stashes
 (see this command's `DEPLOY.md`). Using the precise id avoids
 `--continue` grabbing the wrong "most-recent" session in this cwd.
 
-!`setsid -f "${TERMINAL:-alacritty}" -e claude --resume "$(cat .claude/.current_session 2>/dev/null)" --fork-session >/dev/null 2>&1 & echo "🌱 forked session '$(cat .claude/.current_session 2>/dev/null)' → new ${TERMINAL:-alacritty}"`
+!`session_id="$(cat .claude/.current_session 2>/dev/null)"; if [ -z "$session_id" ]; then echo "branch-in-new-terminal: no stashed session id; install the SessionStart hook or use the documented fallback" >&2; exit 1; fi; setsid -f "${TERMINAL:-alacritty}" -e claude --resume "$session_id" --fork-session >/dev/null 2>&1 & echo "forked session '$session_id' into new ${TERMINAL:-alacritty}"`
 
 <!--
   PREREQ: a `SessionStart` hook must stash the session id to
@@ -17,7 +17,7 @@ from `.claude/.current_session`, which the `SessionStart` hook stashes
 
     "SessionStart": [{"matcher": "*", "hooks": [
       {"type": "command",
-       "command": "jq -r .session_id > \"$CLAUDE_PROJECT_DIR/.claude/.current_session\""}]}]
+        "command": "mkdir -p \"$CLAUDE_PROJECT_DIR/.claude\" && stash=\"$CLAUDE_PROJECT_DIR/.claude/.current_session\" && rm -f \"$stash\" && session_id=\"$(jq -er '.session_id | select(type == \"string\" and length > 0)')\" && tmp=\"$(mktemp \"$stash.XXXXXX\")\" && printf '%s\\n' \"$session_id\" > \"$tmp\" && mv \"$tmp\" \"$stash\""}]}]
 
   FALLBACK (no hook installed) — fork the most-recent session in cwd
   instead; simpler but CAN grab the wrong session if you started

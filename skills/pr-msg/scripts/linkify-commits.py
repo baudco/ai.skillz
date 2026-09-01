@@ -41,9 +41,18 @@ def detect_repo_url() -> str:
             name, url, *_ = line.split()
             if name != prefer:
                 continue
-            m = re.match(
-                r'(?:git@|https://)([^:/]+)[:/]([^/]+)/(.+?)(?:\.git)?$',
-                url,
+            patterns = (
+                r'ssh://git@([^/:]+)(?::[0-9]+)?/'
+                r'([^/]+)/(.+?)(?:\.git)?$',
+                r'https://([^/@]+)/([^/]+)/(.+?)(?:\.git)?$',
+                r'git@([^:]+):([^/]+)/(.+?)(?:\.git)?$',
+            )
+            m = next(
+                (
+                    match for pattern in patterns
+                    if (match := re.match(pattern, url))
+                ),
+                None,
             )
             if m:
                 host, owner, repo = m.groups()
