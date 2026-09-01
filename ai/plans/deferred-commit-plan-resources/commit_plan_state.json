@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "plan_id": "0000000000000000000000000000000000000000000000000000000000000001",
+  "repository_id": "0000000000000000000000000000000000000000000000000000000000000002",
+  "task_sha256": "0000000000000000000000000000000000000000000000000000000000000003",
+  "initial_parent_oid": "0000000000000000000000000000000000000004",
+  "starting_index_stage_sha256": "0000000000000000000000000000000000000000000000000000000000000005",
+  "starting_cached_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000006",
+  "state": "planned",
+  "boundaries": [
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000007",
+      "ordinal": 1,
+      "repository_id": "0000000000000000000000000000000000000000000000000000000000000002",
+      "paths": ["skills/commit-plan/SKILL.md"],
+      "expected_parent_oid": "0000000000000000000000000000000000000004",
+      "expected_parent_boundary_id": null,
+      "expected_parent_tree": "0000000000000000000000000000000000000008",
+      "staged_tree": "0000000000000000000000000000000000000009",
+      "patch_sha256": "000000000000000000000000000000000000000000000000000000000000000a",
+      "pre_index_sha256": "000000000000000000000000000000000000000000000000000000000000000b",
+      "post_index_sha256": null,
+      "message": {
+        "path": ".claude/skills/commit-msg/msgs/example.md",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000000c"
+      },
+      "checks": [
+        {
+          "id": "unit",
+          "command": "python -m unittest",
+          "phase": "execution",
+          "status": "pending",
+          "result_sha256": null
+        }
+      ],
+      "dependency_ids": [],
+      "review_replies": [
+        {
+          "id": "123",
+          "backend": "github",
+          "repository": "baudco/ai.skillz",
+          "source_path": ".claude/review_replies/123.md",
+          "source_sha256": "000000000000000000000000000000000000000000000000000000000000000d",
+          "candidate_path": null,
+          "candidate_sha256": null,
+          "status": "assigned"
+        }
+      ],
+      "completion": {
+        "state": "pending",
+        "commit_oid": null,
+        "completed_tree": null
+      }
+    }
+  ]
+}

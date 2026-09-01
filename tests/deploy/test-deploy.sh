@@ -2033,6 +2033,22 @@ test_commit_plan_contract() {
         'does not opt in and must not trigger any pointer or receipt lookup'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'null` remains pending'
+    assert_file_contains "$deferred" \
+        'Every mirror creation or mutation'
+    assert_file_contains "$deferred" \
+        'standalone plan state authoritative'
+    assert_file_contains "$deferred" \
+        '`GIT_WORK_TREE` naming the isolated root'
+    assert_file_contains "$deferred" \
+        'snapshot review and regression context'
+    assert_file_contains "$deferred" \
+        'durable finalization phase'
+    assert_file_contains "$deferred" \
+        'not be repaired by inventing `scan_policy`'
+    assert_file_contains "$deferred" \
+        'resumes any incomplete candidate'
+    local deferred_resources="$ROOT/ai/plans/deferred-commit-plan-resources"
+    python "$deferred_resources/test_commit_plan_receipt_schema.py" >/dev/null
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         'permits creation without discovery.'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
