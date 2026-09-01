@@ -200,12 +200,13 @@ Before returning a finished plan, verify:
 - every changed path belongs to one planned commit or is explicitly excluded;
 - every commit has one archived message generated from its exact staged diff;
 - every boundary is atomic and ordered after its dependencies;
-- exact-boundary checks and their outcomes are recorded;
+- lightweight structural boundary checks and their outcomes are recorded;
 - project-check commands were resolved once per repository;
 - each required targeted check is rendered against its exact boundary and the
   full suite appears only at the final boundary unless documented otherwise;
-- checks are reported pending unless pre-executed against unchanged boundary
-  evidence, in which case they are recorded and not rendered again;
+- project checks are recorded as pending unless pre-executed against unchanged
+  boundary evidence, in which case their outcomes are recorded and they are
+  not rendered again;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
 - the command block starts in the exact absolute repository/worktree root;

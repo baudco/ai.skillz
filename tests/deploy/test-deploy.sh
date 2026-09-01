@@ -1843,6 +1843,10 @@ test_commit_plan_contract() {
         'Run a project check during'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'planning only when the user explicitly requests pre-execution'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'lightweight structural boundary checks and their outcomes'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'project checks are recorded as pending unless pre-executed'
     local commit_plan_text
     local commit_msg_text
     commit_plan_text="$(<"$ROOT/skills/commit-plan/SKILL.md")"
