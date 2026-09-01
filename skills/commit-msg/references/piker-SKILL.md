@@ -39,21 +39,19 @@ and examples, see
 - **Bullets**: use `-` style
 - **Tone**: technical but casual (piker style)
 
-## Claude-code Footer
+## Harness/model Footer
 
 When the written **patch** was assisted by
-claude-code, include:
+an AI coding harness, include:
 
 ```
-(this patch was generated in some part by [`claude-code`][claude-code-gh])
-[claude-code-gh]: https://github.com/anthropics/claude-code
+(this patch was generated in some part by `<harness>` using `<model>` (`<provider>`))
 ```
 
 When only the **commit msg** was written by
-claude-code (human wrote the patch), use:
+the AI coding harness (human wrote the patch), use:
 ```
-(this commit msg was generated in some part by [`claude-code`][claude-code-gh])
-[claude-code-gh]: https://github.com/anthropics/claude-code
+(this commit msg was generated in some part by `<harness>` using `<model>` (`<provider>`))
 ```
 
 ## Output Instructions

@@ -1,8 +1,8 @@
 # `ai.skillz`
 
 Reusable AI agent skills for
-[`claude-code`](https://github.com/anthropics/claude-code)
-conforming to the
+[`claude-code`](https://github.com/anthropics/claude-code) and
+[`opencode`](https://github.com/anomalyco/opencode), conforming to the
 [agentskills.io](https://agentskills.io/specification)
 specification.
 
@@ -20,6 +20,7 @@ generalized for cross-repo deployment.
 | `commit-msg` | Git commit message generation |
 | `pr-msg` | PR description generation |
 | `code-review-changes` | Apply PR review feedback |
+| `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
 | `run-tests` | Test runner (template-based) |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
@@ -27,6 +28,7 @@ generalized for cross-repo deployment.
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
 | `gish` | Git-over-SSH transport |
+| `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
 
 ## Deployment
@@ -38,6 +40,10 @@ Two methods are supported:
   `.claude/skills/` to this checkout (dev machines)
 - **Submodule** — `git submodule add` for portable,
   version-pinned deployment (see `scripts/`)
+
+For development in this checkout, `opencode.json` loads
+the canonical `skills/` tree directly and
+`.opencode/commands/commit-msg.md` exposes `/commit-msg`.
 
 ## License
 

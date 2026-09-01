@@ -13,7 +13,7 @@ ln -s /path/to/ai.skillz/skills/gish \
 Or use the deploy script:
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh gish <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh gish <your-repo>
 ```
 
 ## Method B: Git submodule (portable, version-pinned)
@@ -21,13 +21,13 @@ bash /path/to/ai.skillz/scripts/deploy-skill.sh gish <your-repo>
 ### One-time setup
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh init <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh init <your-repo>
 ```
 
 ### Deploy this skill
 
 ```bash
-bash /path/to/ai.skillz/scripts/deploy-skill.sh gish <your-repo>
+bash /path/to/ai.skillz/scripts/deploy.sh gish <your-repo>
 ```
 
 ### What gets committed

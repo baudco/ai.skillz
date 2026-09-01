@@ -1,17 +1,18 @@
 ---
 name: commit-msg
 description: >
-  Generate git commit messages following project style.
-  Use when user wants to create a commit or asks for a
-  commit message.
+  Generate git commit messages and complete multi-commit
+  or local-merge plans following project style. Use when
+  user wants to create a commit, asks for a commit message,
+  or says "commit plan", "multi-commit plan", or "merge
+  plan".
 compatibility: >
   Requires git CLI. Optional: gh CLI for review
   context integration.
 metadata:
   author: goodboy
-  version: "0.1"
-argument-hint: "[optional-scope-or-description]"
-disable-model-invocation: true
+  version: "0.5"
+argument-hint: "[commit plan|merge plan|optional-scope-or-description]"
 allowed-tools:
   - Bash(git *)
   - Bash(gh *)
@@ -34,6 +35,160 @@ human, who normally reviews and/or live-tests changes
 before blessing them. Run `git commit` ONLY when the
 human explicitly requests it (eg. "commit this", an
 approved commit-plan execution).
+
+## ALWAYS render commit cmds with `--edit`
+
+Any `git commit` command you render for the human to run
+— in a chat reply, plan, or handoff; single commit or a
+multi-commit sequence — MUST include `--edit` so the message
+opens in their editor for review/tweak BEFORE the commit
+submits. NEVER emit a bare `git commit -F <file>` /
+`--file <file>` (those commit immediately, unreviewed).
+Always use:
+
+    git commit --edit -F .claude/git_commit_msg_<name>.md
+
+(equivalently `--edit --file <file>`). Non-negotiable: the
+human reviews every message at the editor step.
+
+## "MERGE PLAN": make a local non-FF merge
+
+The literal phrase **"merge plan"** (case-insensitive) is a mandatory
+trigger for this section. Use it to prepare a real merge commit locally,
+without relying on a git service PR/MR merge button. This section takes
+precedence over the ordinary staged-change workflow below: a merge plan
+normally starts with an empty index.
+
+Before returning a merge plan:
+
+1. Confirm the currently checked-out branch is the intended destination
+   branch and identify the local source branch or commit to merge. Ask if
+   either side is ambiguous.
+2. Record the destination and source commit IDs, then inspect their log,
+   diff, and merge base.
+3. Require a clean tracked worktree and index. Untracked files may remain,
+   but warn if the source tree would overwrite any of them. NEVER add
+   `reset --hard`, `clean`, or an automatic stash to a merge plan unless
+   the human explicitly requests that destructive/stateful step.
+4. Generate and archive a merge message using the normal message-file
+   locations in step 4. Prefer the service-independent subject:
+
+       Merge branch '<source>' into <destination>
+
+   Include a review URL or PR/MR number only when the human supplies one
+   or asks to preserve that provenance.
+5. Return this command sequence, with the concrete branch names, message
+   path, and required checks/tests filled in:
+
+       git merge --no-ff --no-commit <source>
+       git diff --cached --check
+       git diff --cached --stat
+       <required lint/test commands>
+       git commit --edit --file <generated-message-file>
+
+The `--no-commit` pause is mandatory: it lets the human inspect and test
+the exact merge result. The final `--edit` is also mandatory so the merge
+message is reviewed before submission. If the merge reports conflicts,
+stop before the checks/commit, resolve and stage every conflict, then
+resume the sequence. Do not include a push unless the human requests it.
+
+A request for a "merge plan" asks for the ready-to-run plan and message,
+not execution. Run the merge or commit only when the human explicitly
+asks to execute it.
+
+## "COMMIT PLAN": batch files + messages in a multi-commit format
+
+The literal phrase **"commit plan"** (case-insensitive) is a mandatory
+trigger for this section. When the human uses it, these instructions
+take precedence over the ordinary single-commit workflow below. Treat
+it as an explicit request for a complete, ready-to-run multi-commit
+package, not merely a proposal of boundaries or subjects.
+
+Follow every numbered step in this section exactly. Do not abbreviate
+the workflow, defer message generation, tell the human to invoke
+`/commit-msg` again per boundary, or return only subjects or suggested
+commands. If a boundary cannot be materialized safely, stop and report
+the exact blocker instead of silently degrading to a partial plan.
+
+When the user ASKS FOR (or any time the AI-agent proposes) a logical
+multi-commit plan, do NOT make the human invoke `/commit-msg` after
+each commit. Before returning the plan:
+
+1. Materialize each planned commit boundary in the index,
+   one at a time.
+2. Run the normal staged-diff analysis and checks for that
+   exact boundary.
+3. Generate and archive a distinct message for every commit
+   under `.claude/skills/commit-msg/msgs/`.
+4. Restore the index to the boundary that was staged when
+   the skill was invoked (normally the first planned commit).
+5. Return one complete command sequence in a single fenced
+   block using the user's configured `$SHELL` syntax.
+
+### `$SHELL` rendering is mandatory
+
+Before rendering the command sequence, determine the user's configured
+shell from `$SHELL` and use its basename as the Markdown fence language
+and command syntax. Examples: `/bin/zsh` -> `zsh`, `/bin/bash` ->
+`bash`, `/usr/bin/fish` -> `fish`, and `/usr/bin/xonsh` -> `xonsh`.
+
+The returned sequence MUST use one explicitly labelled fence: three
+backticks immediately followed by the shell basename. For example,
+when `$SHELL` is `xonsh`, the fence info string MUST be `xonsh`, and
+every assignment, conditional, loop, quoting form, and command
+separator must be valid xonsh syntax.
+
+NEVER emit an unlabelled fence. NEVER hardcode `bash` or POSIX shell
+syntax when `$SHELL` names another shell. If `$SHELL` is unavailable
+or its syntax is unknown, ask the human which shell to target instead
+of guessing or returning a mixed-syntax plan.
+
+The command block MUST include, in execution order:
+
+- exact staging/unstaging commands for each boundary
+- staged file/diff checks before each commit
+- any required lint/test commands
+- `git commit --edit --file
+  .claude/skills/commit-msg/msgs/<generated-file>` for each
+  commit
+
+Use each archived message path directly. Do not use
+`.claude/git_commit_msg_LATEST.md` in a multi-commit sequence,
+because later message generation overwrites it. Do not merely
+list subjects or tell the human to rerun `/commit-msg`.
+
+Before returning a commit plan, verify all of the following:
+
+- every planned commit has its own archived message file
+- every message was generated from that commit's exact staged diff
+- the index matches the boundary staged when the skill was invoked
+- one command block covers every boundary in execution order
+- every rendered commit command includes `--edit`
+- the fence label matches the basename of `$SHELL`
+- every command and control construct is valid for `$SHELL`
+
+If any check is false, the commit plan is incomplete and MUST NOT be
+returned as finished.
+
+## Scope: commit messages only
+
+The formatting rules in this skill apply ONLY to commit
+message content generated by `/commit-msg` and written to
+the files in step 4. Do NOT apply this skill's subject/body
+format, commit-style summary format, or credit footer to:
+
+- ordinary chat replies
+- completed-work summaries
+- task handoffs
+- plans or plan summaries
+- PR/MR descriptions (`/pr-msg` owns those)
+- review replies or issue comments
+
+When finishing a `/commit-msg` run, the chat response should
+briefly report the written file paths and show the exact
+`git commit --edit --file ...` command. It should NOT append
+or repeat the credit footer unless the user explicitly asks
+to see the full commit message body inline.
 
 When generating commit messages, always follow this process:
 
@@ -252,6 +407,16 @@ as `review_regression.md`).
    detected in step 0 (i.e. `git rev-parse
    --show-toplevel`; in a worktree this is the
    *worktree* root, NOT the main repo):
+
+   > **Worktrees:** ALWAYS write both files under the
+   > *active worktree's* own `.claude/` dir — the
+   > `git rev-parse --show-toplevel` path from step 0,
+   > which for a worktree is the worktree root. Do NOT
+   > redirect them to the main checkout's `.claude/`.
+   > Each worktree keeps its own commit-msg state so
+   > `git commit --edit --file .claude/git_commit_msg_LATEST.md`
+   > resolves locally without any cross-tree copying.
+
    - `.claude/skills/commit-msg/msgs/<timestamp>_<hash>_commit_msg.md`
      * with `<timestamp>` from `date -u +%Y%m%dT%H%M%SZ`
        or similar filesystem-safe format.
@@ -267,20 +432,36 @@ as `review_regression.md`).
    are nice-to-have; if a worktree gets cleaned up
    they're not critical.
 
-5. **Always include credit footer**:
+5. **Always include harness/model footer in the commit message file**:
 
-When no part of the patch was written by `claude`,
+This footer belongs inside the generated commit message body
+written in step 4. It is NOT a general-purpose assistant
+response footer and MUST NOT be appended to normal chat
+responses, task summaries, or handoffs.
+
+Populate `<harness>` from the active coding harness/tool
+reported in system context (`opencode`, `claude-code`, etc.).
+Populate `<model>` and `<provider>` from the exact model ID
+when available. For example, `openai/gpt-5.5` renders as
+`gpt-5.5` (`openai`). Do NOT use stale hardcoded
+`claude-code` link-reference footers.
+
+Example for an OpenCode run using `openai/gpt-5.5`:
+
 ```
-(this commit msg was generated in some part by [`claude-code`][claude-code-gh])
-[claude-code-gh]: https://github.com/anthropics/claude-code
+(this patch was generated in some part by `opencode` using `gpt-5.5` (`openai`))
 ```
 
-when some or all of the patch was written by `claude`
+When no part of the patch was written by the AI coding harness,
+```
+(this commit msg was generated in some part by `<harness>` using `<model>` (`<provider>`))
+```
+
+when some or all of the patch was written by the AI coding harness
 instead use,
 
 ```
-(this patch was generated in some part by [`claude-code`][claude-code-gh])
-[claude-code-gh]: https://github.com/anthropics/claude-code
+(this patch was generated in some part by `<harness>` using `<model>` (`<provider>`))
 ```
 
 Keep it concise. Match the tone of recent commits. For simple
