@@ -175,9 +175,12 @@ When generating commit messages, always follow this process:
    `.claude/review_regression.md` (written by the
    `/code-review-changes` skill when a self-caused
    regression was found and fixed). If present, read
-   it and incorporate its fields into the commit
-   message body (see step 3). Delete the file after
-   the message is written — it's single-use context.
+   it and incorporate its fields into the commit message body (see step 3).
+   For a standalone message, delete the file after the message is written
+   because it is single-use context. When composed by `/commit-plan`, consume
+   only the boundary-scoped snapshot supplied by the orchestrator and do not
+   delete shared context; `/commit-plan` removes it after every assigned
+   boundary message is archived.
 
    **Check for review context**: look for
    `.claude/review_context.md` (written by the
@@ -186,8 +189,11 @@ When generating commit messages, always follow this process:
    `pr`, `reviewer`, `review_url`, optionally
    `commit_repo`, and optionally `reply_ids` and `reply_files`. These
    are used in step 3 to add a `Review:` trailer and
-   in step 6 to construct commit links. Delete the file after the
-   message is written unless reply candidates still need the real commit hash.
+   in step 6 to construct commit links. For a standalone message, delete the
+   file after the message is written unless reply candidates still need the
+   real commit hash. When composed by `/commit-plan`, read only its
+   boundary-scoped snapshot and leave shared context and reply files under
+   orchestrator ownership.
    If the file is absent, this is not a
    review-motivated commit; skip the trailer.
 
@@ -323,7 +329,9 @@ prepare exact local comment-edit candidates after the user commits. If no
 `reply_ids` are present, delete
 `.claude/review_context.md` right after the
 message is written (single-use, same lifecycle
-as `review_regression.md`).
+as `review_regression.md`). When composed by `/commit-plan`, never perform this
+deletion; the orchestrator may need the same review trailer for another
+assigned boundary.
 
 4. **Write to TWO files** relative to the repo root
    detected in step 0 (i.e. `git rev-parse
@@ -408,6 +416,12 @@ changes, use subject line only.
    ownership, ask rather than attaching it to the next commit. A new `HEAD`
    processes only replies assigned to the exact boundary whose parent/tree
    completion `/commit-plan` verified. Defer replies owned by later boundaries.
+   The boundary helper's durable finalization phase prepares those candidates
+   immediately after verified commit completion, records their paths/digests in
+   plan state and prints their complete bodies and publication coordinates. On
+   a follow-up session, rerunning that boundary helper's `ensure` operation or
+   refreshing `/commit-plan` by stable plan ID resumes any incomplete candidate
+   finalization without repeating the commit.
 
    For a standalone commit, once the user confirms it (or a new HEAD is
    detected), the real commit hash is known. For each reply ID, read its exact

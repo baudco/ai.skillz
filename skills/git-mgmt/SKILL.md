@@ -288,6 +288,9 @@ contains sorted repository-relative paths, `content_sha256`,
 `discovery` contains completion time, search terms, inspected path histories,
 ref/worktree inventory, related candidates and result. `extensions` is an
 object keyed by composing skill name; unknown extension keys must be preserved.
+`extensions.commit-plan`, when present, must validate against the deployed
+`commit-plan/references/receipt-extension.schema.json` asset and must be
+byte-equivalent to that plan's canonical standalone state.
 
 An approved completed receipt must identify:
 
@@ -307,6 +310,10 @@ Policy survives content/index changes, ordinary scope refinement and
 continuation. Only a genuinely new semantic task or an explicit human policy
 change replaces it. Tiny work and continuations without a receipt proceed
 without creating one; absence at commit time is not approval to ask or scan.
+A composing skill may persist independent worktree-private state, but it may
+attach or mirror an extension only when the pointer already names a valid
+exact-key receipt. Missing, declined, corrupt or pending receipt evidence must
+not be repaired by inventing `scan_policy` or creating a discovery receipt.
 
 Use SHA-256 for every `*_sha256` field. Fingerprint tracked scope from
 `git diff HEAD --binary --

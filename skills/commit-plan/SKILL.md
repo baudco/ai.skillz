@@ -55,23 +55,34 @@ policy. This authorizes no network access or Git mutation. If an approved scan
 found equivalent work, preserve the index and stop before returning executable
 commit commands.
 
-For a plan refresh, load any worktree-private policy receipt before doing
-expensive boundary work. Discovery may be absent or declined; that does not
-block planning. A reusable commit-plan receipt must additionally
-store a versioned `extensions.commit-plan` object. It records a stable plan ID,
-starting index-stage/cached-patch digests and, for each stable boundary ID, the
-repository identity, sorted path set, expected parent OID or prior-boundary ID,
-expected parent tree, staged tree, patch digest relative to that parent,
-pre/post-index fingerprints, archived message path/digest, exact
-checks/outcomes, dependency IDs, assigned review-reply IDs and completion
-state. Assign each pending reply to exactly one stable boundary using review
-context and changed-path evidence. Ask when ownership is ambiguous; never let
-the first new `HEAD` consume replies owned by later boundaries.
+For every plan, create a canonical worktree-private plan-state file beneath the
+ignored `commit-msg/msgs/` runtime directory before doing expensive boundary
+work. This file is the execution authority whether discovery is approved,
+declined, pending or absent; never create a discovery receipt or infer a scan
+policy merely to persist a plan. Guard and atomically replace plan state using
+its recorded prior digest and a fresh writer token.
 
-Every creation or mutation of `extensions.commit-plan`, including completion
-updates after human commits, must use `/git-mgmt`'s pointer transaction: publish
-`receipt_sha256: null`, atomically replace the receipt, then publish its new
-digest. The pointer's scan policy remains authoritative throughout.
+Plan state uses the exact versioned schema in
+`references/receipt-extension.schema.json`. Derive each stable boundary ID from
+canonical JSON containing its repository ID, ordinal, sorted paths, expected
+parent reference, staged tree and patch digest. Derive the stable plan ID from
+the task digest, ordered repository IDs, initial parent and ordered boundary
+IDs. Serialize with sorted keys, UTF-8 and no optional whitespace. The schema
+records starting index digests and, per boundary, exact parent/tree evidence,
+message and check records, dependencies, boundary-owned review replies and
+completion state.
+
+When a valid exact-key receipt already exists, mirror the same plan-state
+object into `extensions.commit-plan`. Every mirror creation or mutation,
+including completion updates after human commits, must use `/git-mgmt`'s
+pointer transaction: publish `receipt_sha256: null`, atomically replace the
+receipt, then publish its new digest. The pointer's scan policy remains
+authoritative. A missing, declined, corrupt or pending receipt leaves the
+standalone plan state authoritative and receives no extension update.
+
+Assign each pending reply to exactly one stable boundary using review context
+and changed-path evidence. Ask when ownership is ambiguous; never let the first
+new `HEAD` consume replies owned by later boundaries.
 
 For a cross-repository plan, also write an ignored plan manifest beneath the
 `commit-msg/msgs/` runtime directory. It maps the plan ID to canonical
@@ -136,7 +147,8 @@ The helper must support idempotent `ensure` and `run -- <command>` operations:
   instead of guessing, duplicating a commit or overwriting worktree content;
 - before invoking the editor, durably journal the boundary ID, expected
   parent/tree, patch and message digests, helper writer token, pointer/receipt
-  digests, real-index path/digest and exact stage entries, and phase;
+  digests when present, standalone plan-state path/digest, real-index
+  path/digest and exact stage entries, isolated-root digest, and phase;
 - after a successful wrapped commit, verify its parent/tree and reconcile the
   real index with a temporary three-way transition using the expected parent as
   base, the committed tree as the new base and the execution-time real index as
@@ -149,12 +161,24 @@ The helper must support idempotent `ensure` and `run -- <command>` operations:
   rerun must either resume the same pending boundary or recognize its exact
   committed tree; it must never create a second commit for it.
 
-The durable journal authorizes the helper to resume only its own matching
-pointer/receipt transaction under `/git-mgmt`'s writer-continuation rule. On
-rerun after `HEAD` advanced, classify before doing anything else:
+After exact parent/tree completion, the helper's durable finalization phase
+updates standalone plan state, mirrors it only when a valid receipt was already
+attached, and prepares every reply candidate assigned to that boundary from
+its recorded local source file. It replaces only the pending-commit marker,
+writes the boundary-owned candidate, records its digest and prints the complete
+candidate plus publication coordinates. Missing source evidence stops that
+reply without consuming later replies. Candidate creation never authorizes
+publication; `/gish comment-edit` still requires separate exact approval.
 
-- expected parent and tree: finish index reconciliation, receipt publication
-  and completion recording, then return successful already-complete no-ops;
+The durable journal authorizes the helper to resume its own matching standalone
+state transaction and, when attached, its matching pointer/receipt transaction
+under `/git-mgmt`'s writer-continuation rule. It never creates or attaches a
+receipt during recovery. On rerun after `HEAD` advanced, classify before doing
+anything else:
+
+- expected parent and tree: finish index reconciliation, attached-receipt
+  publication and completion/reply finalization, then return successful
+  already-complete no-ops;
 - expected parent but a different committed tree, including hook-modified
   private-index content: record `diverged-after-commit`, never commit again and
   stop for replanning;
@@ -205,6 +229,15 @@ For each planned commit, in dependency order:
 8. Record boundary-owned review replies and defer their candidate generation
    until that exact boundary's parent/tree completion is verified. Completion
    of another boundary must not consume them.
+
+Before the first message, snapshot review and regression context into the
+plan-state artifact and assign each applicable context record to its exact
+boundary or boundaries. Invoke `/commit-msg` with only that boundary's scoped
+snapshot. During composition, `/commit-plan` owns cleanup: `/commit-msg` must
+not delete shared context after the first message. Remove regression context
+only after every assigned message is archived. Preserve review context and
+reply source files until every assigned local candidate is prepared and every
+separately approved publication succeeds.
 
 Do not defer message generation or tell the human to rerun `/commit-msg` after
 each commit. If any boundary cannot be safely materialized or verified, stop
@@ -324,8 +357,8 @@ unchanged boundary evidence.
 Wrap every per-boundary check, review and commit command as
 `<boundary-helper> run -- <command>`. This keeps `git diff --staged` and the
 mandatory `git commit --edit --file ...` visible in the rendered sequence while
-running them against the exact private index and isolated execution root. Do not
-render raw `git add`,
+running commands, project checks and commit hooks against both the exact private
+index and its isolated execution root. Do not render raw `git add`,
 `git restore --staged`, `git reset` or `git apply --cached` commands whose
 result depends on the caller's staged state. Every rendered line must succeed
 as a no-op when its boundary is already complete, so the full command block can
@@ -354,6 +387,8 @@ Before returning a finished plan, verify:
 - every boundary is atomic and ordered after its dependencies;
 - every boundary helper reconstructs and verifies its private index without
   assuming the current staged state;
+- every boundary helper reconstructs an isolated execution root and runs
+  checks, editors and hooks there rather than against the live worktree;
 - lightweight structural boundary checks and their outcomes are recorded;
 - project-check commands were resolved once per repository;
 - each required targeted check is rendered against its exact boundary and the
@@ -372,6 +407,10 @@ Before returning a finished plan, verify:
 - every commit command is immediately preceded by `git diff --staged`;
 - every check, review and commit is helper-wrapped and the complete command
   sequence is safe to rerun after any completed boundary;
+- standalone plan state is schema-valid, and any attached receipt extension is
+  byte-equivalent canonical state published through `/git-mgmt`;
+- completed boundaries finalize only their assigned local review candidates
+  and print an explicit separately-authorized publication handoff;
 - every non-final commit command is followed by exactly one blank line, while
   the final commit has no required trailing blank line;
 - no command commits automatically before the editor opens;

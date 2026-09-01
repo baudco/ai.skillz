@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai.skillz.local/commit-plan/receipt-extension.schema.json",
+  "title": "Commit plan state and receipt extension",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "plan_id",
+    "repository_id",
+    "task_sha256",
+    "initial_parent_oid",
+    "starting_index_stage_sha256",
+    "starting_cached_patch_sha256",
+    "state",
+    "boundaries"
+  ],
+  "properties": {
+    "schema": {"const": 1},
+    "plan_id": {"$ref": "#/$defs/sha256"},
+    "repository_id": {"$ref": "#/$defs/sha256"},
+    "task_sha256": {"$ref": "#/$defs/sha256"},
+    "initial_parent_oid": {"$ref": "#/$defs/oid"},
+    "starting_index_stage_sha256": {"$ref": "#/$defs/sha256"},
+    "starting_cached_patch_sha256": {"$ref": "#/$defs/sha256"},
+    "state": {
+      "enum": ["planned", "executing", "completed", "diverged"]
+    },
+    "boundaries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/boundary"}
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "nullable_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullable_oid": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ordinal",
+        "repository_id",
+        "paths",
+        "expected_parent_oid",
+        "expected_parent_boundary_id",
+        "expected_parent_tree",
+        "staged_tree",
+        "patch_sha256",
+        "pre_index_sha256",
+        "post_index_sha256",
+        "message",
+        "checks",
+        "dependency_ids",
+        "review_replies",
+        "completion"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/sha256"},
+        "ordinal": {"type": "integer", "minimum": 1},
+        "repository_id": {"$ref": "#/$defs/sha256"},
+        "paths": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "expected_parent_oid": {"$ref": "#/$defs/nullable_oid"},
+        "expected_parent_boundary_id": {
+          "$ref": "#/$defs/nullable_sha256"
+        },
+        "expected_parent_tree": {"$ref": "#/$defs/oid"},
+        "staged_tree": {"$ref": "#/$defs/oid"},
+        "patch_sha256": {"$ref": "#/$defs/sha256"},
+        "pre_index_sha256": {"$ref": "#/$defs/sha256"},
+        "post_index_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "message": {"$ref": "#/$defs/message"},
+        "checks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/check"}
+        },
+        "dependency_ids": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/sha256"},
+          "uniqueItems": true
+        },
+        "review_replies": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/review_reply"}
+        },
+        "completion": {"$ref": "#/$defs/completion"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "expected_parent_oid": {"$ref": "#/$defs/oid"},
+            "expected_parent_boundary_id": {"type": "null"}
+          }
+        },
+        {
+          "properties": {
+            "expected_parent_oid": {"type": "null"},
+            "expected_parent_boundary_id": {"$ref": "#/$defs/sha256"}
+          }
+        }
+      ]
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command", "phase", "status", "result_sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "command": {"type": "string", "minLength": 1},
+        "phase": {"enum": ["planning", "execution"]},
+        "status": {"enum": ["pending", "passed", "failed", "skipped"]},
+        "result_sha256": {"$ref": "#/$defs/nullable_sha256"}
+      }
+    },
+    "review_reply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "backend",
+        "repository",
+        "source_path",
+        "source_sha256",
+        "candidate_path",
+        "candidate_sha256",
+        "status"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "backend": {"type": "string", "minLength": 1},
+        "repository": {"type": "string", "minLength": 1},
+        "source_path": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_path": {"type": ["string", "null"]},
+        "candidate_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "status": {"enum": ["assigned", "candidate_ready", "published"]}
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "commit_oid", "completed_tree"],
+      "properties": {
+        "state": {"enum": ["pending", "running", "committed", "diverged"]},
+        "commit_oid": {"$ref": "#/$defs/nullable_oid"},
+        "completed_tree": {"$ref": "#/$defs/nullable_oid"}
+      }
+    }
+  }
+}

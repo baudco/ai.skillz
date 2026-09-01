@@ -1902,7 +1902,20 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'never ask about or initiate'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Every creation or mutation of `extensions.commit-plan`'
+        'Every mirror creation or mutation'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'standalone plan state authoritative'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`GIT_WORK_TREE` naming the isolated root'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'snapshot review and regression context'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'durable finalization phase'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'not be repaired by inventing `scan_policy`'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'resumes any incomplete candidate'
+    python -m unittest tests.test_commit_plan_receipt_schema >/dev/null
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
         'generation never asks about or'
     assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
