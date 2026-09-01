@@ -1777,6 +1777,18 @@ test_code_review_contract_assets() {
         'publishes the candidate byte-for-byte'
     assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
         '> response authored by `<harness>`'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Address remote forge or persisted local Tuicr comments:'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'configured gish runtime'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Bash(sha256sum *)'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        'Bash(tuicr *)'
+    [ -f "$ROOT/skills/code-review-changes/references/tuicr-local.md" ] \
+        || fail 'Tuicr local review workflow reference is missing'
+    [ -f "$ROOT/skills/code-review-changes/references/review-adjustment-handoff.md" ] \
+        || fail 'review adjustment handoff reference is missing'
     assert_file_contains \
         "$ROOT/skills/gish/scripts/review-post.py" \
         'target PR head moved after review'
