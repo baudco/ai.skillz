@@ -103,6 +103,8 @@ prepare_source_repo() {
         "$SOURCE_WORK/providers/opencode/commands/"
     cp "$ROOT/skills/run-tests/SKILL.md" \
         "$SOURCE_WORK/skills/run-tests/SKILL.md"
+    cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
     cp "$ROOT/.gitignore" "$SOURCE_WORK/.gitignore"
@@ -112,14 +114,15 @@ prepare_source_repo() {
     chmod +x "$SOURCE_WORK/scripts/deploy.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     mkdir -p "$SOURCE_WORK/.opencode/commands"
-    for command in commit-msg run-tests taken-export; do
+    for command in code-review code-review-changes commit-msg run-tests taken-export; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
     done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
-        providers/opencode/commands skills/run-tests/SKILL.md \
+        providers/opencode/commands skills/code-review skills/harness-perf \
+        skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
     SOURCE_URL="file://$SOURCE_WORK"
@@ -597,7 +600,7 @@ test_missing_anchor_assets_and_command_preflight() {
     mkdir -p "$REPO/.ai"
     ln -s "$old" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" all "$REPO" --provider opencode >/dev/null
     assert_fails bash "$DEPLOY" command all "$REPO" --provider all
     [ ! -e "$REPO/.claude/commands/branch-in-new-terminal.md" ] \
         || fail 'command preflight partially deployed another provider'
@@ -634,6 +637,15 @@ test_runtime_ignores_and_state_preservation() {
     output="$(bash "$DEPLOY" status "$REPO" --provider opencode 2>&1)"
     assert_not_contains "$output" 'beyond a symbolic link'
     assert_not_contains "$output" 'UNHEALTHY:not ignored'
+
+    new_repo code-review-runtime
+    bash "$DEPLOY" code-review "$REPO" --provider opencode >/dev/null
+    assert_file_contains "$REPO/.gitignore" '.ai/code-review/reports/'
+    mkdir -p "$REPO/.ai/code-review/reports"
+    printf report > "$REPO/.ai/code-review/reports/result.json"
+    git -C "$REPO" check-ignore -q -- \
+        .ai/code-review/reports/result.json \
+        || fail 'code-review report is not ignored'
     pass 'OpenCode deployment preserves and ignores canonical .claude runtime state'
 }
 
@@ -1410,6 +1422,14 @@ test_deployment_validator_failures() {
     assert_contains "$(<"$TMP_ROOT/failure.out")" \
         'runtime state is staged or tracked: .ai/taken/exports/item'
 
+    new_repo validate-code-review-runtime
+    mkdir -p "$REPO/.ai/code-review/reports"
+    printf tracked > "$REPO/.ai/code-review/reports/result.json"
+    git -C "$REPO" add -f .ai/code-review/reports/result.json
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'runtime state is staged or tracked: .ai/code-review/reports/result.json'
+
     new_repo validate-command-dependency
     mkdir -p "$REPO/.opencode/commands"
     cp "$ROOT/providers/opencode/commands/commit-msg.md" \
@@ -1433,7 +1453,7 @@ test_all_templates_invalid_args_and_idempotence() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
-    assert_contains "$output" 'Result: 30 deployed, 0 template skipped'
+    assert_contains "$output" 'Result: 34 deployed, 0 template skipped'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     before="$(tree_digest "$REPO")"
@@ -1447,6 +1467,85 @@ test_all_templates_invalid_args_and_idempotence() {
     pass 'all deploys hybrid skills, remains idempotent, and validates names/options strictly'
 }
 
+test_code_review_contract_assets() {
+    python -m json.tool \
+        "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
+        >/dev/null
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'explicitly authorizes test execution.'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        '-c core.fsmonitor=false'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'Test selection remains owned by `/run-tests`'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'trusted target-local deployment, including a safely resolved'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'supersedes reviewer-global auto-application'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'installed `py-codestyle` does not apply merely because'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'resolved `SKILL.md` remains physically within the target checkout'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'a submodule in the target repository'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'loaded by the harness from a user-approved source'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'user explicitly authorizes reading that exact resolved external path'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Do not inspect an external `deploy-manifest.conf`'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'external configured root, directory link, or nested'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Do not fetch, clone, or use a forge API solely for style discovery'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Do not merge competing style'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        "target's instructions, formatter configuration, and nearby Python"
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        'Preserve quotations and evidence from'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/python-review.md" \
+        "never changes the finding's severity"
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        "target repository's deployed"
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'Reports in this runtime directory remain untracked'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        "skill's v1 contract."
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        'fingerprint: 23acc5fc36ab85c0'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
+        '"delegated"'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
+        '"open_questions"'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
+        '"merge_base"'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
+        '"symbol"'
+    assert_file_contains "$ROOT/providers/opencode/commands/code-review.md" \
+        'Never publish findings from this v1'
+    assert_file_contains "$ROOT/README.md" '| `code-review` |'
+    pass 'code-review schema and human-control contracts are present'
+}
+
 test_opencode_debug_if_available() {
     if ! command -v opencode >/dev/null 2>&1; then
         pass 'OpenCode debug validation skipped (opencode unavailable)'
@@ -1454,6 +1553,8 @@ test_opencode_debug_if_available() {
     fi
     new_repo opencode-debug
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    bash "$DEPLOY" code-review "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" command code-review "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
@@ -1469,9 +1570,11 @@ test_opencode_debug_if_available() {
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
         opencode debug skill > "$skill_output")
     assert_file_contains "$config_output" '"commit-msg"'
+    assert_file_contains "$config_output" '"code-review"'
     assert_file_contains "$config_output" '"run-tests"'
     assert_file_contains "$config_output" '"taken-export"'
     assert_file_contains "$skill_output" '"name": "commit-msg"'
+    assert_file_contains "$skill_output" '"name": "code-review"'
     assert_file_contains "$skill_output" '"name": "run-tests"'
     assert_file_contains "$skill_output" '"name": "taken-export"'
     assert_file_contains "$skill_output" \
@@ -1513,6 +1616,7 @@ test_command_link_modes_and_updates
 test_update_behavior_and_broken_anchor
 test_deployment_validator_failures
 test_all_templates_invalid_args_and_idempotence
+test_code_review_contract_assets
 test_opencode_debug_if_available
 
 printf '1..%d\n' "$PASS"

@@ -15,6 +15,51 @@ disable-model-invocation: true
 
 These rules apply globally to ALL python projects.
 
+## Preserve maintainer context
+
+- Treat comments, TODOs, FIXMEs, disabled experiments,
+  commented-out options, and rationale notes as maintained
+  project content, not cleanup opportunities.
+- When refactoring nearby code, move still-relevant notes
+  with the code they describe. Preserve their wording and
+  task/checklist markers unless the requested change needs a
+  wording update.
+- Delete or rewrite a note only when the current patch
+  demonstrably resolves it, makes it factually obsolete, or
+  replaces it with equivalent or better documentation.
+- A changed code shape, cleaner-looking block, linter pass, or
+  personal uncertainty about a note is NOT sufficient reason
+  to remove it. Preserve it or ask the human.
+- Never change `[ ]`, `[x]`, TODO/WIP/DONE, or similar state
+  markers unless the human explicitly requests that exact
+  state transition.
+- During final diff review, account for every removed comment
+  or TODO. Restore any removal that is not directly justified
+  by the patch's behavior.
+
+## Namespace-qualified technical prose
+
+- In Python comments and docstrings, qualify implementation
+  nouns such as "table", "registry", "mapping", "index", and
+  "cache" with the exact declaring symbol on first reference.
+  For example: canonical SID registry
+  (`Runspace._sid2spawn`) or graphical refs (`Wks.wins`).
+- Prefer class/field paths which support symbol lookup, such as
+  `Spawn.sub_spawns` and `Spawn.win_ids2sub_sids`, over vague
+  phrases such as "parent-local indexes" or "this mapping".
+- When describing an instance-specific operation, name both the
+  concrete expression and its declaring field. For example,
+  `tuple(spawn.sub_spawns.values())` snapshots the current
+  instance's `Spawn.sub_spawns` mapping.
+- Name the exact method which mutates a registry and the exact
+  fields it can mutate. Do not say "normal cleanup clears every
+  index" when `Runspace.pub_spawn_end()` and the affected fields
+  can be named directly.
+- Re-qualify a symbol later when intervening prose introduces
+  another plausible table or owner. Optimize comments and
+  regression docstrings for editor symbol lookup, not only for a
+  reader who already holds the full runtime model in memory.
+
 ## Line length
 
 - **69 char max per source line** including
@@ -147,6 +192,30 @@ These rules apply globally to ALL python projects.
   * first line contains ONLY `'''` + newline
   * content follows std PEP guidelines
   * final 2 lines: a blank line, then closing `'''`
+
+## Regression test documentation
+
+- Every newly added regression test MUST have a detailed
+  docstring which preserves the reason the test exists.
+- The docstring must explain:
+  * the original failure mode or incorrect behavior;
+  * the triggering input, state, or task/event
+    interleaving;
+  * the invariant or user-visible behavior which was
+    violated;
+  * how the test arranges the reproducing conditions;
+  * how its synchronization and assertions prove the fix.
+- For concurrency or race regressions, name the relevant
+  tasks, events, cancellation points, or publication order.
+  Explain why the test controls that ordering
+  deterministically instead of depending on timing luck.
+- Do not merely restate the test name or narrate each code
+  statement. Capture the failure mechanism and the proof
+  boundary so future maintainers can distinguish required
+  behavior from incidental test implementation.
+- Existing non-regression tests do not need expanded
+  docstrings unless they are being materially rewritten to
+  audit a specific prior bug.
 
 ## Type annotations
 
