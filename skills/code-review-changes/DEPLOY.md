@@ -62,6 +62,8 @@ dry run before applying it. Use `update` only for a submodule anchor.
   this skill to consume during remote-review commit
   generation. Local Tuicr reviews do not write the
   forge-specific context file.
+- `/commit-plan` — optional post-fix handoff that generates or refreshes exact
+  commit boundaries and messages after the user stages review adjustments.
 
 ## Prerequisites
 
