@@ -179,7 +179,8 @@ while read -r mode blob stage path; do
         .claude/git_commit_msg_LATEST.md|.claude/skills/pr-msg/pr_msg_LATEST.md|\
         .claude/review_context.md|.claude/review_regression.md|\
         .claude/review_replies|.claude/review_replies/*|\
-        wkts|wkts/*|.claude/.current_session|\
+        wkts|wkts/*|.claude/wkts|.claude/wkts/*|claude_wkts|\
+        .claude/.current_session|\
         .ai/code-review/reports|.ai/code-review/reports/*|\
         .ai/taken/exports|.ai/taken/exports/*)
             printf 'ERROR: runtime state is staged or tracked: %s\n' "$path" >&2

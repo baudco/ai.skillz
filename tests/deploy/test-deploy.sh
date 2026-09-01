@@ -824,6 +824,32 @@ test_command_dependency_all_and_hooks() {
     output="$(bash "$DEPLOY" command branch-in-new-terminal "$REPO" --provider all)"
     assert_contains "$output" 'Companion hook'
     assert_contains "$output" 'unsupported skipped'
+    assert_file_contains \
+        "$ROOT/commands/branch-in-new-terminal/session-stash.hook.json" \
+        'mkdir -p'
+    assert_file_contains \
+        "$ROOT/commands/branch-in-new-terminal/session-stash.hook.json" \
+        'select(type == \"string\" and length > 0)'
+    assert_file_contains \
+        "$ROOT/commands/branch-in-new-terminal/branch-in-new-terminal.md" \
+        'no stashed session id'
+    local hook_command hook_project
+    hook_command="$(python -c \
+        'import json, sys; print(json.load(open(sys.argv[1]))["hooks"]["SessionStart"][0]["hooks"][0]["command"])' \
+        "$ROOT/commands/branch-in-new-terminal/session-stash.hook.json")"
+    hook_project="$TMP_ROOT/hook-project"
+    mkdir "$hook_project"
+    printf '{"session_id":"session-7"}\n' \
+        | env CLAUDE_PROJECT_DIR="$hook_project" \
+            bash -c "$hook_command"
+    assert_eq \
+        "$(<"$hook_project/.claude/.current_session")" \
+        'session-7'
+    printf '{}\n' > "$TMP_ROOT/invalid-hook.json"
+    assert_fails env CLAUDE_PROJECT_DIR="$hook_project" \
+        bash -c "$hook_command" < "$TMP_ROOT/invalid-hook.json"
+    [ ! -e "$hook_project/.claude/.current_session" ] \
+        || fail 'invalid hook input retained a stale session id'
     pass 'command dependencies, provider-all skips, and hook reporting are enforced'
 }
 
@@ -1569,6 +1595,21 @@ test_deployment_validator_failures() {
     assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
 
+    new_repo validate-legacy-worktree-runtime
+    mkdir -p "$REPO/.claude/wkts/example"
+    printf runtime > "$REPO/.claude/wkts/example/file"
+    git -C "$REPO" add -f .claude/wkts/example/file
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'runtime state is staged or tracked: .claude/wkts/example/file'
+
+    new_repo validate-legacy-worktree-alias
+    ln -s .claude/wkts "$REPO/claude_wkts"
+    git -C "$REPO" add -f claude_wkts
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'runtime state is staged or tracked: claude_wkts'
+
     new_repo validate-worktree-runtime
     mkdir -p "$REPO/wkts/example"
     printf runtime > "$REPO/wkts/example/file"
@@ -1678,6 +1719,8 @@ test_code_review_contract_assets() {
     python "$ROOT/tests/test_gish_review_post.py"
     python "$ROOT/tests/test_code_review_disclosure.py"
     python "$ROOT/tests/test_gish_xontrib.py"
+    assert_file_contains "$ROOT/skills/inter-skill-review/SKILL.md" \
+        'disable-model-invocation: true'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'explicitly authorizes test execution.'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
@@ -1789,6 +1832,11 @@ test_opencode_cleaning_contract() {
         "$ROOT/providers/opencode/commands/opencode-cleaning.md" \
         'never authorizes deletion'
     pass 'OpenCode cleaning classifier and approval gate are safe'
+}
+
+test_pr_msg_helper_contract() {
+    python "$ROOT/tests/test_pr_msg_helpers.py"
+    pass 'PR merge flags and remote URL forms remain distinct'
 }
 
 test_opencode_command_adapter_contracts() {
@@ -2021,6 +2069,7 @@ test_all_templates_invalid_args_and_idempotence
 test_code_review_contract_assets
 test_commit_plan_contract
 test_opencode_cleaning_contract
+test_pr_msg_helper_contract
 test_opencode_command_adapter_contracts
 test_opencode_debug_if_available
 
