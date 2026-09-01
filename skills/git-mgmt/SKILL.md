@@ -408,13 +408,17 @@ policy never enters invalidated discovery. Content or index changes require
 composing skills to rematerialize and reverify affected boundaries, but do not
 by themselves require rescanning unchanged unrelated worktrees.
 
-### Commit-time backstop
+### Opted-in commit-time backstop
 
-Before creating a commit, perform only the exact-key policy receipt lookup.
-Never ask about discovery at commit time. A missing or declined policy permits
-the commit workflow to continue without discovery; it must not trigger topic,
-path-history, ref or worktree scans. Under an approved policy with intact
-completed evidence, repeat topic and affected-path searches only when:
+Apply this backstop only when the active workflow explicitly opted into
+`/git-mgmt` discovery before implementation. Loading another skill or creating
+a commit does not opt in and must not trigger any pointer or receipt lookup.
+For an opted-in workflow, perform only the exact-key policy receipt lookup
+before creating a commit. Never ask about discovery at commit time. A missing
+or declined policy permits the commit workflow to continue without discovery;
+it must not trigger topic, path-history, ref or worktree scans. Under an
+approved policy with intact completed evidence, repeat topic and affected-path
+searches only when:
 
 - the task, base, implementation scope or affected paths changed materially;
 - a new or changed ref/worktree has concrete task or path-overlap evidence.
