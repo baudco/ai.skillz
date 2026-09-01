@@ -137,25 +137,6 @@ When generating commit messages, always follow this process:
    (e.g. "generating commit msg for worktree
    `remote-exc-registry-tests`").
 
-   Before analyzing or writing a message, use `/git-mgmt` to read the fixed
-   active-task pointer, validate it against the staged paths, task terms and
-   issue/PR identifiers, then read only its exact-key policy receipt.
-   Commit-message generation never asks about or initiates discovery. A
-   missing, mismatched, declined, corrupt or approved-but-pending policy
-   continues without a scan; an approved completed policy may use its cheap
-   unchanged refresh. This authorizes no network access or Git mutation. If
-   approved discovery found equivalent work on a distinct ref/worktree,
-   preserve the index and stop before generating the message.
-
-   When `/commit-plan` already recorded this exact staged tree/patch and the
-   archived message digest still matches, reuse that message. A root-path or
-   ownership change alone does not require rediscovery or regeneration. If only
-   the message is missing, regenerate it from the unchanged staged boundary
-   without rerunning boundary tests. If its digest changed, preserve the
-   human-owned file and ask whether to use it or write a separate candidate;
-   never overwrite it automatically. Content, scope, base or index changes
-   invalidate the matching receipt component as defined by `/git-mgmt`.
-
    Then check for staged changes: if
    `git diff --staged` is empty, STOP and tell the
    user "nothing is staged!" with a reminder to

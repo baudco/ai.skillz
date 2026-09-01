@@ -45,37 +45,6 @@ If a trusted deployed `commit-msg` skill is unavailable, stop and give the
 canonical deployment command. Never invent or copy another repository's
 message conventions.
 
-Before materializing boundaries, use `/git-mgmt` to read the fixed active-task
-pointer, validate it against the changed paths, task terms and issue/PR
-identifiers, then read only its exact-key policy receipt. Commit planning is
-continuation work: never ask about or initiate discovery merely because the
-pointer or receipt is missing, mismatched, declined, corrupt or approved but
-pending. Reuse or narrowly refresh completed evidence only under an approved
-policy. This authorizes no network access or Git mutation. If an approved scan
-found equivalent work, preserve the index and stop before returning executable
-commit commands.
-
-For a plan refresh, load any worktree-private policy receipt before doing
-expensive boundary work. Discovery may be absent or declined; that does not
-block planning. A reusable commit-plan receipt must additionally
-store a versioned `extensions.commit-plan` object. It records a stable plan ID,
-starting index-stage/cached-patch digests and, for each stable boundary ID, the
-repository identity, sorted path set, expected parent OID or prior-boundary ID,
-expected parent tree, staged tree, patch digest relative to that parent,
-pre/post-index fingerprints, archived message path/digest, exact
-checks/outcomes, dependency IDs and completion state.
-
-Every creation or mutation of `extensions.commit-plan`, including completion
-updates after human commits, must use `/git-mgmt`'s pointer transaction: publish
-`receipt_sha256: null`, atomically replace the receipt, then publish its new
-digest. The pointer's scan policy remains authoritative throughout.
-
-For a cross-repository plan, also write an ignored plan manifest beneath the
-`commit-msg/msgs/` runtime directory. It maps the plan ID to canonical
-repository IDs, receipt digests, boundary IDs and cross-repository dependency
-edges. Validate repository receipts independently, then invalidate only the
-changed repository's boundaries and their transitive dependants.
-
 ## 2. Interpret The Request
 
 The literal phrase **"commit plan"** (case-insensitive), a request to split
@@ -113,22 +82,18 @@ command sequence.
 
 ## 4. Materialize Every Boundary
 
-Materialize every boundary on an initial plan. On an invalidated plan,
-materialize every affected boundary and its transitive dependants. For an
-unchanged refresh, first compare the receipt's evidenced base OID, task/scope,
-scoped content, starting index-stage/cached-patch digests and every archived
-message digest. If they all match, reuse the exact boundaries, checks and
-messages without staging them again. Only update relocatable worktree roots in
-the receipt and rendered commands.
-
 For each planned commit, in dependency order:
 
 1. Materialize that commit's exact boundary in the index.
 2. Run `git diff --cached --check`, statistics, and name/status inspection.
 3. Read the staged diff and apply `/commit-msg`'s normal analysis.
-4. Run required checks against the exact staged tree. When unstaged later
-   changes would contaminate a check, construct a temporary detached worktree
-   from the staged tree and remove it after verification.
+4. Resolve the required lint, targeted-test and full-suite commands for that
+   boundary, but do not execute project checks while generating the plan by
+   default. Include them in the human execution sequence and report them as
+   pending. Run a project check during planning only when the user explicitly
+   requests pre-execution. When unstaged later changes would contaminate an
+   explicitly requested check, construct a temporary detached worktree from
+   the staged tree and remove it after verification.
 5. Generate a distinct project-style message from that exact boundary.
 6. Archive it beneath `.claude/skills/commit-msg/msgs/` using the
    `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
@@ -138,38 +103,6 @@ For each planned commit, in dependency order:
 Do not defer message generation or tell the human to rerun `/commit-msg` after
 each commit. If any boundary cannot be safely materialized or verified, stop
 and report the blocker instead of returning a partial plan.
-
-Invalidate work proportionally:
-
-- root relocation only: update command paths;
-- missing message: regenerate it from its unchanged recorded staged boundary,
-  without repeating discovery or tests;
-- changed message digest: preserve the human-owned file, report the mismatch
-  and ask whether to use it or generate a separate candidate file;
-- changed relevant ref/worktree: rerun `/git-mgmt` for that evidence first;
-- changed content, scope, base or starting index: rematerialize and reverify
-  affected boundaries and their transitive dependants, checks and messages;
-- changed repository in a cross-repository plan: invalidate only that
-  repository's receipt and dependent boundaries.
-
-Ownership acquisition or transfer is a separate lifecycle concern. It neither
-validates nor invalidates commit boundaries; check it independently before any
-command that requires worktree ownership.
-
-When refreshing after the human executed part of a plan, recognize completed
-boundaries before applying normal invalidation. Walk first-parent commits from
-the recorded initial parent through current `HEAD` and match boundaries in
-order by parent relationship and committed tree, not commit OID or final
-message text. For boundary 1, require its commit parent to equal the recorded
-initial OID and its tree to equal the recorded staged tree. For each later
-boundary, require its parent commit to be the commit matched to the prior
-boundary and its tree to equal the recorded staged tree. This permits `--edit`
-to change commit OIDs while proving exact content and order. Mark matched
-boundaries completed, advance `discovery_head_oid`, and recompute baseline
-index/content fingerprints for the remaining boundaries. Treat this
-active-branch advancement as expected execution, not a new duplicate
-candidate. Any nonmatching commit, tree or parent invalidates that boundary
-and its transitive dependants.
 
 ## 5. Restore The Starting Index
 
@@ -243,6 +176,8 @@ Before returning a finished plan, verify:
 - every commit has one archived message generated from its exact staged diff;
 - every boundary is atomic and ordered after its dependencies;
 - exact-boundary checks and their outcomes are recorded;
+- every required project check is rendered in its boundary and reported as
+  pending unless the user explicitly requested and received pre-execution;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
 - the command block starts in the exact absolute repository/worktree root;
@@ -252,10 +187,6 @@ Before returning a finished plan, verify:
   the final commit has no required trailing blank line;
 - no command commits automatically before the editor opens;
 - no push appears unless the human separately requests a push plan.
-
-For an unchanged refresh, a valid receipt containing these exact outcomes
-satisfies the checks already completed. Checks explicitly marked for execution
-time remain in the rendered command sequence.
 
 If any item is false, the commit plan is incomplete and must not be presented
 as ready.

@@ -36,11 +36,6 @@ bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 - Deployed `resolve-conflicts` companion for authorized conflict resolution
 - Optional deployed `gish` skill for provider-neutral forge inspection
 
-`open-wkt` and `commit-plan` depend on this skill for their local existing-work
-discovery gate. Deploy `git-mgmt` before either consumer; the manifest enforces
-that ordering and `git-mgmt` remains read-only unless the current prompt
-separately authorizes a specific mutation.
-
 Fresh forge inspection additionally requires an adapter supported by `gish`,
 an authenticated provider client, and explicit current-prompt network
 authorization. Without those capabilities, `/git-mgmt` is limited to clearly
