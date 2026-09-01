@@ -152,6 +152,10 @@ Present a summary table to the user:
 
 ## 4. Apply code fixes
 
+Before the first edit in each receiving worktree, capture the selected-path
+baseline defined by
+[`references/review-adjustment-handoff.md`](references/review-adjustment-handoff.md).
+
 For each comment triaged as `fix`:
 
 - Read the file at the relevant lines.
@@ -276,14 +280,10 @@ all pass. Only proceed to step 6 once green.
 
 **NEVER auto-commit.** After fixes pass tests:
 
-- Tell the user what files changed and why.
-- Show the diff summary.
-- Suggest they review the worktree state, stage
-  files manually, and use `/commit-msg` (inline
-  or in a separate session) to generate commit
-  content.
-- **Do NOT push** - the user must push manually
-  (no SSH key access assumed).
+- Tell the user what files changed and why, then follow the review, staging,
+  and plan-refresh handoff in
+  [`references/review-adjustment-handoff.md`](references/review-adjustment-handoff.md).
+- **Do NOT push**; the user must push manually.
 
 ### Write review context file
 
