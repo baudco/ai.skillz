@@ -30,7 +30,7 @@ registry. Do not scan `~`, sibling repositories, or arbitrary external roots.
 `commit-msg` owns:
 
 - the no-auto-commit and mandatory `--edit` rules;
-- repository/worktree detection and session tracking;
+- repository/worktree detection from the current invocation;
 - staged-diff analysis and project message style;
 - review/regression context and Prompt-IO trailers;
 - archived and latest message file locations;
@@ -64,11 +64,17 @@ cannot be resolved from repository evidence.
 ## 3. Preserve The Starting Index
 
 Refuse to plan while the index has unmerged entries. Record the initial index
-tree, staged path set, and `git ls-files --stage --debug` output. Also save an
-exact byte copy and digest of the worktree-specific Git index path beneath the
-ignored `commit-msg/msgs/` runtime directory. Record when the index file was
-initially absent. The index may be empty; unlike a normal `/commit-msg`
-invocation, that does not block planning when worktree changes exist.
+tree, staged path set, `git ls-files --stage --debug` output and exact digest of
+the worktree-specific Git index. Record when the index file was initially
+absent. The index may be empty; unlike a normal `/commit-msg` invocation, that
+does not block planning when worktree changes exist.
+
+Never rewrite the user's real index while generating a plan. Materialize each
+boundary in a worktree-private temporary index initialized from its evidenced
+parent tree, then apply the exact cached boundary patch there. Run staged diff
+inspection with `GIT_INDEX_FILE` naming that temporary index. Remove temporary
+indexes only after their boundary evidence and message archives are complete,
+and verify the real index digest and stage metadata stayed unchanged.
 
 Never use `git reset --hard`, `git clean`, automatic stash, checkout-based
 discard, or any command that overwrites worktree content. Preserve unrelated
@@ -76,24 +82,34 @@ staged entries and user changes.
 
 If exact boundaries require partial-file staging, use deterministic cached
 patches or equivalent non-interactive index plumbing. Do not use an interactive
-patch console. Store any generated staging helper beneath the ignored
-`commit-msg/msgs/` runtime directory and reference it explicitly in the final
-command sequence.
+patch console. Store any generated planning or execution helper beneath the
+ignored `commit-msg/msgs/` runtime directory and reference execution helpers
+explicitly in the final command sequence.
 
 ## 4. Materialize Every Boundary
 
+Resolve the repository's project-check command catalog once per plan, before
+the boundary loop. Use only a repository-owned run-tests harness reference,
+documented project commands and CI/build configuration already in the current
+repository. Do not repeat that repository inspection for each boundary. Select
+from the catalog for each boundary; do not rediscover equivalent commands.
+
 For each planned commit, in dependency order:
 
-1. Materialize that commit's exact boundary in the index.
-2. Run `git diff --cached --check`, statistics, and name/status inspection.
-3. Read the staged diff and apply `/commit-msg`'s normal analysis.
-4. Resolve the required lint, targeted-test and full-suite commands for that
-   boundary, but do not execute project checks while generating the plan by
-   default. Include them in the human execution sequence and report them as
-   pending. Run a project check during planning only when the user explicitly
-   requests pre-execution. When unstaged later changes would contaminate an
-   explicitly requested check, construct a temporary detached worktree from
-   the staged tree and remove it after verification.
+1. Materialize that commit's exact boundary in its temporary index.
+2. Compare the temporary index with that boundary's recorded parent tree for
+   `git diff --cached --check`, statistics and name/status inspection. Never
+   compare a later boundary with live `HEAD` or include preceding boundaries.
+3. Read that same parent-relative staged diff and apply `/commit-msg`'s normal
+   analysis.
+4. Select required lint and targeted-test commands for that boundary. Assign
+   the full suite once, against the final boundary tree, unless repository
+   evidence explicitly requires an earlier boundary to run it independently.
+   Do not execute project checks while generating the plan by default. Include
+   pending checks in the human execution sequence. Run a project check during
+   planning only when the user explicitly requests pre-execution, always
+   against the exact boundary tree. Record a successful unchanged result and
+   omit that check from the execution sequence rather than running it twice.
 5. Generate a distinct project-style message from that exact boundary.
 6. Archive it beneath `.claude/skills/commit-msg/msgs/` using the
    `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
@@ -104,16 +120,16 @@ Do not defer message generation or tell the human to rerun `/commit-msg` after
 each commit. If any boundary cannot be safely materialized or verified, stop
 and report the blocker instead of returning a partial plan.
 
-## 5. Restore The Starting Index
+## 5. Verify The Starting Index
 
-After all boundaries and messages are verified, atomically restore the saved
-index bytes, or restore initial index absence when applicable. Verify its
-digest, tree, staged paths, stage/debug metadata, and staged diff before
-presenting the plan. Remove the temporary index backup only after every check
-matches.
+After all boundaries and messages are verified, confirm that the untouched real
+index still has its initial digest, tree, staged paths, stage/debug metadata and
+staged diff. A mismatch means another writer changed it; preserve that state
+and stop rather than restoring stale bytes.
 
-Message archives and ignored cached patches may remain. Do not stage them
-unless they are intended provenance files in a planned commit.
+Message archives, ignored cached patches and generated execution helpers may
+remain. Remove planning indexes. Do not stage runtime artifacts unless they are
+intended provenance files in a planned commit.
 
 ## 6. Render For The User's Shell
 
@@ -149,11 +165,20 @@ The command block must include, in execution order:
 
 - exact staging and unstaging commands for every boundary;
 - staged whitespace, statistics, and path checks before every commit;
-- required lint and test commands;
+- required lint and targeted-test commands against each exact boundary tree;
+- the full suite once against the final boundary tree, except where documented
+  repository evidence requires an earlier independent run;
 - `git diff --staged` immediately before every commit command so the human can
   review the exact staged patch at the final pre-commit gate;
 - `git commit --edit --file
   .claude/skills/commit-msg/msgs/<generated-file>` for every commit.
+
+For every pending project check, render a generated helper that first verifies
+the current staged tree equals the recorded boundary tree, materializes that
+tree in an isolated temporary checkout, runs the command there and removes the
+checkout. Later-boundary or unrelated live-worktree content must not affect the
+result. Do not render checks already pre-executed successfully against
+unchanged boundary evidence.
 
 Use each archived message path directly. Never use
 `.claude/git_commit_msg_LATEST.md` in a multi-commit sequence because later
@@ -176,8 +201,11 @@ Before returning a finished plan, verify:
 - every commit has one archived message generated from its exact staged diff;
 - every boundary is atomic and ordered after its dependencies;
 - exact-boundary checks and their outcomes are recorded;
-- every required project check is rendered in its boundary and reported as
-  pending unless the user explicitly requested and received pre-execution;
+- project-check commands were resolved once per repository;
+- each required targeted check is rendered against its exact boundary and the
+  full suite appears only at the final boundary unless documented otherwise;
+- checks are reported pending unless pre-executed against unchanged boundary
+  evidence, in which case they are recorded and not rendered again;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
 - the command block starts in the exact absolute repository/worktree root;
@@ -196,7 +224,7 @@ as ready.
 State the exact repository/worktree root and branch first. List each commit in
 order with its subject and scope, then provide the one shell-specific command
 block. Mention excluded changes, checks already run, checks that remain for
-execution time, and the restored index state.
+execution time, and verification that the real index remained unchanged.
 
 Do not repeat full commit-message bodies in chat unless the human requests
 them. The archived files are the reviewable source for each message.

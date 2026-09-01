@@ -1822,19 +1822,39 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         '**"COMMIT PLAN" compatibility redirect**'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'atomically restore the saved'
+        "Never rewrite the user's real index"
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'do not execute project checks while generating the plan by'
+        "temporary index with that boundary's recorded parent tree"
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Include them in the human execution sequence and report them as'
+        'compare a later boundary with live `HEAD`'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Run a project check during planning only when the user explicitly'
+        'Do not execute project checks while generating the plan by default.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'requests pre-execution.'
-    assert_not_contains "$(<"$ROOT/skills/commit-plan/SKILL.md")" \
-        'extensions.commit-plan'
-    assert_not_contains "$(<"$ROOT/skills/commit-msg/SKILL.md")" \
-        'active-task pointer'
+        'Resolve the repository'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Do not repeat that repository inspection for each boundary.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'the full suite once, against the final boundary tree'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'omit that check from the execution sequence rather than running it twice'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'tree in an isolated temporary checkout'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Run a project check during'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'planning only when the user explicitly requests pre-execution'
+    local commit_plan_text
+    local commit_msg_text
+    commit_plan_text="$(<"$ROOT/skills/commit-plan/SKILL.md")"
+    commit_msg_text="$(<"$ROOT/skills/commit-msg/SKILL.md")"
+    assert_not_contains "$commit_plan_text" '/git-mgmt'
+    assert_not_contains "$commit_plan_text" 'receipt'
+    assert_not_contains "$commit_plan_text" 'active-task'
+    assert_not_contains "$commit_plan_text" 'discovery'
+    assert_not_contains "$commit_msg_text" '/git-mgmt'
+    assert_not_contains "$commit_msg_text" 'receipt'
+    assert_not_contains "$commit_msg_text" 'active-task'
+    assert_not_contains "$commit_msg_text" 'discovery'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         "use \`/git-mgmt\`'s exact-key policy lookup"
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
@@ -1866,7 +1886,11 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         '--recover-discovery-guard <writer-token>'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
-        'A missing or declined policy permits'
+        'or declined policy permits the commit workflow'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'active workflow explicitly opted into'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'does not opt in and must not trigger any pointer or receipt lookup'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'null` remains pending'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
@@ -1909,6 +1933,11 @@ test_commit_plan_contract() {
         'every invocation requires a full scan'
     assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
         'without re-entering the compatibility redirect'
+    assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
+        'verify the real index remained unchanged'
+    assert_not_contains \
+        "$(<"$ROOT/providers/opencode/commands/commit-plan.md")" \
+        'restore the starting index'
     new_repo commit-plan-dependency
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     assert_fails bash "$DEPLOY" commit-plan "$REPO" \

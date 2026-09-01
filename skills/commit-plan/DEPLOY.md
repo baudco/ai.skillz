@@ -39,10 +39,11 @@ harness's normal project or global Agent Skills directory for both
 | Gemini CLI | `.agents/skills/` or `.gemini/skills/` |
 | GitHub Copilot | `.agents/skills/` or `.github/skills/` |
 
-Plan generation performs lightweight staged-boundary inspection and message
-generation. Required project lint and test commands remain pending in each
-rendered human execution boundary unless the user explicitly requests
-pre-execution. This avoids running expensive suites twice.
+Plan generation resolves project commands once and materializes boundaries in
+private indexes without rewriting the user's index. Targeted checks remain in
+their exact-tree execution boundaries, while the full suite runs once against
+the final boundary unless repository evidence requires otherwise. A check
+successfully pre-executed against unchanged evidence is not rendered twice.
 
 Nothing is staged unless `--stage` is explicitly supplied. Quit and restart
 OpenCode after deployment or update.
