@@ -152,6 +152,10 @@ Present a summary table to the user:
 
 ## 4. Apply code fixes
 
+Before the first edit in each receiving worktree, capture the selected-path
+baseline defined by
+[`references/review-adjustment-handoff.md`](references/review-adjustment-handoff.md).
+
 For each comment triaged as `fix`:
 
 - Read the file at the relevant lines.
@@ -285,26 +289,14 @@ all pass. Only proceed to step 6 once green.
 
 **NEVER auto-commit.** After fixes pass tests:
 
-- Tell the user what files changed and why.
-- Show the diff summary.
-- Leave review adjustments unstaged and preserve the starting index.
-  Show the review-only diff against the recorded pre-edit baseline.
-- Default next step: review the diff, then invoke `/commit-plan`.
-  Planning accepts staged, unstaged and untracked changes; it owns
-  commit boundaries, checks, messages and eventual staging commands.
-  Do not recommend staging the whole review before planning: a staged
-  combined tree can conflict with the first of several boundaries.
-- Staging is an optional separate route only when the user explicitly
-  chooses it, for example for a single-commit `/commit-msg` flow.
-  Then show exact scoped paths and warn about mixed unrelated hunks.
-  Do not unstage existing human changes to make planning easier.
-- Local `-r` replies do not authorize staging. Reply-mirror cleanup
-  follows actual staging, not the completion of review remediation.
-- Source or message-context changes invalidate affected pending plan
-  boundaries. Request a fresh `/commit-plan`; do not reuse stale
-  archived messages or execution commands.
-- **Do NOT push** - the user must push manually
-  (no SSH key access assumed).
+- Tell the user what files changed and why, then follow the review and
+  plan-refresh handoff in
+  [`references/review-adjustment-handoff.md`](references/review-adjustment-handoff.md).
+- Default to a review-only diff and `/commit-plan`, leaving adjustments
+  unstaged and preserving the starting index. Manual staging is a
+  separate route only when the human explicitly chooses it.
+- **Do NOT push**; the user must push manually.
+  No SSH key access is assumed.
 
 ### Write review context file
 
