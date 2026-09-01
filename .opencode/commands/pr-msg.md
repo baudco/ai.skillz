@@ -1,0 +1,1 @@
+../../providers/opencode/commands/pr-msg.md

@@ -26,9 +26,42 @@ kind=""
 name=""
 shape=""
 assets=""
+skill_dependency=""
 rest=""
 
-while IFS='|' read -r kind name shape assets rest; do
+manifest_skill_dependency() {
+    local wanted="$1" record_kind record_name record_shape
+    local record_assets record_dependency record_rest
+    MANIFEST_SKILL_DEPENDENCY=""
+    MANIFEST_SKILL_SHAPE=""
+    while IFS='|' read -r record_kind record_name record_shape \
+        record_assets record_dependency record_rest; do
+        [ "$record_kind" = skill ] || continue
+        if [ "$record_name" = "$wanted" ]; then
+            MANIFEST_SKILL_DEPENDENCY="$record_dependency"
+            MANIFEST_SKILL_SHAPE="$record_shape"
+            return 0
+        fi
+    done < "$MANIFEST"
+    return 1
+}
+
+skill_dependency_cycle() {
+    local current="$1" seen="${2:-|$1|}" dependency dependencies
+    manifest_skill_dependency "$current" || return 1
+    dependencies="$MANIFEST_SKILL_DEPENDENCY"
+    [ -n "$dependencies" ] && [ "$dependencies" != - ] || return 1
+    for dependency in ${dependencies//,/ }; do
+        case "$seen" in
+            *"|$dependency|"*) return 0 ;;
+        esac
+        skill_dependency_cycle \
+            "$dependency" "$seen$dependency|" && return 0
+    done
+    return 1
+}
+
+while IFS='|' read -r kind name shape assets skill_dependency rest; do
     [ "$kind" = skill ] || continue
     skills="$skills$name|"
     case "$shape" in
@@ -60,6 +93,30 @@ while IFS='|' read -r kind name shape assets rest; do
     esac
 done < "$MANIFEST"
 
+while IFS='|' read -r kind name shape assets skill_dependency rest; do
+    [ "$kind" = skill ] || continue
+    if skill_dependency_cycle "$name"; then
+        printf 'ERROR: skill dependency cycle includes: %s\n' "$name" >&2
+        errors=$((errors + 1))
+    fi
+done < "$MANIFEST"
+
+while IFS='|' read -r kind name shape assets skill_dependency rest; do
+    [ "$kind" = skill ] || continue
+    [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ] \
+        || continue
+    for dependency in ${skill_dependency//,/ }; do
+        case "$skills" in
+            *"|$dependency|"*) ;;
+            *)
+                printf 'ERROR: skill dependency missing from manifest: %s -> %s\n' \
+                    "$name" "$dependency" >&2
+                errors=$((errors + 1))
+                ;;
+        esac
+    done
+done < "$MANIFEST"
+
 provider=""
 source=""
 mode=""
@@ -79,6 +136,12 @@ while IFS='|' read -r kind provider name source mode dependency rest; do
                 errors=$((errors + 1))
                 ;;
         esac
+        if manifest_skill_dependency "$dependency" \
+            && [ "$MANIFEST_SKILL_SHAPE" = template ]; then
+            printf 'ERROR: command dependency is template-only: %s/%s -> %s\n' \
+                "$provider" "$name" "$dependency" >&2
+            errors=$((errors + 1))
+        fi
     fi
 done < "$MANIFEST"
 
@@ -113,10 +176,10 @@ while read -r mode blob stage path; do
     fi
     case "$path" in
         .claude/skills/*/msgs|.claude/skills/*/msgs/*|\
-        .claude/skills/*/conf.toml|\
         .claude/git_commit_msg_LATEST.md|.claude/skills/pr-msg/pr_msg_LATEST.md|\
         .claude/review_context.md|.claude/review_regression.md|\
-        .claude/wkts/*|.claude/.current_session|claude_wkts|\
+        .claude/review_replies|.claude/review_replies/*|\
+        wkts|wkts/*|.claude/.current_session|\
         .ai/code-review/reports|.ai/code-review/reports/*|\
         .ai/taken/exports|.ai/taken/exports/*)
             printf 'ERROR: runtime state is staged or tracked: %s\n' "$path" >&2

@@ -83,13 +83,12 @@ the canonical `SKILL.md` link.
 
 ## OpenCode
 
-OpenCode needs both skill discovery and a slash-command shim:
+OpenCode skill deployment installs both skill discovery and its dependent
+slash-command shim:
 
 ```sh
 bash /path/to/ai.skillz/scripts/deploy.sh \
   run-tests /path/to/repo --provider opencode --method symlink
-bash /path/to/ai.skillz/scripts/deploy.sh command run-tests /path/to/repo \
-  --provider opencode --method symlink
 ```
 
 The harness remains at `.claude/skills/run-tests/` even for an
@@ -97,7 +96,7 @@ OpenCode-only deployment because both providers share that repository-owned
 configuration path. A harness-only Claude directory is valid local state and
 does not enable the Claude skill by itself.
 
-Use `--method submodule` for both operations after portable initialization.
+Use `--method submodule` after portable initialization.
 The canonical shim is tracked at `providers/opencode/commands/run-tests.md`.
 Restart OpenCode after deployment; skills and commands are loaded at startup.
 

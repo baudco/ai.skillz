@@ -43,6 +43,14 @@ assert_fails() {
     fi
 }
 
+deploy_commit_msg_dependencies() {
+    local target="$1" provider="${2:-claude}"
+    bash "$DEPLOY" resolve-conflicts "$target" \
+        --provider "$provider" >/dev/null
+    bash "$DEPLOY" git-mgmt "$target" \
+        --provider "$provider" >/dev/null
+}
+
 new_repo() {
     local name="$1"
     REPO="$TMP_ROOT/$name"
@@ -103,8 +111,15 @@ prepare_source_repo() {
         "$SOURCE_WORK/providers/opencode/commands/"
     cp "$ROOT/skills/run-tests/SKILL.md" \
         "$SOURCE_WORK/skills/run-tests/SKILL.md"
+    cp "$ROOT/skills/commit-msg/SKILL.md" \
+        "$SOURCE_WORK/skills/commit-msg/SKILL.md"
     cp -R "$ROOT/skills/code-review" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/code-nav-refs" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/commit-plan" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/gish" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/git-mgmt" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/opencode-cleaning" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
     cp "$ROOT/.gitignore" "$SOURCE_WORK/.gitignore"
@@ -114,15 +129,22 @@ prepare_source_repo() {
     chmod +x "$SOURCE_WORK/scripts/deploy.sh" \
         "$SOURCE_WORK/scripts/validate-deployment.sh"
     mkdir -p "$SOURCE_WORK/.opencode/commands"
-    for command in code-review code-review-changes commit-msg run-tests taken-export; do
+    for command in close-wkt code-review code-review-changes commit-plan \
+        commit-msg dep-supersede-scan gish git-mgmt harness-perf \
+        opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
+        taken-export yt-url-lookup; do
         rm -f "$SOURCE_WORK/.opencode/commands/$command.md"
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
     done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
-        providers/opencode/commands skills/code-review skills/harness-perf \
-        skills/run-tests/SKILL.md \
+        providers/opencode/commands skills/code-nav-refs \
+        skills/code-review skills/commit-plan \
+        skills/gish skills/git-mgmt \
+        skills/harness-perf \
+        skills/opencode-cleaning \
+        skills/commit-msg/SKILL.md skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
     SOURCE_URL="file://$SOURCE_WORK"
@@ -147,7 +169,9 @@ test_local_anchor_and_anchor_authority() {
     bash "$DEPLOY" py-codestyle "$REPO" --provider all >/dev/null
     grep -q anchor-specific "$REPO/.opencode/skills/py-codestyle/SKILL.md" \
         || fail 'anchored skill did not resolve through target anchor'
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    deploy_commit_msg_dependencies "$REPO" opencode
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     printf '\nanchor-command\n' >> "$alternate/providers/opencode/commands/commit-msg.md"
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     grep -q anchor-command "$REPO/.opencode/commands/commit-msg.md" \
@@ -271,6 +295,7 @@ test_submodule_init_boundaries() {
 test_phase0_and_global_compatibility() {
     new_repo phase0
     local output staged_names
+    deploy_commit_msg_dependencies "$REPO" claude
     bash "$DEPLOY" commit-msg "$REPO" >/dev/null
     bash "$DEPLOY" py-codestyle "$REPO" --provider opencode --method symlink >/dev/null
     [ "$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")" = \
@@ -417,6 +442,7 @@ test_exact_staging_and_index_preservation() {
     unrelated_before="$(index_entry "$REPO" unrelated.txt)"
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     printf 'unstaged-ignore-user-line\n' >> "$REPO/.gitignore"
+    deploy_commit_msg_dependencies "$REPO" all
     bash "$DEPLOY" commit-msg "$REPO" --provider all --stage >/dev/null
     assert_eq "$(index_entry "$REPO" .claude/skills/commit-msg/msgs/state.md)" "$runtime_before"
     assert_eq "$(index_entry "$REPO" unrelated.txt)" "$unrelated_before"
@@ -424,8 +450,13 @@ test_exact_staging_and_index_preservation() {
         || fail 'user runtime state was staged'
     [ -z "$(index_entry "$REPO" .claude/skills/commit-msg/SKILL.md)" ] \
         || fail 'local-only canonical hybrid link was staged'
+    [ -z "$(index_entry "$REPO" .opencode/commands/commit-msg.md)" ] \
+        || fail 'local-only automatic command link was staged'
     git -C "$REPO" show :.gitignore | grep -q '# BEGIN ai.skillz: runtime:commit-msg' \
         || fail 'tool-owned ignore block was not staged'
+    git -C "$REPO" show :.gitignore \
+        | grep -q '# BEGIN ai.skillz: direct:symlink:opencode:command:commit-msg' \
+        || fail 'automatic command ignore block was not staged'
     git -C "$REPO" show :.gitignore | grep -q unstaged-ignore-user-line \
         && fail 'unrelated unstaged .gitignore line was staged'
     pass '--stage touches only exact canonical artifacts and preserves index entries'
@@ -439,14 +470,18 @@ test_managed_replacement_safety() {
     assert_fails bash "$DEPLOY" py-codestyle "$REPO"
     assert_eq "$(readlink "$REPO/.claude/skills/py-codestyle")" "$REPO/unmanaged"
 
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    deploy_commit_msg_dependencies "$REPO" opencode
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     printf 'user command\n' > "$REPO/.opencode/commands/commit-msg.md"
     assert_fails bash "$DEPLOY" command commit-msg "$REPO" --provider opencode
     assert_eq "$(<"$REPO/.opencode/commands/commit-msg.md")" 'user command'
 
     new_repo recognized-command-copy
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    deploy_commit_msg_dependencies "$REPO" opencode
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     cp "$ROOT/providers/opencode/commands/commit-msg.md" \
         "$REPO/.opencode/commands/commit-msg.md"
@@ -469,7 +504,9 @@ test_managed_replacement_safety() {
     mkdir -p "$REPO/.ai"
     ln -s "$history_source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    deploy_commit_msg_dependencies "$REPO" opencode
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
+        --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     cp "$historical_copy" "$REPO/.opencode/commands/commit-msg.md"
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
@@ -561,7 +598,7 @@ test_external_provider_parent_refusal() {
     mkdir -p "$REPO/config/claude"
     ln -s config/claude "$REPO/.claude"
     target_before="$(tree_digest "$REPO")"
-    assert_fails bash "$DEPLOY" commit-msg "$REPO" --provider claude
+    assert_fails bash "$DEPLOY" py-codestyle "$REPO" --provider claude
     assert_contains "$(<"$TMP_ROOT/failure.out")" \
         'refusing symlinked provider parent'
     assert_eq "$(tree_digest "$REPO")" "$target_before"
@@ -570,10 +607,12 @@ test_external_provider_parent_refusal() {
 
 test_direct_opencode_with_existing_claude_and_config() {
     new_repo direct-both-existing
+    deploy_commit_msg_dependencies "$REPO" claude
     bash "$DEPLOY" commit-msg "$REPO" >/dev/null
     printf claude-state > "$REPO/.claude/skills/commit-msg/local-state.txt"
     local claude_link config_before output
     claude_link="$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode --method symlink >/dev/null
     assert_eq "$(readlink "$REPO/.claude/skills/commit-msg/SKILL.md")" "$claude_link"
     assert_eq "$(<"$REPO/.claude/skills/commit-msg/local-state.txt")" claude-state
@@ -600,7 +639,13 @@ test_missing_anchor_assets_and_command_preflight() {
     mkdir -p "$REPO/.ai"
     ln -s "$old" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
-    bash "$DEPLOY" all "$REPO" --provider opencode >/dev/null
+    assert_fails bash "$DEPLOY" all "$REPO" --provider opencode
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'command source missing from deployment source'
+    [ ! -e "$REPO/.opencode/skills/code-review" ] \
+        || fail 'automatic command preflight partially deployed skills'
+    bash "$DEPLOY" all "$REPO" --provider opencode \
+        --no-command >/dev/null
     assert_fails bash "$DEPLOY" command all "$REPO" --provider all
     [ ! -e "$REPO/.claude/commands/branch-in-new-terminal.md" ] \
         || fail 'command preflight partially deployed another provider'
@@ -616,6 +661,7 @@ test_runtime_ignores_and_state_preservation() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     mkdir -p "$REPO/.claude/skills/commit-msg/msgs"
     printf keep > "$REPO/.claude/skills/commit-msg/msgs/old.md"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     assert_eq "$(<"$REPO/.claude/skills/commit-msg/msgs/old.md")" keep
     assert_file_contains "$REPO/.gitignore" '.claude/skills/commit-msg/msgs/'
@@ -632,6 +678,7 @@ test_runtime_ignores_and_state_preservation() {
     local legacy_skill="$TMP_ROOT/runtime-legacy-commit-msg"
     mkdir -p "$legacy_skill" "$REPO/.claude/skills"
     ln -s "$legacy_skill" "$REPO/.claude/skills/commit-msg"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     local output
     output="$(bash "$DEPLOY" status "$REPO" --provider opencode 2>&1)"
@@ -649,6 +696,113 @@ test_runtime_ignores_and_state_preservation() {
     pass 'OpenCode deployment preserves and ignores canonical .claude runtime state'
 }
 
+test_opencode_skill_auto_commands() {
+    new_repo auto-command
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    local output
+    output="$(bash "$DEPLOY" code-review "$REPO" --provider opencode)"
+    assert_contains "$output" '1 command deployment(s)'
+    [ -L "$REPO/.opencode/skills/code-review" ] \
+        || fail 'OpenCode skill was not deployed'
+    [ -L "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'dependent OpenCode command was not deployed'
+
+    new_repo auto-command-all-providers
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    bash "$DEPLOY" code-review "$REPO" --provider all >/dev/null
+    [ -L "$REPO/.claude/skills/code-review" ] \
+        || fail 'Claude skill was not deployed'
+    [ -L "$REPO/.opencode/skills/code-review" ] \
+        || fail 'OpenCode skill was not deployed for provider all'
+    [ -L "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'OpenCode command was not deployed for provider all'
+    [ ! -e "$REPO/.claude/commands/code-review.md" ] \
+        || fail 'unsupported Claude command was created'
+
+    new_repo claude-skill-no-opencode-command
+    bash "$DEPLOY" code-review "$REPO" --provider claude >/dev/null
+    [ ! -e "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'Claude-only skill deployment created OpenCode command'
+
+    new_repo no-auto-command
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    output="$(bash "$DEPLOY" code-review "$REPO" \
+        --provider opencode --no-command)"
+    assert_contains "$output" '0 command deployment(s)'
+    [ -L "$REPO/.opencode/skills/code-review" ] \
+        || fail '--no-command skipped the skill'
+    [ ! -e "$REPO/.opencode/commands/code-review.md" ] \
+        || fail '--no-command created a command'
+    bash "$DEPLOY" command code-review "$REPO" \
+        --provider opencode >/dev/null
+    [ -L "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'explicit command repair failed after --no-command'
+    assert_fails bash "$DEPLOY" command code-review "$REPO" \
+        --provider opencode --no-command
+
+    new_repo auto-command-conflict
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    mkdir -p "$REPO/.opencode/commands"
+    printf 'user command\n' > "$REPO/.opencode/commands/code-review.md"
+    local before after
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" code-review "$REPO" --provider opencode
+    after="$(tree_digest "$REPO")"
+    assert_eq "$after" "$before"
+    [ ! -e "$REPO/.opencode/skills/code-review" ] \
+        || fail 'skill was deployed before command conflict failed'
+
+    new_repo auto-command-all-conflict
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    mkdir -p "$REPO/.opencode/commands"
+    printf 'user command\n' > "$REPO/.opencode/commands/taken-export.md"
+    before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" all "$REPO" --provider opencode
+    after="$(tree_digest "$REPO")"
+    assert_eq "$after" "$before"
+    [ ! -e "$REPO/.opencode/skills/code-review" ] \
+        || fail 'all deployed skills before command conflict failed'
+
+    new_repo all-no-auto-command
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    output="$(bash "$DEPLOY" all "$REPO" \
+        --provider opencode --no-command)"
+    assert_contains "$output" '0 command deployment(s)'
+    [ ! -e "$REPO/.opencode/commands/code-review.md" ] \
+        || fail 'all --no-command created commands'
+
+    new_repo portable-auto-command-stage
+    bash "$DEPLOY" init "$REPO" --method submodule \
+        --url "$SOURCE_URL" >/dev/null
+    bash "$DEPLOY" code-review "$REPO" --provider opencode \
+        --method submodule --stage >/dev/null
+    [ -n "$(index_entry "$REPO" .opencode/skills/code-review)" ] \
+        || fail 'portable automatic skill link was not staged'
+    [ -n "$(index_entry "$REPO" .opencode/commands/code-review.md)" ] \
+        || fail 'portable automatic command link was not staged'
+
+    local invalid="$TMP_ROOT/invalid-command-dependency"
+    cp -a "$SOURCE_WORK" "$invalid"
+    sed -i \
+        's#|link|code-review$#|link|missing-skill#' \
+        "$invalid/deploy-manifest.conf"
+    assert_fails bash "$invalid/scripts/deploy.sh" status "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'dependency missing from manifest'
+
+    invalid="$TMP_ROOT/template-command-dependency"
+    cp -a "$SOURCE_WORK" "$invalid"
+    printf '\nskill|template-only|template|-\n' \
+        >> "$invalid/deploy-manifest.conf"
+    sed -i \
+        's#|link|code-review$#|link|template-only#' \
+        "$invalid/deploy-manifest.conf"
+    assert_fails bash "$invalid/scripts/deploy.sh" status "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'depends on template-only skill'
+    pass 'OpenCode skill deployment atomically includes dependent commands'
+}
+
 test_command_dependency_all_and_hooks() {
     new_repo command-dependency
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
@@ -660,6 +814,7 @@ test_command_dependency_all_and_hooks() {
     assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'dependency skill commit-msg missing or unhealthy'
     rm "$REPO/.opencode/commands/commit-msg.md"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     local output
     output="$(bash "$DEPLOY" command commit-msg "$REPO" --provider all)"
@@ -703,8 +858,6 @@ test_status_health_templates_and_source_symlink() {
     [ ! -e "$source_repo/.opencode/skills/commit-msg" ] \
         || fail 'self-hosting fixture unexpectedly has explicit skill link'
     mkdir -p "$source_repo/.claude/skills/commit-msg/msgs"
-    printf 'session = "runtime"\n' \
-        > "$source_repo/.claude/skills/commit-msg/conf.toml"
     printf runtime > "$source_repo/.claude/skills/commit-msg/msgs/current.md"
     local source_link
     source_link="$(readlink "$source_repo/.opencode/commands/commit-msg.md")"
@@ -917,6 +1070,30 @@ test_gitignore_integrity_and_inventory() {
     assert_file_contains "$REPO/.gitignore" '.claude/.current_session'
     assert_file_contains "$REPO/.gitignore" '.claude/skills/commit-msg/msgs/'
     assert_file_contains "$REPO/.gitignore" '.claude/review_regression.md'
+    assert_file_contains "$REPO/.gitignore" '.claude/review_replies/'
+    assert_file_contains "$REPO/.gitignore" '/wkts/'
+    assert_not_contains "$(<"$REPO/.gitignore")" '.claude/wkts/'
+    assert_not_contains "$(<"$REPO/.gitignore")" 'claude_wkts'
+    git -C "$REPO" check-ignore -q --no-index -- wkts/example/file \
+        || fail 'provider-neutral worktree root is not ignored'
+    if git -C "$REPO" check-ignore -q --no-index -- .claude/wkts/example; then
+        fail 'legacy harness-specific worktree root remains ignored'
+    fi
+    if git -C "$REPO" check-ignore -q --no-index -- nested/wkts/example; then
+        fail 'nested worktree directory is unexpectedly ignored'
+    fi
+
+    new_repo legacy-runtime-preflight
+    mkdir -p "$REPO/.claude"
+    ln -s missing "$REPO/.claude/wkts"
+    assert_fails bash "$DEPLOY" py-codestyle "$REPO" --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'legacy worktree runtime remains'
+    rm "$REPO/.claude/wkts"
+    printf legacy > "$REPO/claude_wkts"
+    assert_fails bash "$DEPLOY" py-codestyle "$REPO" --method symlink
+    assert_contains "$(<"$TMP_ROOT/failure.out")" \
+        'legacy worktree runtime remains'
 
     printf '\n# END ai.skillz: bad\n' >> "$REPO/.gitignore"
     before="$(file_digest "$REPO/.gitignore")"
@@ -939,6 +1116,7 @@ test_gitignore_integrity_and_inventory() {
 
 test_direct_migration_dry_run() {
     new_repo direct-migration
+    deploy_commit_msg_dependencies "$REPO" all
     bash "$DEPLOY" commit-msg "$REPO" --provider all >/dev/null
     bash "$DEPLOY" command branch-in-new-terminal "$REPO" >/dev/null
     mkdir -p "$REPO/.opencode"
@@ -1143,8 +1321,9 @@ test_migration_full_preflight_zero_mutation() {
 
 test_tracked_command_copy_transition() {
     new_repo tracked-command-copy
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode \
-        --method symlink >/dev/null
+        --method symlink --no-command >/dev/null
     mkdir -p "$REPO/.opencode/commands"
     cp "$ROOT/providers/opencode/commands/commit-msg.md" \
         "$REPO/.opencode/commands/commit-msg.md"
@@ -1170,6 +1349,7 @@ test_migration_preserves_managed_command_link() {
     mkdir -p "$REPO/.ai"
     ln -s "$source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     local initial_digest dry
@@ -1318,6 +1498,7 @@ test_command_link_modes_and_updates() {
     mkdir -p "$REPO/.ai"
     ln -s "$update_source" "$REPO/.ai/ai.skillz"
     printf '/.ai/ai.skillz\n' > "$REPO/.gitignore"
+    deploy_commit_msg_dependencies "$REPO" opencode
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
     assert_eq "$(readlink "$REPO/.opencode/commands/commit-msg.md")" \
@@ -1388,6 +1569,20 @@ test_deployment_validator_failures() {
     assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
     assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
 
+    new_repo validate-worktree-runtime
+    mkdir -p "$REPO/wkts/example"
+    printf runtime > "$REPO/wkts/example/file"
+    git -C "$REPO" add -f wkts/example/file
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
+
+    new_repo validate-review-reply-runtime
+    mkdir -p "$REPO/.claude/review_replies"
+    printf runtime > "$REPO/.claude/review_replies/1_pending.md"
+    git -C "$REPO" add -f .claude/review_replies/1_pending.md
+    assert_fails "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_contains "$(<"$TMP_ROOT/failure.out")" 'runtime state is staged'
+
     new_repo validate-absolute-link
     mkdir -p "$REPO/.opencode/skills"
     ln -s "$ROOT/skills/py-codestyle" "$REPO/.opencode/skills/py-codestyle"
@@ -1453,9 +1648,18 @@ test_all_templates_invalid_args_and_idempotence() {
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
     local output before after
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
-    assert_contains "$output" 'Result: 34 deployed, 0 template skipped'
+    assert_contains "$output" \
+        'Result: 42 deployed, 0 template skipped, 16 command deployment(s)'
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
+    local command
+    for command in close-wkt code-review code-review-changes commit-plan \
+        commit-msg dep-supersede-scan gish git-mgmt harness-perf \
+        opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
+        taken-export yt-url-lookup; do
+        [ -L "$REPO/.opencode/commands/$command.md" ] \
+            || fail "all did not deploy OpenCode command: $command"
+    done
     before="$(tree_digest "$REPO")"
     bash "$DEPLOY" all "$REPO" --provider all >/dev/null
     after="$(tree_digest "$REPO")"
@@ -1471,6 +1675,9 @@ test_code_review_contract_assets() {
     python -m json.tool \
         "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
         >/dev/null
+    python "$ROOT/tests/test_gish_review_post.py"
+    python "$ROOT/tests/test_code_review_disclosure.py"
+    python "$ROOT/tests/test_gish_xontrib.py"
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
         'explicitly authorizes test execution.'
     assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
@@ -1524,7 +1731,7 @@ test_code_review_contract_assets() {
         'Reports in this runtime directory remain untracked'
     assert_file_contains \
         "$ROOT/skills/code-review/references/output-contract.md" \
-        "skill's v1 contract."
+        'JSON export remains local'
     assert_file_contains \
         "$ROOT/skills/code-review/references/output-contract.md" \
         'fingerprint: 23acc5fc36ab85c0'
@@ -1541,9 +1748,210 @@ test_code_review_contract_assets() {
         "$ROOT/skills/code-review/references/review-result-v1.schema.json" \
         '"symbol"'
     assert_file_contains "$ROOT/providers/opencode/commands/code-review.md" \
-        'Never publish findings from this v1'
+        'first-class `gish` transport'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'Delegate publication to `/gish review-post`'
+    assert_file_contains "$ROOT/skills/code-review/SKILL.md" \
+        'Never fall back silently.'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        'Bind approval to that digest'
+    assert_file_contains "$ROOT/skills/gish/SKILL.md" \
+        'review-post <backend> <num>'
+    assert_file_contains \
+        "$ROOT/skills/gish/references/review-publication.md" \
+        '--raw-field event=COMMENT'
+    assert_file_contains \
+        "$ROOT/skills/code-review/references/output-contract.md" \
+        'this review was generated in some part by'
+    assert_file_contains \
+        "$ROOT/skills/gish/references/review-publication.md" \
+        'publishes the candidate byte-for-byte'
+    assert_file_contains "$ROOT/skills/code-review-changes/SKILL.md" \
+        '> response authored by `<harness>`'
+    assert_file_contains \
+        "$ROOT/skills/gish/scripts/review-post.py" \
+        'target PR head moved after review'
+    [ -f "$ROOT/skills/code-review/scripts/finalize-review.py" ] \
+        || fail 'code-review disclosure finalizer is missing'
     assert_file_contains "$ROOT/README.md" '| `code-review` |'
     pass 'code-review schema and human-control contracts are present'
+}
+
+test_opencode_cleaning_contract() {
+    python "$ROOT/tests/test_opencode_cleaning.py"
+    assert_file_contains "$ROOT/skills/opencode-cleaning/SKILL.md" \
+        'Always protect the newest listed session'
+    assert_file_contains \
+        "$ROOT/skills/opencode-cleaning/scripts/opencode-cleaning.py" \
+        'FORK_TITLE.fullmatch(session.title)'
+    assert_file_contains \
+        "$ROOT/providers/opencode/commands/opencode-cleaning.md" \
+        'never authorizes deletion'
+    pass 'OpenCode cleaning classifier and approval gate are safe'
+}
+
+test_opencode_command_adapter_contracts() {
+    local command
+    for command in close-wkt dep-supersede-scan gish git-mgmt \
+        harness-perf open-wkt resolve-conflicts yt-url-lookup; do
+        assert_file_contains \
+            "$ROOT/providers/opencode/commands/$command.md" \
+            "Load the \`$command\` skill"
+        assert_file_contains \
+            "$ROOT/providers/opencode/commands/$command.md" \
+            '$ARGUMENTS'
+    done
+    assert_file_contains "$ROOT/providers/opencode/commands/close-wkt.md" \
+        'authorize that exact operation.'
+    assert_file_contains "$ROOT/providers/opencode/commands/gish.md" \
+        'only when the user explicitly requests that exact write'
+    assert_file_contains "$ROOT/providers/opencode/commands/git-mgmt.md" \
+        'not authorize mutation;'
+    assert_file_contains \
+        "$ROOT/providers/opencode/commands/resolve-conflicts.md" \
+        'Do not stage, continue, skip, or abort'
+    assert_file_contains "$ROOT/providers/opencode/commands/harness-perf.md" \
+        'Begin with read-only measurements'
+    pass 'OpenCode command adapters preserve workflow authorization gates'
+}
+
+test_commit_plan_contract() {
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Create a complete multi-commit package by composing with `/commit-msg`.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '**"COMMIT PLAN" compatibility redirect**'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'atomically restore the saved'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'read the fixed active-task'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        "use \`/git-mgmt\`'s exact-key policy lookup"
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'git -C <registered-worktree> diff --cached --name-only'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        "git log --all --format='%H%x09%s%x09%D'"
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Do not propose, mention or ask about a'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'behavior already present at'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Potential concurrency by itself is not an invalidation signal.'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Present **No** as'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        '"scan_policy": "approved"'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'active-task.json'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Never list the receipt directory'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'prior work directly approves the scan'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Tiny isolated edits and continuations neither ask'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'Policy survives content/index changes'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'null-write-republish sequence'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        '--recover-discovery-guard <writer-token>'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'A missing or declined policy permits'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'null` remains pending'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'never ask about or initiate'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Every creation or mutation of `extensions.commit-plan`'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'generation never asks about or'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'declined, corrupt or approved-but-pending policy'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'permits creation without discovery.'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'approved pending'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'pointer remains'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'pointer first with `receipt_sha256: null`'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'interrupted rebuild stops before implementation'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'Approved evidence must already cover'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'inspect `active-task.json` before switching'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'never reevaluate `HEAD` later'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'Reject `--start-point`'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'neither ask nor initiate new discovery'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'discovery-receipts/<task-sha256>.json'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'receipt per repository root'
+    assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
+        'point-in-time discovery plus'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'reuse the exact boundaries'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'cross-repository dependency'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'match boundaries in'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'transfer is independent'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'fixed active-task'
+    assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
+        'classify the new worktree as'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'provider-neutral `/commit-plan` skill'
+    assert_file_contains "$ROOT/skills/commit-msg/SKILL.md" \
+        'read the fixed'
+    assert_not_contains "$(<"$ROOT/skills/git-mgmt/SKILL.md")" \
+        'no matching valid receipt exists; run the full local search'
+    assert_not_contains "$(<"$ROOT/skills/commit-plan/SKILL.md")" \
+        'every invocation requires a full scan'
+    assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
+        'without re-entering the compatibility redirect'
+    new_repo commit-plan-dependency
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    assert_fails bash "$DEPLOY" commit-plan "$REPO" \
+        --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'commit-msg'"
+    assert_fails bash "$DEPLOY" commit-msg "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'git-mgmt'"
+    bash "$DEPLOY" resolve-conflicts "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" git-mgmt "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" command commit-plan "$REPO" \
+        --provider opencode >/dev/null
+    rm "$REPO/.opencode/skills/commit-msg/SKILL.md"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'dependency commit-msg missing or unhealthy'
+    assert_fails bash "$ROOT/scripts/validate-deployment.sh" "$REPO"
+    assert_fails bash "$DEPLOY" command commit-plan "$REPO" \
+        --provider opencode
+    local home="$TMP_ROOT/commit-plan-global-home"
+    mkdir -p "$home"
+    assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
+    env HOME="$home" bash "$DEPLOY" resolve-conflicts --global >/dev/null
+    env HOME="$home" bash "$DEPLOY" git-mgmt --global >/dev/null
+    env HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
+    env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
+    local cycle="$TMP_ROOT/commit-plan-cycle"
+    cp -a "$SOURCE_WORK" "$cycle"
+    sed -i 's#skill|commit-msg|hybrid|SKILL.md|git-mgmt#skill|commit-msg|hybrid|SKILL.md|git-mgmt,commit-plan#' \
+        "$cycle/deploy-manifest.conf"
+    assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'skill dependency cycle includes'
+    pass 'commit-plan composes with commit-msg and git-mgmt safely'
 }
 
 test_opencode_debug_if_available() {
@@ -1553,14 +1961,7 @@ test_opencode_debug_if_available() {
     fi
     new_repo opencode-debug
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
-    bash "$DEPLOY" code-review "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command code-review "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command commit-msg "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command run-tests "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" taken-export "$REPO" --provider opencode >/dev/null
-    bash "$DEPLOY" command taken-export "$REPO" --provider opencode >/dev/null
+    bash "$DEPLOY" all "$REPO" --provider opencode >/dev/null
     local config_output="$TMP_ROOT/opencode-config.out"
     local skill_output="$TMP_ROOT/opencode-skill.out"
     (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
@@ -1569,14 +1970,14 @@ test_opencode_debug_if_available() {
     (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
         opencode debug skill > "$skill_output")
-    assert_file_contains "$config_output" '"commit-msg"'
-    assert_file_contains "$config_output" '"code-review"'
-    assert_file_contains "$config_output" '"run-tests"'
-    assert_file_contains "$config_output" '"taken-export"'
-    assert_file_contains "$skill_output" '"name": "commit-msg"'
-    assert_file_contains "$skill_output" '"name": "code-review"'
-    assert_file_contains "$skill_output" '"name": "run-tests"'
-    assert_file_contains "$skill_output" '"name": "taken-export"'
+    local workflow
+    for workflow in close-wkt code-review code-review-changes commit-plan \
+        commit-msg dep-supersede-scan gish git-mgmt harness-perf \
+        opencode-cleaning open-wkt pr-msg resolve-conflicts run-tests \
+        taken-export yt-url-lookup; do
+        assert_file_contains "$config_output" "\"$workflow\""
+        assert_file_contains "$skill_output" "\"name\": \"$workflow\""
+    done
     assert_file_contains "$skill_output" \
         "\"location\": \"$REPO/.opencode/skills/commit-msg/SKILL.md\""
     pass 'OpenCode debug config and skill resolve deployed fixture'
@@ -1598,6 +1999,7 @@ test_external_provider_parent_refusal
 test_direct_opencode_with_existing_claude_and_config
 test_missing_anchor_assets_and_command_preflight
 test_runtime_ignores_and_state_preservation
+test_opencode_skill_auto_commands
 test_command_dependency_all_and_hooks
 test_status_health_templates_and_source_symlink
 test_run_tests_hybrid_migration_safety
@@ -1617,6 +2019,9 @@ test_update_behavior_and_broken_anchor
 test_deployment_validator_failures
 test_all_templates_invalid_args_and_idempotence
 test_code_review_contract_assets
+test_commit_plan_contract
+test_opencode_cleaning_contract
+test_opencode_command_adapter_contracts
 test_opencode_debug_if_available
 
 printf '1..%d\n' "$PASS"

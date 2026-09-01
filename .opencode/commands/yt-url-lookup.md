@@ -1,0 +1,1 @@
+../../providers/opencode/commands/yt-url-lookup.md

@@ -46,6 +46,11 @@ gh issue comment <num> --body "..."
 
 # view PR checks
 gh pr checks <num>
+
+# publish a human-approved non-approving review through /gish review-post
+gh api repos/<owner>/<repo>/pulls/<num>/reviews \
+  --method POST --raw-field event=COMMENT \
+  --raw-field commit_id=<head> --field body=@<body-file>
 ```
 
 **Env requirements**: `gh` installed + authenticated
@@ -63,7 +68,8 @@ gh pr checks <num>
 
 **Capabilities**:
 - issues: view, create, edit body
-- PRs: similar API via `py-gitea`
+- PRs: create and edit body
+- reviews: publish reviews and read normalized inline comments
 
 **Sync mechanism**:
 The `gish` xontrib uses `py-gitea` to authenticate
@@ -75,11 +81,19 @@ and push/pull issue bodies. It reads a token from
 gish <num>          # edit issue (default: gitea)
 gish gitea <num>    # explicit backend
 gish gitea          # create new issue
+gish pr <head> [base] --backend gitea
+gish pr edit <num> --body-file <file> --backend gitea
+gish review <num> --body-file <file> --backend gitea
+gish review-comments <num> --backend gitea
 ```
 
+`gish pr edit` calls the Gitea pull-request `PATCH` endpoint through
+the xontrib's authenticated backend. The normalized `/gish sync`
+skill workflow may delegate to this command, but the xontrib does not
+itself expose a literal `gish sync` subcommand.
+
 **Env requirements**:
-- modden dev env (`nix develop -c xonsh`)
-- or `pyup modden; reloadxsh gish` from xonsh
+- configured `scripts/gish-xontrib` launcher selecting a modden dev env
 - `py-gitea` package available
 - API token at `~/opsec/gitea/py-gitea.key`
 

@@ -20,9 +20,9 @@ usage() {
     cat <<'EOF'
 Usage:
   deploy.sh init <repo> [--method symlink|submodule] [--url URL] [--ref REF] [--stage]
-  deploy.sh <skill> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
+  deploy.sh <skill> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
   deploy.sh <skill> --global [--provider claude|all] [--method symlink] [--direct]
-  deploy.sh all <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
+  deploy.sh all <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
   deploy.sh command <name|all> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
   deploy.sh command <name|all> --global [--provider claude|all]
   deploy.sh update <repo> [--ref REF] [--stage]
@@ -41,6 +41,8 @@ Methods:
 
 Local symlink deployments use ignored absolute provider links. Submodule
 deployments use trackable relative links through the provider-neutral anchor.
+OpenCode skill deployment also installs manifest commands which depend on the
+skill. Use --no-command for an explicit skill-only deployment.
 --direct is retained as an explicit local-link compatibility alias.
 Nothing is staged unless --stage is supplied; this script never commits.
 EOF
@@ -89,6 +91,36 @@ canonical_repo() {
     TARGET="$(cd "$top" && pwd -P)"
 }
 
+get_manifest_skill_dependency() {
+    local wanted="$1" kind name shape assets dependency rest
+    MANIFEST_SKILL_DEPENDENCY=""
+    while IFS='|' read -r kind name shape assets dependency rest; do
+        [ "$kind" = skill ] || continue
+        if [ "$name" = "$wanted" ]; then
+            MANIFEST_SKILL_DEPENDENCY="$dependency"
+            return 0
+        fi
+    done < "$MANIFEST"
+    return 1
+}
+
+validate_skill_dependency_chain() {
+    local current="$1" seen="${2:-|$1|}" dependency dependencies
+    get_manifest_skill_dependency "$current" \
+        || die "skill dependency record is missing: $current"
+    dependencies="$MANIFEST_SKILL_DEPENDENCY"
+    [ -n "$dependencies" ] && [ "$dependencies" != - ] || return 0
+    for dependency in ${dependencies//,/ }; do
+        case "$seen" in
+            *"|$dependency|"*)
+                die "skill dependency cycle includes '$dependency'"
+                ;;
+        esac
+        validate_skill_dependency_chain \
+            "$dependency" "$seen$dependency|"
+    done
+}
+
 validate_manifest() {
     [ -f "$MANIFEST" ] || die "deployment manifest not found: $MANIFEST"
     local kind a b c d extra asset
@@ -100,9 +132,16 @@ validate_manifest() {
         [[ "$kind" == \#* ]] && continue
         case "$kind" in
             skill)
-                [ -z "${d:-}${extra:-}${dependency:-}${trailing:-}" ] \
-                    || die "invalid skill deployment manifest record"
+                [ -z "${extra:-}${dependency:-}${trailing:-}" ] \
+                     || die "invalid skill deployment manifest record"
                 validate_name "$a" skill
+                if [ -n "${d:-}" ] && [ "$d" != - ]; then
+                    for dependency in ${d//,/ }; do
+                        validate_name "$dependency" skill
+                        [ "$dependency" != "$a" ] \
+                            || die "skill '$a' cannot depend on itself"
+                    done
+                fi
                 case "$b" in
                     generic|template) [ "$c" = "-" ] \
                         || die "skill '$a' must use '-' assets" ;;
@@ -139,17 +178,41 @@ validate_manifest() {
             *) die "invalid deployment manifest record type: $kind" ;;
         esac
     done < "$MANIFEST"
+    while IFS='|' read -r kind a b c d extra; do
+        [ "$kind" = skill ] || continue
+        [ -n "${d:-}" ] && [ "$d" != - ] || continue
+        for dependency in ${d//,/ }; do
+            case "$seen_skills" in
+                *"|$dependency|"*) ;;
+                *) die "skill '$a' dependency missing from manifest: $dependency" ;;
+            esac
+        done
+    done < "$MANIFEST"
+    while IFS='|' read -r kind a b c d extra; do
+        [ "$kind" = skill ] || continue
+        validate_skill_dependency_chain "$a"
+    done < "$MANIFEST"
+    while IFS='|' read -r kind a b c d extra; do
+        [ "$kind" = command ] || continue
+        [ "$extra" != - ] || continue
+        get_skill_record "$extra" \
+            || die "command '$a/$b' dependency missing from manifest: $extra"
+        [ "$SKILL_SHAPE" != template ] \
+            || die "command '$a/$b' depends on template-only skill '$extra'"
+    done < "$MANIFEST"
 }
 
 get_skill_record() {
-    local wanted="$1" kind name shape assets rest
+    local wanted="$1" kind name shape assets dependency rest
     SKILL_SHAPE=""
     SKILL_ASSETS=""
-    while IFS='|' read -r kind name shape assets rest; do
+    SKILL_DEPENDENCY=""
+    while IFS='|' read -r kind name shape assets dependency rest; do
         [ "$kind" = skill ] || continue
         if [ "$name" = "$wanted" ]; then
             SKILL_SHAPE="$shape"
             SKILL_ASSETS="$assets"
+            SKILL_DEPENDENCY="$dependency"
             return 0
         fi
     done < "$MANIFEST"
@@ -315,7 +378,7 @@ validate_ignore_markers() {
 }
 
 preflight_gitignore() {
-    local target="$1" resolved
+    local target="$1" resolved legacy_root legacy_alias worktree_path
     if [ -L "$target/.gitignore" ]; then
         resolve_existing_path "$target/.gitignore" \
             || die "refusing dangling .gitignore symlink: $target/.gitignore"
@@ -327,6 +390,22 @@ preflight_gitignore() {
         die "refusing symlinked .gitignore because Git does not follow it: $target/.gitignore"
     fi
     validate_ignore_markers "$target/.gitignore"
+    legacy_root="$target/.claude/wkts"
+    legacy_alias="$target/claude_wkts"
+    if [ -e "$legacy_root" ] || [ -L "$legacy_root" ] \
+        || [ -e "$legacy_alias" ] || [ -L "$legacy_alias" ]; then
+        die "legacy worktree runtime remains; migrate each owned worktree with '/open-wkt <name> --migrate-legacy' before deployment"
+    fi
+    while IFS= read -r worktree_path; do
+        case "$worktree_path" in
+            "$legacy_root"/*)
+                die "registered legacy worktree remains: $worktree_path; migrate it before deployment"
+                ;;
+        esac
+    done < <(git -C "$target" worktree list --porcelain 2>/dev/null \
+        | while IFS= read -r line; do
+            case "$line" in worktree\ *) printf '%s\n' "${line#worktree }" ;; esac
+        done)
 }
 
 preflight_gitmodules() {
@@ -1146,6 +1225,43 @@ preflight_global_skill() {
     done
 }
 
+global_skill_deployment_healthy() {
+    local skill="$1" source destination
+    local shape assets asset asset_destination
+    source="$SOURCE_ROOT/skills/$skill"
+    destination="$HOME/.claude/skills/$skill"
+    get_skill_record "$skill" || return 1
+    shape="$SKILL_SHAPE"
+    assets="$SKILL_ASSETS"
+    [ "$shape" != template ] || return 1
+    if [ "$GLOBAL_SKILLS_PARENT_CANONICAL" = yes ]; then
+        [ -f "$source/SKILL.md" ]
+        return
+    fi
+    if [ "$shape" = generic ]; then
+        if [ -L "$destination" ]; then
+            same_resolved_path "$destination" "$source"
+        else
+            [ -d "$destination" ] \
+                && source_copy_matches "$source" "$destination"
+        fi
+        return
+    fi
+    [ -d "$destination" ] && [ ! -L "$destination" ] || return 1
+    IFS=',' read -ra ASSET_LIST <<< "$assets"
+    for asset in "${ASSET_LIST[@]}"; do
+        asset_destination="$destination/$asset"
+        if [ -L "$asset_destination" ]; then
+            same_resolved_path "$asset_destination" "$source/$asset" \
+                || return 1
+        else
+            [ -e "$asset_destination" ] \
+                && source_copy_matches "$source/$asset" "$asset_destination" \
+                || return 1
+        fi
+    done
+}
+
 deploy_global_skill() {
     local skill="$1" source="$SOURCE_ROOT/skills/$skill"
     local destination="$HOME/.claude/skills/$skill" asset asset_destination
@@ -1177,12 +1293,15 @@ deploy_skill() {
     local skill="$1"
     shift
     local target_arg="" provider=claude method="" direct=no stage=no global=no
+    local dependency
+    local auto_commands=yes
     while [ $# -gt 0 ]; do
         case "$1" in
             --provider) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
+            --no-command) auto_commands=no; shift ;;
             --global) global=yes; shift ;;
             --*) die "unknown option: $1" ;;
             *)
@@ -1196,15 +1315,25 @@ deploy_skill() {
     validate_provider "$provider"
     [ -z "$method" ] || validate_method "$method"
     get_skill_record "$skill" || die "skill '$skill' is not in the deployment manifest"
+    local skill_dependency="$SKILL_DEPENDENCY"
     if [ "$global" = yes ]; then
         [ -z "$target_arg" ] || die "--global does not accept a target repository"
         [ "$stage" = no ] || die "--stage is invalid with --global"
+        [ "$auto_commands" = yes ] \
+            || die "--no-command is invalid with --global"
         [ -z "$method" ] || [ "$method" = symlink ] \
             || die "--global supports only --method symlink"
         [ "$provider" != opencode ] \
             || die "--global is supported only for Claude skills"
         SOURCE_ROOT="$SKILLZ_ROOT"
         preflight_global_skill_base
+        if [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ]; then
+            for dependency in ${skill_dependency//,/ }; do
+                global_skill_deployment_healthy "$dependency" \
+                    || die "skill '$skill' requires healthy global skill '$dependency'"
+            done
+            get_skill_record "$skill"
+        fi
         preflight_global_skill "$skill"
         if [ "$GLOBAL_SKILLS_PARENT_CANONICAL" = yes ]; then
             if [ "$SKILL_SHAPE" = template ]; then
@@ -1235,10 +1364,28 @@ deploy_skill() {
     direct="$DEPLOY_DIRECT"
 
     local deployed=0 skipped=0 selected_provider
+    local command_count=0 job
     MANAGED_PATHS=()
+    if [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ]; then
+        for selected_provider in "${PROVIDERS[@]}"; do
+            for dependency in ${skill_dependency//,/ }; do
+                skill_deployment_healthy \
+                    "$TARGET" "$selected_provider" "$dependency" \
+                    || die "skill '$skill' requires healthy $selected_provider skill '$dependency'"
+            done
+        done
+        get_skill_record "$skill"
+    fi
     for selected_provider in "${PROVIDERS[@]}"; do
         preflight_skill_provider "$skill" "$TARGET" "$selected_provider"
     done
+    COMMAND_JOBS=()
+    if [ "$auto_commands" = yes ] && providers_include_opencode; then
+        collect_skill_command_jobs "$skill"
+        for job in "${COMMAND_JOBS[@]}"; do
+            preflight_command_job "$job" "$direct" no "$skill"
+        done
+    fi
     for selected_provider in "${PROVIDERS[@]}"; do
         if deploy_skill_provider "$skill" "$TARGET" "$selected_provider" "$direct"; then
             deployed=$((deployed + 1))
@@ -1247,20 +1394,25 @@ deploy_skill() {
             skipped=$((skipped + 1))
         fi
     done
+    deploy_command_jobs "$TARGET" "$direct" no
+    command_count="$COMMAND_DEPLOYED"
 
     stage_paths "$TARGET" "$stage" "${MANAGED_PATHS[@]}"
     stage_ignore_changes "$TARGET" "$stage"
-    printf 'Result: %d deployed, %d template skipped\n' "$deployed" "$skipped"
+    printf 'Result: %d deployed, %d template skipped, %d command deployment(s)\n' \
+        "$deployed" "$skipped" "$command_count"
 }
 
 deploy_all() {
     local target_arg="" provider=claude method="" direct=no stage=no
+    local auto_commands=yes
     while [ $# -gt 0 ]; do
         case "$1" in
             --provider) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
+            --no-command) auto_commands=no; shift ;;
             --*) die "unknown option: $1" ;;
             *) [ -z "$target_arg" ] || die "unexpected argument: $1"; target_arg="$1"; shift ;;
         esac
@@ -1273,10 +1425,11 @@ deploy_all() {
     select_deployment_source "$TARGET" "$method" "$direct"
     direct="$DEPLOY_DIRECT"
 
-    local kind skill shape assets rest deployed=0 skipped=0 selected_provider
+    local kind skill shape assets dependency rest deployed=0 skipped=0
+    local selected_provider command_count=0 job required_skill
     set_providers "$provider"
     MANAGED_PATHS=()
-    while IFS='|' read -r kind skill shape assets rest; do
+    while IFS='|' read -r kind skill shape assets dependency rest; do
         [ "$kind" = skill ] || continue
         SKILL_SHAPE="$shape"
         SKILL_ASSETS="$assets"
@@ -1284,11 +1437,30 @@ deploy_all() {
             preflight_skill_provider "$skill" "$TARGET" "$selected_provider"
         done
     done < "$MANIFEST"
-    while IFS='|' read -r kind skill shape assets rest; do
+    COMMAND_JOBS=()
+    if [ "$auto_commands" = yes ] && providers_include_opencode; then
+        while IFS='|' read -r kind skill shape assets dependency rest; do
+            [ "$kind" = skill ] || continue
+            collect_skill_command_jobs "$skill"
+        done < "$MANIFEST"
+        for job in "${COMMAND_JOBS[@]}"; do
+            preflight_command_job "$job" "$direct" no '*'
+        done
+    fi
+    while IFS='|' read -r kind skill shape assets dependency rest; do
         [ "$kind" = skill ] || continue
         SKILL_SHAPE="$shape"
         SKILL_ASSETS="$assets"
         for selected_provider in "${PROVIDERS[@]}"; do
+            if [ -n "$dependency" ] && [ "$dependency" != - ]; then
+                for required_skill in ${dependency//,/ }; do
+                    skill_deployment_healthy \
+                        "$TARGET" "$selected_provider" "$required_skill" \
+                        || die "skill '$skill' requires healthy $selected_provider skill '$required_skill'"
+                done
+                SKILL_SHAPE="$shape"
+                SKILL_ASSETS="$assets"
+            fi
             if deploy_skill_provider "$skill" "$TARGET" "$selected_provider" "$direct"; then
                 deployed=$((deployed + 1))
             else
@@ -1297,9 +1469,12 @@ deploy_all() {
             fi
         done
     done < "$MANIFEST"
+    deploy_command_jobs "$TARGET" "$direct" no
+    command_count="$COMMAND_DEPLOYED"
     stage_paths "$TARGET" "$stage" "${MANAGED_PATHS[@]}"
     stage_ignore_changes "$TARGET" "$stage"
-    printf 'Result: %d deployed, %d template skipped\n' "$deployed" "$skipped"
+    printf 'Result: %d deployed, %d template skipped, %d command deployment(s)\n' \
+        "$deployed" "$skipped" "$command_count"
 }
 
 add_submodule_without_staging() {
@@ -1562,14 +1737,24 @@ same_resolved_path() {
 }
 
 skill_deployment_healthy() {
-    local target="$1" provider="$2" skill="$3" shape assets asset destination source
+    local target="$1" provider="$2" skill="$3" shape assets dependency
+    local required_skill
+    local asset destination source
+    source="$SOURCE_ROOT/skills/$skill"
     get_skill_record "$skill" || return 1
     shape="$SKILL_SHAPE"
     assets="$SKILL_ASSETS"
+    dependency="$SKILL_DEPENDENCY"
     [ "$shape" != template ] || return 1
+    if [ -n "$dependency" ] && [ "$dependency" != - ]; then
+        for required_skill in ${dependency//,/ }; do
+            skill_deployment_healthy \
+                "$target" "$provider" "$required_skill" \
+                || return 1
+        done
+    fi
     provider_root "$provider"
     destination="$target/$PROVIDER_ROOT/skills/$skill"
-    source="$SOURCE_ROOT/skills/$skill"
     if [ "$provider" = opencode ] \
         && self_hosted_skill_healthy "$target" "$skill"; then
         return 0
@@ -1611,6 +1796,74 @@ command_destination_manageable() {
     else
         return 1
     fi
+}
+
+providers_include_opencode() {
+    local selected_provider
+    for selected_provider in "${PROVIDERS[@]}"; do
+        [ "$selected_provider" = opencode ] && return 0
+    done
+    return 1
+}
+
+collect_skill_command_jobs() {
+    local wanted_skill="$1" kind provider name source mode dependency rest
+    while IFS='|' read -r kind provider name source mode dependency rest; do
+        [ "$kind" = command ] || continue
+        [ "$provider" = opencode ] || continue
+        [ "$dependency" = "$wanted_skill" ] || continue
+        COMMAND_JOBS+=("$provider:$name")
+    done < "$MANIFEST"
+}
+
+preflight_command_job() {
+    local job="$1" direct="$2" global="$3" planned_dependency="$4"
+    local job_provider="${job%%:*}" job_name="${job#*:}" destination
+    get_command_record "$job_provider" "$job_name" \
+        || die "manifest command disappeared"
+    [ -f "$SOURCE_ROOT/$COMMAND_SOURCE" ] \
+        || die "command source missing from deployment source: $SOURCE_ROOT/$COMMAND_SOURCE"
+    if [ "$global" = no ] && [ "$COMMAND_SKILL" != - ] \
+        && [ "$planned_dependency" != '*' ] \
+        && [ "$COMMAND_SKILL" != "$planned_dependency" ]; then
+        skill_deployment_healthy "$TARGET" "$job_provider" "$COMMAND_SKILL" \
+            || die "command '$job_name' requires healthy $job_provider skill '$COMMAND_SKILL'"
+    fi
+    [ "$global" = yes ] || preflight_runtime_ignores "$job_name" "$TARGET"
+    provider_root "$job_provider"
+    if [ "$global" = yes ]; then
+        destination="$HOME/.claude/commands/$job_name.md"
+    else
+        preflight_directory_chain "$TARGET" "$PROVIDER_ROOT/commands"
+        destination="$TARGET/$PROVIDER_ROOT/commands/$job_name.md"
+        if [ "$direct" = yes ]; then
+            require_planned_ignore "$TARGET" \
+                "direct:symlink:$job_provider:command:$job_name" \
+                "$PROVIDER_ROOT/commands/$job_name.md" \
+                "/$PROVIDER_ROOT/commands/$job_name.md"
+            require_local_path_untracked "$TARGET" \
+                "$PROVIDER_ROOT/commands/$job_name.md"
+        else
+            require_portable_path_trackable "$TARGET" \
+                "$PROVIDER_ROOT/commands/$job_name.md"
+        fi
+    fi
+    command_destination_manageable \
+        "$SOURCE_ROOT/$COMMAND_SOURCE" "$destination" \
+        "$COMMAND_MODE" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
+        || die "refusing unmanaged command destination: $destination"
+}
+
+deploy_command_jobs() {
+    local target="$1" direct="$2" global="$3" job job_provider job_name
+    COMMAND_DEPLOYED=0
+    for job in "${COMMAND_JOBS[@]}"; do
+        job_provider="${job%%:*}"
+        job_name="${job#*:}"
+        deploy_command_provider \
+            "$job_name" "$target" "$job_provider" "$direct" "$global"
+        COMMAND_DEPLOYED=$((COMMAND_DEPLOYED + 1))
+    done
 }
 
 report_companion_hook() {
@@ -1734,7 +1987,7 @@ deploy_command() {
     set_providers "$provider"
 
     local selected_provider kind manifest_provider manifest_name source mode dependency rest
-    local count=0 skipped=0 job job_provider job_name destination
+    local count=0 skipped=0 job
     COMMAND_JOBS=()
     if [ "$name" = all ]; then
         while IFS='|' read -r kind manifest_provider manifest_name source mode dependency rest; do
@@ -1764,46 +2017,12 @@ deploy_command() {
 
     # Preflight every selected job before writing any provider destination.
     for job in "${COMMAND_JOBS[@]}"; do
-        job_provider="${job%%:*}"
-        job_name="${job#*:}"
-        get_command_record "$job_provider" "$job_name" || die "manifest command disappeared"
-        [ -f "$SOURCE_ROOT/$COMMAND_SOURCE" ] \
-            || die "command source missing from deployment source: $SOURCE_ROOT/$COMMAND_SOURCE"
-        if [ "$global" = no ] && [ "$COMMAND_SKILL" != - ]; then
-            skill_deployment_healthy "$TARGET" "$job_provider" "$COMMAND_SKILL" \
-                || die "command '$job_name' requires healthy $job_provider skill '$COMMAND_SKILL'"
-        fi
-        [ "$global" = yes ] || preflight_runtime_ignores "$job_name" "$TARGET"
-        provider_root "$job_provider"
-        if [ "$global" = yes ]; then
-            destination="$HOME/.claude/commands/$job_name.md"
-        else
-            preflight_directory_chain "$TARGET" "$PROVIDER_ROOT/commands"
-            destination="$TARGET/$PROVIDER_ROOT/commands/$job_name.md"
-            if [ "$direct" = yes ]; then
-                require_planned_ignore "$TARGET" \
-                    "direct:symlink:$job_provider:command:$job_name" \
-                    "$PROVIDER_ROOT/commands/$job_name.md" \
-                    "/$PROVIDER_ROOT/commands/$job_name.md"
-                require_local_path_untracked "$TARGET" \
-                    "$PROVIDER_ROOT/commands/$job_name.md"
-            else
-                require_portable_path_trackable "$TARGET" \
-                    "$PROVIDER_ROOT/commands/$job_name.md"
-            fi
-        fi
-        command_destination_manageable "$SOURCE_ROOT/$COMMAND_SOURCE" "$destination" \
-            "$COMMAND_MODE" "$SOURCE_ROOT" "$COMMAND_SOURCE" \
-            || die "refusing unmanaged command destination: $destination"
+        preflight_command_job "$job" "$direct" "$global" ''
     done
 
     MANAGED_PATHS=()
-    for job in "${COMMAND_JOBS[@]}"; do
-        job_provider="${job%%:*}"
-        job_name="${job#*:}"
-        deploy_command_provider "$job_name" "$TARGET" "$job_provider" "$direct" "$global"
-        count=$((count + 1))
-    done
+    deploy_command_jobs "$TARGET" "$direct" "$global"
+    count="$COMMAND_DEPLOYED"
     if [ "$global" = no ]; then
         stage_paths "$TARGET" "$stage" "${MANAGED_PATHS[@]}"
         stage_ignore_changes "$TARGET" "$stage"
@@ -1945,14 +2164,15 @@ status_runtime_ignores() {
 status_provider() {
     local target="$1" provider="$2"
     provider_root "$provider"
-    local root="$target/$PROVIDER_ROOT" kind name shape assets rest path asset
+    local root="$target/$PROVIDER_ROOT" kind name shape assets dependency
+    local rest path asset required_skill
     local canonical_asset_present
     if [ ! -d "$root" ]; then
         printf 'Provider %s: disabled\n' "$provider"
         return 0
     fi
     printf 'Provider %s: enabled\n' "$provider"
-    while IFS='|' read -r kind name shape assets rest; do
+    while IFS='|' read -r kind name shape assets dependency rest; do
         [ "$kind" = skill ] || continue
         path="$root/skills/$name"
         if [ "$shape" = template ]; then
@@ -2056,6 +2276,16 @@ status_provider() {
                     STATUS_UNHEALTHY=1
                 fi
                 printf '\n'
+            done
+        fi
+        if [ -n "$dependency" ] && [ "$dependency" != - ]; then
+            for required_skill in ${dependency//,/ }; do
+                if ! skill_deployment_healthy \
+                    "$target" "$provider" "$required_skill"; then
+                    printf '  skill %-24s dependency %s missing or unhealthy [UNHEALTHY]\n' \
+                        "$name" "$required_skill"
+                    STATUS_UNHEALTHY=1
+                fi
             done
         fi
     done < "$MANIFEST"

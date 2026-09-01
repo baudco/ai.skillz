@@ -19,7 +19,8 @@ are `.claude/skills/code-review` and `.opencode/skills/code-review`. Local
 links are absolute and ignored; portable links are relative and trackable.
 Nothing is staged unless `--stage` is explicitly supplied.
 
-OpenCode also needs its command shim:
+OpenCode skill deployment installs its dependent command shim automatically.
+The explicit command form remains available for repair:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh command code-review <repo> \
@@ -71,5 +72,16 @@ bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 review should be able to confirm findings with project-specific tests.
 `/py-codestyle` is optional and, when deployed by the target repository, owns
 formatting for Python replacement snippets and suggested patches.
+`/gish` is the preferred optional transport for human-approved top-level
+review publication:
+
+```bash
+bash /path/to/ai.skillz/scripts/deploy.sh gish <repo> \
+  --provider <claude|opencode|all>
+```
+
+Local review remains available without `gish`. Publication must stop or obtain
+new explicit approval for a disclosed direct-provider fallback when the
+selected `gish` backend cannot publish reviews.
 `/code-review-changes` remains the separate workflow for applying and
 publishing responses to existing remote review feedback.

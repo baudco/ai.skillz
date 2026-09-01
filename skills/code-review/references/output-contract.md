@@ -31,6 +31,12 @@ Then include, in order:
 3. Checks skipped, unavailable, failed, or delegated.
 4. Scope: target, requested base, merge base, head, paths, and generated-file
    exclusions.
+5. The final disclosure paragraph, using the active runtime values:
+
+   ```text
+   (this review was generated in some part by `<harness>` using `<model>`
+   (`<provider>`))
+   ```
 
 Do not open with a general summary. Do not add a finding for praise, style
 preference, or a hypothetical concern without a concrete failure path.
@@ -43,7 +49,38 @@ No actionable findings.
 Residual risks: ...
 Checks not run: ...
 Scope: ...
+
+(this review was generated in some part by `<harness>` using `<model>`
+(`<provider>`))
 ```
+
+Both findings and no-findings Markdown bodies contain exactly one disclosure
+footer. Replace a prior footer when updating a candidate; do not duplicate it.
+This footer belongs only to the complete review body, not ordinary chat
+summaries, review replies, PR descriptions, commit messages, or JSON exports.
+
+## Forge Publication
+
+Publication is never an implicit review side effect. It is allowed only after
+the complete Markdown body has been shown to the human and that exact body has
+received explicit follow-up approval under the skill's human-verification
+gate.
+
+- Persist the exact candidate as an ignored `_review.md` file only after a
+  follow-up message requests publication preparation. Add the disclosure
+  before computing its SHA-256 digest and requesting remote-publication
+  approval. The footer is part of the exact approved bytes and digest.
+- Bind approval to that digest, backend, repository, PR, reviewed head, and
+  non-approving `comment` event.
+- Publish the approved Markdown body, not the JSON export.
+- Default to one non-approving top-level review comment.
+- Re-present the complete body and obtain fresh approval after any edit.
+- Re-check target refs immediately before posting; never publish against a
+  target which moved after review.
+- Keep provider credentials, transport output, and publication commands out
+  of the review body.
+- Prefer `/gish review-post` as the transport. Never silently bypass an
+  unavailable `gish` backend with direct forge commands.
 
 ## JSON Export
 
@@ -80,6 +117,7 @@ JSON findings contain the same conclusions as Markdown. Do not add low-value
 tool diagnostics merely because the schema can represent them. Commands may
 be omitted when exposing them would leak credentials or sensitive paths.
 
-SARIF, forge comments, annotations, and reviewdog input are outside this
-skill's v1 contract. A separate provider adapter may consume canonical JSON
-after it defines its own validation, credential, and publication boundaries.
+SARIF, inline forge annotations, and reviewdog input remain outside this
+contract. Human-verified top-level Markdown review publication uses a
+separate provider adapter; JSON export remains local and is never a
+publication trigger.

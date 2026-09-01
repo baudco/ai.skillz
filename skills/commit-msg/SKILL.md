@@ -1,24 +1,21 @@
 ---
 name: commit-msg
 description: >
-  Generate git commit messages and complete multi-commit
-  or local-merge plans following project style. Use when
-  user wants to create a commit, asks for a commit message,
-  or says "commit plan", "multi-commit plan", or "merge
-  plan".
+  Generate git commit messages and local-merge plans following project style.
+  Use when the user wants to create a commit, asks for a commit message, or
+  says "merge plan". Delegate multi-commit planning to `commit-plan`.
 compatibility: >
-  Requires git CLI. Optional: gh CLI for review
-  context integration.
+  Requires git CLI. Publishing approved review-comment edits uses gish.
 metadata:
   author: goodboy
-  version: "0.5"
-argument-hint: "[commit plan|merge plan|optional-scope-or-description]"
+  version: "0.6"
+argument-hint: "[merge plan|optional-scope-or-description]"
 allowed-tools:
   - Bash(git *)
-  - Bash(gh *)
   - Bash(date *)
   - Bash(cp *)
   - Bash(mkdir *)
+  - Bash(sha256sum *)
   - Read
   - Grep
   - Glob
@@ -96,79 +93,17 @@ A request for a "merge plan" asks for the ready-to-run plan and message,
 not execution. Run the merge or commit only when the human explicitly
 asks to execute it.
 
-## "COMMIT PLAN": batch files + messages in a multi-commit format
+## "COMMIT PLAN" compatibility redirect
 
-The literal phrase **"commit plan"** (case-insensitive) is a mandatory
-trigger for this section. When the human uses it, these instructions
-take precedence over the ordinary single-commit workflow below. Treat
-it as an explicit request for a complete, ready-to-run multi-commit
-package, not merely a proposal of boundaries or subjects.
+The literal phrase **"commit plan"** (case-insensitive) belongs to the
+provider-neutral `/commit-plan` skill. The same redirect applies when a direct
+`/commit-msg` request asks to split changes into multiple commits or when the
+agent proposes a logical multi-commit plan. Load `/commit-plan` and transfer
+the request once. Do not continue the single-message workflow and do not
+re-enter this redirect after `/commit-plan` loads this file as its dependency.
 
-Follow every numbered step in this section exactly. Do not abbreviate
-the workflow, defer message generation, tell the human to invoke
-`/commit-msg` again per boundary, or return only subjects or suggested
-commands. If a boundary cannot be materialized safely, stop and report
-the exact blocker instead of silently degrading to a partial plan.
-
-When the user ASKS FOR (or any time the AI-agent proposes) a logical
-multi-commit plan, do NOT make the human invoke `/commit-msg` after
-each commit. Before returning the plan:
-
-1. Materialize each planned commit boundary in the index,
-   one at a time.
-2. Run the normal staged-diff analysis and checks for that
-   exact boundary.
-3. Generate and archive a distinct message for every commit
-   under `.claude/skills/commit-msg/msgs/`.
-4. Restore the index to the boundary that was staged when
-   the skill was invoked (normally the first planned commit).
-5. Return one complete command sequence in a single fenced
-   block using the user's configured `$SHELL` syntax.
-
-### `$SHELL` rendering is mandatory
-
-Before rendering the command sequence, determine the user's configured
-shell from `$SHELL` and use its basename as the Markdown fence language
-and command syntax. Examples: `/bin/zsh` -> `zsh`, `/bin/bash` ->
-`bash`, `/usr/bin/fish` -> `fish`, and `/usr/bin/xonsh` -> `xonsh`.
-
-The returned sequence MUST use one explicitly labelled fence: three
-backticks immediately followed by the shell basename. For example,
-when `$SHELL` is `xonsh`, the fence info string MUST be `xonsh`, and
-every assignment, conditional, loop, quoting form, and command
-separator must be valid xonsh syntax.
-
-NEVER emit an unlabelled fence. NEVER hardcode `bash` or POSIX shell
-syntax when `$SHELL` names another shell. If `$SHELL` is unavailable
-or its syntax is unknown, ask the human which shell to target instead
-of guessing or returning a mixed-syntax plan.
-
-The command block MUST include, in execution order:
-
-- exact staging/unstaging commands for each boundary
-- staged file/diff checks before each commit
-- any required lint/test commands
-- `git commit --edit --file
-  .claude/skills/commit-msg/msgs/<generated-file>` for each
-  commit
-
-Use each archived message path directly. Do not use
-`.claude/git_commit_msg_LATEST.md` in a multi-commit sequence,
-because later message generation overwrites it. Do not merely
-list subjects or tell the human to rerun `/commit-msg`.
-
-Before returning a commit plan, verify all of the following:
-
-- every planned commit has its own archived message file
-- every message was generated from that commit's exact staged diff
-- the index matches the boundary staged when the skill was invoked
-- one command block covers every boundary in execution order
-- every rendered commit command includes `--edit`
-- the fence label matches the basename of `$SHELL`
-- every command and control construct is valid for `$SHELL`
-
-If any check is false, the commit plan is incomplete and MUST NOT be
-returned as finished.
+If `/commit-plan` is unavailable, stop and report the missing deployment. Do
+not reproduce a partial multi-commit workflow from memory.
 
 ## Scope: commit messages only
 
@@ -192,47 +127,6 @@ to see the full commit message body inline.
 
 When generating commit messages, always follow this process:
 
--1. **Session tracking** (`conf.toml`):
-
-   Determine the repo root (`git rev-parse
-   --show-toplevel`). Check for the file
-   `<root>/.claude/skills/commit-msg/conf.toml`.
-
-   Determine your current session/conversation ID
-   — this is the UUID from the conversation
-   transcript path shown in your system context
-   (e.g. from the `.jsonl` filename reference).
-
-   a) **File does NOT exist**:
-      - `mkdir -p` the skill dir if needed
-      - Write `conf.toml` containing:
-        ```toml
-        session = '<current-session-id>'
-        ```
-      - Tell the user:
-        "Created `conf.toml` with session `<id>`
-        — future `/commit-msg` runs will remind
-        you to resume this session for pre-approved
-        perms via `claude -r <id>`."
-      - Continue to step 0.
-
-   b) **File exists, session matches current**:
-      - Continue silently to step 0.
-
-   c) **File exists, session DIFFERS**:
-      - Warn the user:
-        ```
-        A `/commit-msg` session already exists:
-          claude -r <saved-session-id>
-
-        Current session: <current-session-id>
-        ```
-      - Ask (via `AskUserQuestion`) whether to:
-        1. "Update conf.toml" — overwrite with
-           current session ID, then continue.
-        2. "Keep existing" — continue without
-           changing the file.
-
 0. **Detect working context**: run
    `git rev-parse --show-toplevel` to find the repo
    root, then run both `git rev-parse --git-common-dir`
@@ -242,6 +136,25 @@ When generating commit messages, always follow this process:
    Tell the user which tree you're operating on
    (e.g. "generating commit msg for worktree
    `remote-exc-registry-tests`").
+
+   Before analyzing or writing a message, use `/git-mgmt` to read the fixed
+   active-task pointer, validate it against the staged paths, task terms and
+   issue/PR identifiers, then read only its exact-key policy receipt.
+   Commit-message generation never asks about or initiates discovery. A
+   missing, mismatched, declined, corrupt or approved-but-pending policy
+   continues without a scan; an approved completed policy may use its cheap
+   unchanged refresh. This authorizes no network access or Git mutation. If
+   approved discovery found equivalent work on a distinct ref/worktree,
+   preserve the index and stop before generating the message.
+
+   When `/commit-plan` already recorded this exact staged tree/patch and the
+   archived message digest still matches, reuse that message. A root-path or
+   ownership change alone does not require rediscovery or regeneration. If only
+   the message is missing, regenerate it from the unchanged staged boundary
+   without rerunning boundary tests. If its digest changed, preserve the
+   human-owned file and ask whether to use it or write a separate candidate;
+   never overwrite it automatically. Content, scope, base or index changes
+   invalidate the matching receipt component as defined by `/git-mgmt`.
 
    Then check for staged changes: if
    `git diff --staged` is empty, STOP and tell the
@@ -271,10 +184,10 @@ When generating commit messages, always follow this process:
    `/code-review-changes` skill after applying
    review fixes). If present, read it and extract
    `pr`, `reviewer`, `review_url`, optionally
-   `commit_repo`, and optionally `reply_ids`. These
+   `commit_repo`, and optionally `reply_ids` and `reply_files`. These
    are used in step 3 to add a `Review:` trailer and
    in step 6 to construct commit links. Delete the file after the
-   message is written — it's single-use context.
+   message is written unless reply candidates still need the real commit hash.
    If the file is absent, this is not a
    review-motivated commit; skip the trailer.
 
@@ -405,10 +318,9 @@ The `Review:` line is terse — PR number +
 reviewer login. The URL goes on the next line
 for click-through. Keeps the 67-col line limit.
 
-If the context file contains `reply_ids`, hold
-off on deleting it — step 6 will PATCH those
-GH comments after the user commits, then delete
-the file. If no `reply_ids` are present, delete
+If the context file contains `reply_ids`, hold off on deleting it; step 6 will
+prepare exact local comment-edit candidates after the user commits. If no
+`reply_ids` are present, delete
 `.claude/review_context.md` right after the
 message is written (single-use, same lifecycle
 as `review_regression.md`).
@@ -432,6 +344,8 @@ as `review_regression.md`).
        or similar filesystem-safe format.
      * and `<hash>` from `git log -1 --format=%h`
        first 7 chars.
+     * `/commit-plan` appends a zero-padded boundary ordinal before
+       `_commit_msg.md` when one timestamp/hash pair would otherwise collide.
      * `mkdir -p` the `msgs/` dir if it doesn't exist.
    - `.claude/git_commit_msg_LATEST.md` (overwrite)
 
@@ -477,8 +391,8 @@ instead use,
 Keep it concise. Match the tone of recent commits. For simple
 changes, use subject line only.
 
-6. **PATCH review reply placeholders** (only when
-   `reply_ids` was present in `review_context.md`):
+6. **Prepare review-reply edits locally** (only when `reply_ids` was present
+   in `review_context.md`):
 
    After writing the commit message files, tell the
    user to commit:
@@ -487,18 +401,13 @@ changes, use subject line only.
      .claude/git_commit_msg_LATEST.md
    ```
 
-   Once the user confirms the commit (or you detect
-   a new HEAD via `git log -1 --format=%h` differing
-   from the hash seen in step 1), the real commit
-   hash is known. For each reply ID:
+   Once the user confirms the commit (or a new HEAD is detected), the real
+   commit hash is known. For each reply ID, read its exact local source body
+   from the corresponding `reply_files` entry written by
+   `/code-review-changes`. If an entry is missing, stop for that reply; do not
+   fetch remote content or reconstruct it from memory.
 
-   - Fetch the current comment body:
-     ```
-     gh api \
-       repos/<owner>/<repo>/pulls/comments/<id> \
-       --jq '.body'
-     ```
-   - Replace `> 📎 commit pending` with:
+   - Replace `> 📎 commit pending` in the local body with:
      ```
      > 📎 fixed in [`<hash>`](<commit-url>)
      ```
@@ -507,20 +416,23 @@ changes, use subject line only.
       (derive `<repo>` from `commit_repo` in
       `review_context.md`, falling back to `repo` for
       same-repository fixes).
-   - PATCH the comment:
-     ```
-     gh api \
-       repos/<owner>/<repo>/pulls/comments/<id> \
-       -X PATCH -f body="<updated-body>"
-     ```
+   - Write a separate candidate file under
+     `.claude/review_replies/<id>_commit_edit.md`.
+   - Show the complete rendered candidate, comment ID, backend, repository,
+     and SHA-256 digest. Commit authorization and detection of a new HEAD do
+     not authorize publication.
 
-   After all PATCHes succeed, delete
-   `.claude/review_context.md`.
+   Publish only after a separate current human message approves that exact
+   candidate body, digest, backend, repository, comment ID, and edit action.
+   Delegate the write to `/gish comment-edit`; never call a provider CLI
+   directly. Delete `.claude/review_context.md` and the candidate/source reply
+   files only after every separately approved edit succeeds. If approval is
+   absent or publication fails, preserve them for a follow-up session.
 
    If the user declines to commit now (e.g. wants
    to review further), remind them that the
    `reply_ids` are saved in `.claude/review_context.md`
-   and can be PATCHed in a follow-up session.
+   and can be prepared and published in a follow-up session.
 
 7. **Propose tracking issue updates** (when the commit
    addresses a task bullet from a tracking issue):
@@ -539,7 +451,8 @@ changes, use subject line only.
      `/pr-msg` "Summary of changes" bullets
    - **Add the ref-link def** at the bottom of
      the issue body
-   - **PATCH** via `gh api`
+   - **Sync** the exact approved issue body via `/gish sync <backend> issue
+     <num> --repo <owner/name> --body-file <path> --sha256 <digest>`
 
    If authorization is not given, leave the issue
    untouched and report the proposed update.

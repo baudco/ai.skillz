@@ -1,7 +1,7 @@
 # Deploying `/commit-msg`
 
 `commit-msg` is hybrid: canonical workflow content is shared, while its
-style guide, session configuration, and generated messages remain local
+style guide and generated messages remain local
 to each consumer repository.
 
 ## Deployment
@@ -12,6 +12,10 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # Or portable, version-pinned anchor.
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
+bash /path/to/ai.skillz/scripts/deploy.sh resolve-conflicts <repo> \
+  --provider <claude|opencode|all>
+bash /path/to/ai.skillz/scripts/deploy.sh git-mgmt <repo> \
+  --provider <claude|opencode|all>
 bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
   --provider <claude|opencode|all>
 ```
@@ -22,20 +26,25 @@ links; submodule mode uses trackable relative links through `.ai/ai.skillz`.
 It does not replace either directory, so existing local files survive
 migration and redeployment.
 
+`commit-msg` requires `git-mgmt` for its local existing-work commit-time
+backstop. Deployment stops rather than generating commit guidance without the
+gate; the manifest also installs `git-mgmt`'s `resolve-conflicts` dependency.
+
 The workflow's persisted runtime contract remains under `.claude/`:
 
 - `.claude/skills/commit-msg/style-guide-reference.md`
-- `.claude/skills/commit-msg/conf.toml`
 - `.claude/skills/commit-msg/msgs/`
 - `.claude/git_commit_msg_LATEST.md`
-- `.claude/review_context.md` and `.claude/review_regression.md`
+- `.claude/review_context.md`, `.claude/review_regression.md`, and
+  `.claude/review_replies/`
 
 This state remains local or ignored as appropriate. Source-anchor
 migration does not move, delete, or rewrite it.
 
 ## OpenCode command
 
-Deploy the reusable OpenCode command shim separately:
+OpenCode skill deployment installs the reusable command shim automatically.
+The explicit command form remains available for repair or migration:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
@@ -94,20 +103,9 @@ the examples in
 models. The output should match the same structure
 as Option A's generated guide.
 
-### (Optional) Create session tracking config
-
-```bash
-cp <repo>/.ai/ai.skillz/templates/commit-msg/conf.toml.j2 \
-   .claude/skills/commit-msg/conf.toml
-```
-
-Edit to uncomment and set a fresh UUID, or let the
-skill generate one on first invocation.
-
 ## What stays local (per-repo)
 
 - `style-guide-reference.md` — your repo's commit style
-- `conf.toml` — session tracking UUID
 - `msgs/` — generated commit message archive
 
 ## What gets symlinked (from ai.skillz)
@@ -128,6 +126,10 @@ bash /path/to/ai.skillz/scripts/validate-deployment.sh <repo>
 layouts, and unportable OpenCode `skills.paths`. Review the migration
 dry run before applying it. `update` advances a submodule anchor; update
 a local checkout directly.
+
+For multi-commit planning, deploy the provider-neutral `commit-plan` companion
+after `commit-msg`. `commit-plan` consumes this skill's style, message, runtime,
+and safety contracts rather than duplicating them.
 
 ## Prerequisites
 

@@ -1,7 +1,7 @@
 # Deploying `/open-wkt`
 
-The canonical skill is provider-neutral, but its established worktree
-runtime layout remains under `.claude/`.
+The canonical skill and its root-level `wkts/` runtime layout are
+provider-neutral.
 
 ## Deployment
 
@@ -11,6 +11,10 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # Or portable, version-pinned source anchor.
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
+bash /path/to/ai.skillz/scripts/deploy.sh resolve-conflicts <repo> \
+  --provider <claude|opencode|all>
+bash /path/to/ai.skillz/scripts/deploy.sh git-mgmt <repo> \
+  --provider <claude|opencode|all>
 bash /path/to/ai.skillz/scripts/deploy.sh open-wkt <repo> \
   --provider <claude|opencode|all>
 ```
@@ -27,7 +31,7 @@ restart OpenCode after deployment or update; no `opencode.json` or
 
 ### What gets gitignored
 
-- `.claude/wkts/`, `claude_wkts`
+- `/wkts/`
 
 ## Post-deploy setup
 
@@ -36,22 +40,21 @@ restart OpenCode after deployment or update; no `opencode.json` or
 Add to the target repo's `.gitignore`:
 
 ```
-.claude/wkts/
-claude_wkts
+/wkts/
 ```
 
 ## What stays local (per-repo)
 
-- `.claude/wkts/` — worktree instances + metadata
-- `claude_wkts` — convenience symlink
+- `wkts/` — linked worktree checkouts
+- each linked worktree's private Git directory — lifecycle metadata
+- the common Git directory — short-lived ownership guards
 
 ## What gets symlinked (from ai.skillz)
 
 - `SKILL.md` — the generic workflow definition
 
-Source deployment and migration preserve `.claude/wkts/`, its metadata,
-and `claude_wkts`; they do not rename this runtime contract for
-OpenCode.
+Source deployment and migration preserve `wkts/` and never place the
+worktree root beneath a harness-specific directory.
 
 ## Maintenance
 
@@ -69,6 +72,7 @@ local anchors follow updates to their source checkout.
 ## Prerequisites
 
 - `git` CLI
+- Deployed `/git-mgmt` skill for local existing-work discovery
 - Optional: `uv` (for `--fixturize` venv creation)
 
 ## Companion skill

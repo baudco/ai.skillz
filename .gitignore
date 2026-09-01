@@ -8,7 +8,7 @@ Session.vim
 .claude/git_commit_msg_LATEST.md
 .claude/review_context.md
 .claude/review_regression.md
-.claude/skills/commit-msg/conf.toml
+.claude/review_replies/
 .claude/skills/commit-msg/msgs/
 .claude/skills/commit-msg/SKILL.md
 .claude/skills/pr-msg/msgs/
@@ -18,7 +18,11 @@ skills/pr-msg/pr_msg_LATEST.md
 .ai/code-review/reports/
 .ai/taken/exports/
 
-# open-wkt worktrees + convenience symlink
+# provider-neutral worktree root
+/wkts/
+
+# Legacy registered worktrees owned by other sessions. Remove these only
+# after each guarded `/open-wkt --migrate-legacy` move completes.
 .claude/wkts/
 claude_wkts
 
@@ -33,6 +37,7 @@ claude_wkts
 # BEGIN ai.skillz: runtime:code-review-changes
 .claude/review_context.md
 .claude/review_regression.md
+.claude/review_replies/
 # END ai.skillz: runtime:code-review-changes
 
 # BEGIN ai.skillz: direct:symlink:claude:code-review-changes
@@ -41,7 +46,6 @@ claude_wkts
 
 # BEGIN ai.skillz: runtime:commit-msg
 .claude/skills/commit-msg/msgs/
-.claude/skills/commit-msg/conf.toml
 .claude/git_commit_msg_LATEST.md
 # END ai.skillz: runtime:commit-msg
 
@@ -62,8 +66,7 @@ claude_wkts
 # END ai.skillz: direct:symlink:claude:inter-skill-review
 
 # BEGIN ai.skillz: runtime:open-wkt
-.claude/wkts/
-claude_wkts
+/wkts/
 # END ai.skillz: runtime:open-wkt
 
 # BEGIN ai.skillz: direct:symlink:claude:open-wkt

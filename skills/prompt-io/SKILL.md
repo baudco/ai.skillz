@@ -199,10 +199,27 @@ process:
 
    ## Human edits
 
-   <If the human modified the AI output before
-   committing, describe the nature of edits here.
-   If no edits: "None — committed as generated.">
+   <Describe all material human contributions to the final output.
+   "Edits" includes direct file changes AND iterative review which
+   changes the result: corrections, rejected approaches, requested
+   deletions, architectural decisions, narrowed scope, and acceptance
+   criteria. Attribute these to the human even when an AI agent applies
+   the resulting source lines. Distinguish direct manual edits from
+   human-directed agent edits when known.
+
+   Use "None — accepted as generated without follow-up revisions."
+   only when the interaction record actually shows no material human
+   correction or redirection. Never infer "None" merely because the
+   human did not type source code or because the patch remains pending
+   review.>
    ```
+
+   **Human contribution accounting is mandatory.** Before writing
+   "None", review the complete interaction, including follow-up turns
+   after the initial generation. A human identifying a bad design,
+   choosing between alternatives, requiring a rewrite, or directing
+   removal has edited the outcome for provenance purposes. Do not
+   present agent-applied revisions as solely AI-generated.
 
 5. **Ensure per-service README exists**
 
@@ -269,8 +286,8 @@ This skill satisfies five NLNet requirements:
    prompts, and unedited outputs in `.raw.md`
 2. **Substantive-use marking** — scope classification
    and `substantive:` frontmatter flag
-3. **Quality maintenance** — human accountability
-   via `## Human edits` section
+3. **Quality maintenance** — human contribution and accountability
+   via the `## Human edits` section, including iterative review
 4. **No false attribution** — clear separation of
    AI output vs human contribution
 5. **Persistent storage** — all logs in-repo under

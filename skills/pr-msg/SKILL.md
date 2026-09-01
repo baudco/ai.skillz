@@ -6,16 +6,15 @@ description: >
   SourceHut, GitLab, etc.). Use when user wants
   to create or draft a PR/MR/patch description.
 compatibility: >
-  Requires git CLI. Optional: gh CLI for PR
-  submission.
+  Requires git CLI. Fresh forge metadata and separately authorized
+  publication use the provider-neutral gish skill.
 metadata:
   author: goodboy
   version: "0.1"
-argument-hint: "[base-branch (default: main)]"
+argument-hint: "[base-ref or PR number]"
 disable-model-invocation: true
 allowed-tools:
   - Bash(git *)
-  - Bash(gh *)
   - Bash(date *)
   - Bash(cp *)
   - Bash(mkdir *)
@@ -55,11 +54,35 @@ separation of items that can be tersely expressed as
 hierarchical groupings (this is best for piece-wise
 technical notes).
 
-0. **Check for branch divergence**: if
-   `git log main..HEAD` (or the user-specified base
-   branch) is empty, STOP and tell the user "no
-   commits diverge from BASE!" with a reminder
-   to commit before invoking this skill.
+0. **Resolve and label the inspection scope before every range query**:
+
+   Never assume `main`, trust a same-named local ref, or discover a submitted
+   PR through an automatic network call.
+
+   - For a specific or previously submitted PR, use `/gish inspect-pr
+     <backend> <num> --repo <owner/name>` only when the current prompt
+     explicitly authorizes the forge/network query.
+     Record its head repository/ref/OID and base ref/base-tip OID. Record the
+     provider diff-base OID separately when supplied; never infer it.
+   - Verify any local or remote-tracking ref against the forge OID before
+     using the ref. Prefer the verified full OIDs in Git commands.
+   - Compute the local merge-base OID separately with `git merge-base
+     <base-tip-oid> <head-oid>`.
+   - Record the exact commit range and diff range. For a PR scope, use
+     `<merge-base-oid>..<head-oid>` for the commit set and
+     `<base-tip-oid>...<head-oid>` for the Git three-dot diff. Do not call
+     either range the provider diff when its semantics were not reported.
+   - If forge metadata, adapter support, or network authorization is absent,
+     select only an explicit/configured local base and label the result
+     `local/prospective PR message at SHA <head-oid>`. Record the local base
+     tip, merge base, and exact ranges. If no base is unambiguous, ask one
+     short base question rather than assuming one.
+   - If a required object is missing locally, stop and report it. Fetch only
+     after a separate explicit current-prompt network request; do not ask to
+     fetch as a routine part of message generation.
+
+   If `git log <merge-base-oid>..<head-oid>` is empty, stop and tell the user
+   that no commits diverge from the selected base.
 
 1. **Detect update mode**: check whether a prior
    `pr_msg_LATEST.md` exists for this branch and
@@ -88,7 +111,7 @@ technical notes).
       applies only to those selective refs (or a
       legacy fully-hashed body).
 
-   c. Run `git log BASE..HEAD --format='%H %s'` and
+   c. Run `git log <recorded-commit-range> --format='%H %s'` and
       compare against the old hashes:
       - For each old hash, search the new log by
         **commit subject** (the msg text after the
@@ -135,63 +158,20 @@ technical notes).
 2. **Gather context** from the branch diff and
    commit history.
 
-   ### MANDATORY: pivot to the PR's `headRefName`
+   Use only the scope record established in step 0:
 
-   **If this skill is invoked with a specific PR
-   number (e.g. `/pr-msg #444` or `/pr-msg 444`) —
-   OR there's already a submitted PR for the current
-   branch (detected via `gh pr list --head <branch>`
-   in step 8) — the PR's head ref is authoritative.
-   NOT local HEAD.** This is a hard rule with no
-   exceptions.
-
-   Before any `git log` / `git diff` call below:
-
-   a. Resolve the PR number (from args, or via
-      `gh pr list --head <branch> --json number`).
-   b. Get the PR's head branch:
-      ```
-      HEAD_REF=$(gh pr view <N> --json headRefName \
-        --jq .headRefName)
-      ```
-   c. Compare `HEAD_REF` against
-      `git branch --show-current`. If they differ,
-      **all** subsequent `BASE..HEAD` references in
-      this step MUST be rewritten as
-      `BASE..$HEAD_REF`.
-
-   Why this is a hard rule: when `HEAD_REF` is a
-   branch ≠ local HEAD (e.g. the user is on a
-   follow-up WIP branch stacked on top of the PR's
-   branch), using `main..HEAD` silently produces a
-   summary full of commits that aren't in the PR.
-   The web UI will show the correct N commits; the
-   generated PR body will show N + M phantoms. This
-   has happened in production and is load-bearing
-   embarrassing.
-
-   If the PR's head branch is **not available
-   locally** (user never fetched it), stop and ask
-   the user via `AskUserQuestion` whether to
-   `git fetch <remote> <headRef>` first or abort.
-
-   ### Normal context gathering (after the pivot)
-
-   Use `<HEAD>` below to mean the resolved ref from
-   the pivot above — either the PR's `headRefName`
-   when applicable, or literal `HEAD` otherwise.
-
-   - Commit log:
-     `git log BASE..<HEAD> --oneline`
-   - Full hashes:
-     `git log BASE..<HEAD> --format='%H %s'`
-   - Diffstat:
-     `git diff BASE..<HEAD> --stat`
-   - Full diff:
-     `git diff BASE..<HEAD>`
+   - Commit log: `git log <recorded-commit-range> --oneline`
+   - Full hashes: `git log <recorded-commit-range> --format='%H %s'`
+   - Diffstat: `git diff <recorded-diff-range> --stat`
+   - Full diff: `git diff <recorded-diff-range>`
    - Remotes:
      !`git remote -v`
      (to determine commit-link base URL)
+
+   Keep the forge head OID, base-tip OID, provider diff-base OID, local merge
+   base, and both exact ranges visible in the generated metadata or final
+   report. Re-resolve this scope before every update-mode range query; do not
+   reuse metadata from an earlier invocation.
 
 3. **Determine the commit-link base URL**:
 
@@ -294,6 +274,13 @@ Separate major sections with `---` horizontal rules.
   <!-- pr-msg-meta
   branch: <branch-name>
   base: <base-branch>
+  head_oid: <full-oid>
+  base_tip_oid: <full-oid>
+  merge_base_oid: <full-oid>
+  provider_diff_base_oid: <full-oid-or-unavailable>
+  commit_range: <merge-base-oid>..<head-oid>
+  diff_range: <base-tip-oid>...<head-oid>
+  authority: <forge-verified|local/prospective>
   submitted:
     github: ___
   -->
@@ -436,12 +423,13 @@ Separate major sections with `---` horizontal rules.
 ### Related issues & PRs
 - Scan commit messages, branch name, and diff for
   issue/PR references (`#123`, `fixes #N`, URLs).
-- Search the repo's open issues for keywords from
-  the PR title/motivation.
+- Search open forge issues only after separate current-prompt network
+  authorization. Without it, limit candidates to references found in local
+  commits, branch names, diffs, and existing local issue files.
 - **If the diff touches dependency manifests**
   (`pyproject.toml`, `uv.lock`, `requirements*.txt`,
   `package.json`, …), run `/dep-supersede-scan` (when
-  deployed) to cross-check the branch's dep bumps
+  deployed and separately authorized for network access) to cross-check the branch's dep bumps
   against open dependabot alerts + bot PRs. It returns
   ready-to-paste `supersedes #N` / `resolves alert #M`
   lines — fold confirmed ones into `### Links`. Heed
@@ -463,57 +451,14 @@ Separate major sections with `---` horizontal rules.
 
 ### Follow-up tracking issue (step 5c)
 
-When the generated PR body contains a
-`### Future follow up` section with `- [ ]` task
-items, run this sub-step BEFORE final text assembly:
-
-1. **Search for candidate parent issues**:
-   ```
-   gh issue list --search "<keywords>" \
-     --state open --limit 10
-   ```
-   Keywords: branch name tokens, PR title nouns,
-   key identifiers from the task list items.
-
-2. **Prompt the user** with options:
-   a. **Create new tracking issue** — generate
-      title + body from the task list, submit via
-      `gh issue create`
-   b. **Link to existing issue #N** — append the
-      task list as a new section in that issue
-   c. **Skip** — keep task list inline in the PR
-      body (default if user declines)
-
-3. **If creating a new issue**:
-   - Title: `Follow-up: <PR title summary>`
-   - Body format (see template below)
-   - Create — ALWAYS tag it with the `follow-up`
-     label so leftover-TODO issues stay filterable
-     (the label exists in `goodboy/tractor`; run
-     `gh label create follow-up` first if a repo
-     lacks it):
-     `gh issue create --title "..." \
-       --label "follow-up" \
-       --body-file /tmp/follow_up_issue.md`
-   - Capture returned issue number
-
-4. **If linking to an existing issue**:
-   - Fetch current body:
-     `gh api repos/{o}/{r}/issues/{n} --jq .body`
-   - Append a new section:
-     `### Follow-up from PR #<num>` with the task
-     list items
-   - Update:
-     `gh api repos/{o}/{r}/issues/{n} -X PATCH \
-       -F "body=@/tmp/updated_issue.md"`
-   - Use the existing issue number
-
-5. **Update the PR body**: replace the inline
-   `### Future follow up` task list with a link
-   to the tracking issue (see PR body format
-   below). If the PR hasn't been submitted yet,
-   note the placeholder — the link gets filled in
-   during post-submission.
+When the generated PR body contains a `### Future follow up` task list, keep it
+inline by default. The generation request authorizes no issue search, create,
+edit, label change, or publication. If the user asks for a tracking issue,
+write a local candidate using the template below and show its complete body.
+Creation or update requires a separate current-prompt request naming the exact
+backend, repository, issue action, candidate file, and target; publish only
+through `/gish create <backend> issue ...` or
+`/gish sync <backend> issue <num> ...`. Do not call a provider CLI directly.
 
 **Tracking issue body template** (new issues):
 
@@ -582,7 +527,9 @@ authorization:
    ```
    [<hash>]: https://github.com/<o>/<r>/commit/<full-hash>
    ```
-4. **PATCH** the issue via `gh api`.
+4. **Sync** the exact approved issue body via
+   `/gish sync <backend> issue <num> --repo <owner/name> --body-file <path>
+   --sha256 <digest>`.
 
 Without authorization, leave the issue unchanged and
 report the proposed ref-link and checkbox update.
@@ -637,29 +584,14 @@ hardcoded `claude-code` link-reference footers.
    fenced code block (` ```` `) so they can
    copy-paste into any git-service web form.
 
-8. **Sync to GitHub** (post-update step):
-
-   After writing the output files, check whether a
-   PR already exists for this branch on GitHub:
-
-   a. First check the `<!-- pr-msg-meta` block's
-      `submitted: github:` field — if it contains
-      a number (not `___`), use that.
-   b. Otherwise detect via:
-      `gh pr list --head <branch> --json number \
-        --jq '.[0].number'`
-   c. If a PR number is found, sync the body:
-      `gh pr edit <num> --body-file \
-        .claude/skills/pr-msg/pr_msg_LATEST.md`
-      and report the updated PR URL.
-   d. If NO existing PR is detected, skip silently
-      — the user hasn't submitted yet, so the local
-      files from step 6 are sufficient.
-
-   This ensures that re-invocations of `/pr-msg`
-   (e.g. after a rebase or new commits) propagate
-   updates to the live PR without requiring a
-   manual "sync to gh" step.
+8. **Stop after local generation by default.** Do not discover an existing PR
+   or update a live body automatically. A separate current-prompt sync request
+   must name the backend, repository, PR number, and generated body file. On
+   that exact request, re-run step 0, stop if the forge head/base changed, and
+   publish through `/gish sync <backend> pr <num> --repo <owner/name>
+   --body-file <path> --sha256 <digest>`. Never infer
+   publication permission from PR detection, prior submission metadata, or
+   the `/pr-msg` generation request.
 
 ## Selective commit hashes
 
@@ -706,8 +638,9 @@ flow.
 ## Post-submission workflow
 
 After the user submits the PR content to one or
-more git services, they (or claude via `/gish`)
-can:
+more git services, a separately authorized `/gish` workflow can update local
+service copies or sync exact remote targets. Submission does not authorize the
+following writes:
 
 1. **Fill metadata**: update the `<!-- pr-msg-meta`
    comment's `submitted:` fields with the assigned
@@ -733,12 +666,16 @@ can:
 5. **Fill tracking-issue link**: if a tracking
    issue was created with a branch-name placeholder
    (`PR #___`), update it with the actual PR num:
-   - Update issue body: replace `PR #___` with
+   - Prepare an issue-body candidate replacing `PR #___` with
      `PR #<actual-num>`
-   - Update issue heading anchor if it contained
+   - Update the candidate heading anchor if it contained
      the placeholder
-   - Update PR body link if it used a placeholder
+   - Update the local PR body link if it used a placeholder
      URL
+
+   Sync either remote body only after a current-prompt `/gish sync` request
+   names the exact backend, repository, object kind, target number, candidate
+   file, and digest.
 
 This mirrors the `gish` skill's
 `<backend>/<num>.md` local-file pattern — see

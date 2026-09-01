@@ -18,17 +18,21 @@ generalized for cross-repo deployment.
 |-------|-------------|
 | `py-codestyle` | Python code style conventions |
 | `commit-msg` | Git commit message generation |
+| `commit-plan` | Multi-commit orchestration using `commit-msg` messages |
 | `pr-msg` | PR description generation |
 | `code-review` | Read-only, Python-focused review with structured findings |
+| `code-nav-refs` | Editor-jumpable repository file and line citations |
 | `code-review-changes` | Apply PR review feedback |
 | `dep-supersede-scan` | Flag dep bumps that supersede bot PRs / resolve alerts |
 | `run-tests` | Shared test workflow with repository-owned harness guidance |
 | `resolve-conflicts` | Merge conflict resolution |
 | `open-wkt` / `close-wkt` | Git worktree lifecycle |
+| `opencode-cleaning` | Safely preview and remove stale OpenCode forks |
 | `plan-io` | Plan file conventions |
 | `prompt-io` | AI prompt I/O provenance logging |
 | `inter-skill-review` | Cross-skill consistency |
-| `gish` | Git-over-SSH transport |
+| `gish` | Local-file-first forge transport, including approved reviews |
+| `git-mgmt` | Coordinate Git branches, worktrees, and stacked history safely |
 | `harness-perf` | Diagnose CPU, memory, latency, and hangs in AI coding harnesses |
 | `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
@@ -43,6 +47,12 @@ anchor in portable mode and ignored absolute links in local mode:
 |----------|--------|----------|
 | Claude Code | `.claude/skills/` | `.claude/commands/` |
 | OpenCode | `.opencode/skills/` | `.opencode/commands/` |
+
+These are the currently supported provider overlays. Canonical skill prose is
+provider-neutral, but frontmatter capability grants and command shims are
+implemented only for Claude Code and OpenCode. Other agentskills.io consumers
+must provide equivalent local-tool permissions and separately authorized
+forge adapters; deployment does not imply portable permission policy.
 
 Initialize the anchor, then deploy a skill to one or both providers:
 
@@ -65,6 +75,11 @@ writes `.opencode` links, and `--provider all` writes both. Local symlink
 deployment creates ignored absolute provider links. Submodule deployment
 creates trackable relative links through the anchor. Nothing is staged unless
 `--stage` is explicitly supplied, and the script never commits.
+
+OpenCode skill deployment automatically installs every OpenCode command whose
+manifest dependency names that skill. Use `--no-command` for an intentional
+skill-only deployment. Command destinations are preflighted with skill
+destinations before any mutation.
 
 Skill and command deployment defaults to `--provider claude`, `init`
 defaults to `--method submodule`, and `status` defaults to
@@ -91,18 +106,20 @@ repository owns `test-harness-reference.md`.
 
 Provider-specific reusable assets live under `providers/`. For example,
 the canonical OpenCode `/commit-msg` shim is
-`providers/opencode/commands/commit-msg.md`; code-review, review-changes,
-Taken, and Run shims use the same layout. Local deployment links
-`.opencode/commands/<name>.md` directly to the
+`providers/opencode/commands/commit-msg.md`; every user-facing workflow command
+uses the same layout. Local deployment links `.opencode/commands/<name>.md`
+directly to the
 canonical provider asset and ignores that absolute link. Portable deployment
 uses a trackable relative link through `.ai/ai.skillz`. This repository
 self-hosts with tracked relative links from `.opencode/commands/` to
 `providers/opencode/commands/`.
 
 ```bash
-# The command dependency is enforced: deploy the OpenCode skill first.
+# Installs both the OpenCode skill and its dependent command shim.
 bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
   --provider opencode
+
+# Explicit command deployment remains available for repair or migration.
 bash /path/to/ai.skillz/scripts/deploy.sh command commit-msg <repo> \
   --provider opencode
 ```
@@ -113,6 +130,13 @@ edit `opencode.json` or `opencode.jsonc`; `status` reports unportable
 `skills.paths` entries for manual review. Quit and restart OpenCode after
 deploying or updating skills or commands because discovery occurs at
 startup.
+
+OpenCode command shims are provided for user-invoked workflows: code review
+and remediation, commit/PR messages, worktree lifecycle, Git management,
+conflict resolution, forge operations, dependency supersedence scans, test
+runs, harness diagnostics, OpenCode cleanup, Taken export, and YouTube URL
+lookup. Support skills such as `plan-io`, `prompt-io`, `py-codestyle`, and
+`inter-skill-review` remain skill-only.
 
 ### Maintenance and migration
 
