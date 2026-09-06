@@ -195,9 +195,13 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    copy unrelated task receipts. Later scope refinement must not ask again or
    scan after a decline.
 
-7. **Copy `.claude/settings.local.json`** from the
-   main repo into the worktree's `.claude/` dir so
-   tool permissions carry over.
+7. **Carry over harness-local settings when applicable.** For Claude
+   Code, copy `.claude/settings.local.json` from the main repo only
+   when it exists and the destination is absent. Preserve existing
+   destination settings. Other harnesses use their own configuration
+   and permission mechanisms; do not translate Claude permissions or
+   copy authentication files. The worktree protocol above is shared
+   and does not require a harness-specific opener.
 
 8. **Fixturize** (if requested):
    ```sh

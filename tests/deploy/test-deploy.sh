@@ -137,6 +137,13 @@ prepare_source_repo() {
         ln -s "../../providers/opencode/commands/$command.md" \
             "$SOURCE_WORK/.opencode/commands/$command.md"
     done
+    local sidecar skill_name
+    for sidecar in "$ROOT"/skills/*/agents; do
+        [ -d "$sidecar" ] || continue
+        skill_name="$(basename "$(dirname "$sidecar")")"
+        cp -R "$sidecar" "$SOURCE_WORK/skills/$skill_name/"
+        git -C "$SOURCE_WORK" add "skills/$skill_name/agents"
+    done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
         providers/opencode/commands skills/code-nav-refs \
@@ -1818,7 +1825,7 @@ test_opencode_command_adapter_contracts() {
 
 test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Create a complete commit package by composing with `/commit-msg`.'
+        'Create a complete commit package by composing with the `commit-msg`'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         '**"COMMIT PLAN" compatibility redirect**'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -2074,7 +2081,14 @@ test_opencode_debug_if_available() {
     pass 'OpenCode debug config and skill resolve deployed fixture'
 }
 
+source "$ROOT/tests/deploy/shared-cases.sh"
 prepare_source_repo
+if [ "${1:-}" = --shared-only ]; then
+    run_shared_cases
+    printf '1..%d\n' "$PASS"
+    exit 0
+fi
+run_shared_cases
 test_local_anchor_and_anchor_authority
 test_subdirectory_resolves_repository_root
 test_submodule_and_default_url

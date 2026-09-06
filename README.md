@@ -1,10 +1,15 @@
 # `ai.skillz`
 
-Reusable AI agent skills for
-[`claude-code`](https://github.com/anthropics/claude-code) and
-[`opencode`](https://github.com/anomalyco/opencode), conforming to the
-[agentskills.io](https://agentskills.io/specification)
-specification.
+Reusable AI agent skills with one canonical workflow per skill and
+shared `.agents/skills/` deployment for compatible harnesses. Codex and
+OpenCode can use that shared tree; existing Claude Code and OpenCode
+adapters remain available. Other harnesses can adopt the same tree
+where their discovery and invocation mechanisms support it.
+
+Skills follow the
+[Agent Skills specification](https://agentskills.io/specification).
+See the [support and validation matrix](docs/shared-skills.md) for the
+distinction between shared architecture and verified harness behavior.
 
 Extracted from real-world Python projects
 ([`tractor`](https://github.com/goodboy/tractor),
@@ -43,18 +48,19 @@ Portable deployment uses a provider-neutral source anchor at
 `<repo>/.ai/ai.skillz`. Provider discovery trees use relative links to that
 anchor in portable mode and ignored absolute links in local mode:
 
-| Provider | Skills | Commands |
+| Discovery target | Skills | Commands |
 |----------|--------|----------|
 | Claude Code | `.claude/skills/` | `.claude/commands/` |
-| OpenCode | `.opencode/skills/` | `.opencode/commands/` |
+| OpenCode | `.opencode/skills/` or shared `.agents/skills/` | `.opencode/commands/` |
+| Shared (compatible harnesses) | `.agents/skills/` | Harness-specific invocation |
 
-These are the currently supported provider overlays. Canonical skill prose is
-provider-neutral, but frontmatter capability grants and command shims are
-implemented only for Claude Code and OpenCode. Other agentskills.io consumers
-must provide equivalent local-tool permissions and separately authorized
-forge adapters; deployment does not imply portable permission policy.
+Canonical skill prose is shared. Harness-specific command shims and
+invocation metadata remain small adapters. Metadata is not a portable
+permission grant: each harness retains its own tool permissions,
+sandbox, credentials, and model provider configuration. See
+[Shared skills across harnesses](docs/shared-skills.md) for discovery and rollout details.
 
-Initialize the anchor, then deploy a skill to one or both providers:
+Initialize the anchor, then select shared deployment or a legacy adapter:
 
 ```bash
 # Local development: .ai/ai.skillz is an ignored absolute symlink.
@@ -64,17 +70,23 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
 bash /path/to/ai.skillz/scripts/deploy.sh <skill> <repo> \
-  --provider <claude|opencode|all>
+  --harness agents
 
-# Claude-only global deployment; no target repository or staging.
+# Global single-skill deployment; no target repository or staging.
 bash /path/to/ai.skillz/scripts/deploy.sh <skill> --global
+bash /path/to/ai.skillz/scripts/deploy.sh <skill> --global --harness agents
 ```
 
 `--provider claude` writes `.claude` links, `--provider opencode`
-writes `.opencode` links, and `--provider all` writes both. Local symlink
+writes `.opencode` links, and `--provider all` writes both. The new
+`--harness` spelling is an alias for `--provider`. Select `agents` or
+`codex` to deploy one shared `.agents/skills/` tree. Deployment `all`
+keeps its legacy meaning; status `all` includes the shared tree. Local symlink
 deployment creates ignored absolute provider links. Submodule deployment
 creates trackable relative links through the anchor. Nothing is staged unless
 `--stage` is explicitly supplied, and the script never commits.
+Shared deployment into this source repository uses trackable relative
+links directly to `skills/`, without needing an anchor to itself.
 
 OpenCode skill deployment automatically installs every OpenCode command whose
 manifest dependency names that skill. Use `--no-command` for an intentional
@@ -87,20 +99,25 @@ defaults to `--method submodule`, and `status` defaults to
 When no anchor exists, an omitted method or `--method symlink` uses ignored
 absolute links; `--direct` remains an explicit compatibility alias.
 
-Global skill deployment is Claude-only and links beneath
-`~/.claude/skills/`. It converts missing destinations or byte-identical
+Global skill deployment links beneath `~/.claude/skills/` by default,
+or `~/.agents/skills/` with `--harness agents` or `--harness codex`.
+It converts missing destinations or byte-identical
 canonical copies, preserves non-canonical files in hybrid directories, and
-refuses divergent content. An existing `~/.claude/skills` link to this
+refuses divergent content. An existing selected global skills-root link to this
 checkout's canonical `skills/` tree is accepted as an already-complete global
 deployment; other symlinked parent directories are refused.
 
-Generic skills are linked as whole directories. Hybrid skills such as
-`commit-msg` and `pr-msg` keep local directories for generated state and
-link only canonical files and resources. Existing runtime paths under
+Shared `.agents` skills use whole-directory links, which also meet
+Codex's discovery requirements. In legacy discovery trees, generic skills use
+whole-directory links, while hybrid skills such as `commit-msg` and
+`pr-msg` link only declared files and resources. Repository-owned
+runtime state stays outside the shared source directories. Existing
+runtime paths under
 `.claude/` remain in place; source deployment does not migrate or delete
 message archives, configuration, review context, or worktree state.
-`run-tests` is hybrid: its canonical `SKILL.md` is linked while each
-repository owns `test-harness-reference.md`.
+In legacy layouts, `run-tests` is hybrid: its canonical `SKILL.md` is
+linked while each repository owns `test-harness-reference.md`. Shared
+deployment keeps that repository-owned reference at its existing path.
 
 ### Commands
 
@@ -141,7 +158,7 @@ lookup. Support skills such as `plan-io`, `prompt-io`, `py-codestyle`, and
 ### Maintenance and migration
 
 ```bash
-# Inspect the anchor, both provider trees, broken links, legacy layouts,
+# Inspect the anchor, shared and legacy trees, and broken links,
 # command shims, and unportable OpenCode skills.paths entries.
 bash /path/to/ai.skillz/scripts/deploy.sh status <repo> --provider all
 

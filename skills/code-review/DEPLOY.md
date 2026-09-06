@@ -5,17 +5,19 @@ reports are optional worktree-local runtime state outside the skill directory.
 
 ## Managed Deployment
 
-The deployment script currently manages Claude Code and OpenCode consumers:
+The deployment script manages shared `.agents` discovery and the
+existing Claude Code and OpenCode adapters:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 
 bash /path/to/ai.skillz/scripts/deploy.sh code-review <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 ```
 
 Use `--method submodule` after portable initialization. Provider destinations
-are `.claude/skills/code-review` and `.opencode/skills/code-review`. Local
+are `.claude/skills/code-review`, `.opencode/skills/code-review`,
+and shared `.agents/skills/code-review`. Local
 links are absolute and ignored; portable links are relative and trackable.
 Nothing is staged unless `--stage` is explicitly supplied.
 
@@ -32,20 +34,23 @@ load at startup; deployment does not mutate consumer `opencode.json` files.
 
 ## Other Agent Skills Consumers
 
-The same `skills/code-review/` directory follows the Agent Skills standard.
-Link or copy the whole directory into the provider's supported project skill
-location:
+The same `skills/code-review/` directory follows the Agent Skills
+standard. Prefer `--harness agents` wherever the target harness can
+load the shared tree. Codex's `--harness codex` selector is an alias
+for that deployment; invoke its installed skill with `$code-review`.
+OpenCode can use shared skills with its `/code-review` command adapter.
 
-| Harness | Project skill location | Preferred entry point |
-|---|---|---|
-| Codex | `.agents/skills/code-review/` | Native `/review` or explicit skill request |
-| Gemini CLI | `.agents/skills/code-review/` or `.gemini/skills/code-review/` | Provider command or explicit skill request |
-| GitHub Copilot | `.github/skills/code-review/` or `.agents/skills/code-review/` | Native Copilot code review |
+Other harnesses, including Gemini CLI and GitHub Copilot, are adoption
+targets. Verify their current discovery roots, directory-link support,
+and explicit skill invocation before declaring support. Their native
+review features do not by themselves establish use of this workflow.
+See the [support and validation matrix](../../docs/shared-skills.md).
 
 Keep provider commands, agents, permission rules, hooks, and publication
 credentials outside the shared skill. Native review commands may have the
-same display name; use the provider's native entry point when it already owns
-that command and let it consume the skill instructions.
+same display name. A built-in review command is not guaranteed to load
+this skill; request the installed skill explicitly when its workflow
+is required.
 
 ## Runtime State
 
@@ -77,7 +82,7 @@ review publication:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh gish <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 ```
 
 Local review remains available without `gish`. Publication must stop or obtain

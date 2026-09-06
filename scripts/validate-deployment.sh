@@ -165,7 +165,7 @@ while read -r mode blob stage path; do
     [ -n "$path" ] || continue
     if [ "$stage" = 0 ] && [ "$mode" = 120000 ]; then
         case "$path" in
-            .claude/skills/*|.claude/commands/*|.opencode/skills/*|.opencode/commands/*)
+            .agents/skills/*|.claude/skills/*|.claude/commands/*|.opencode/skills/*|.opencode/commands/*)
                 link_value="$(git -C "$TARGET" cat-file blob "$blob")"
                 if [[ "$link_value" = /* ]]; then
                     printf 'ERROR: committed absolute provider link: %s\n' "$path" >&2

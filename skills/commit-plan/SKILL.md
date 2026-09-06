@@ -16,18 +16,23 @@ argument-hint: "[optional-scope-or-boundary-guidance]"
 
 # Commit Plan
 
-Create a complete commit package by composing with `/commit-msg`.
+Create a complete commit package by composing with the `commit-msg` and
+`run-tests` skills.
+Use the current harness's skill invocation syntax: `$commit-plan` in
+Codex, `/commit-plan` in Claude Code or the OpenCode command adapter.
 Planning authorizes temporary index changes and ignored message artifacts, not
 commits, pushes, rebases, stashes, or worktree cleanup.
 
 ## 1. Load The Dependencies
 
 Resolve and read the `commit-msg` and `run-tests` skills advertised by the
-current harness before inspecting changes. Prefer the current provider's
-project deployment, then a safely resolved deployment from the other supported
-project provider, then exact global deployments already advertised in the
-harness skill registry. Do not scan `~`, sibling repositories, or arbitrary
-external roots.
+current harness before inspecting changes. Use their advertised resource paths
+when available. Otherwise check the current repository's `.agents/skills/`,
+then the active harness's `.claude/skills/` or `.opencode/skills/` deployment,
+then exact global deployments advertised in the harness registry.
+If definitions disagree, resolve the ambiguity before proceeding. Resolve
+relative resources against the loaded skill directory, not the working
+directory. Do not scan `~`, sibling repositories, or arbitrary external roots.
 
 `commit-msg` owns:
 
@@ -55,7 +60,7 @@ names, environments or known outcomes.
 ## 2. Interpret The Request
 
 The literal phrase **"commit plan"** (case-insensitive), a request to
-split changes, or an explicit `/commit-plan` invocation requests
+split changes, or an explicit `commit-plan` skill invocation requests
 a complete, ready-to-run commit package, not merely proposed subjects
 or boundaries.
 

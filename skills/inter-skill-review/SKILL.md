@@ -7,8 +7,8 @@ description: >
   gaps. Use after building or refining skills that
   call each other.
 compatibility: >
-  Designed for Claude Code (or similar agentic
-  coding tools with file-access capabilities).
+  Designed for Agent Skills-compatible agentic
+  coding tools with file-access capabilities.
 metadata:
   author: goodboy
   version: "0.1"
@@ -47,32 +47,27 @@ process:
 
 ## 1. Check cross-scope skill availability
 
-Skills can live in multiple scopes:
-- Global: `~/.claude/skills/`
-- Repo-local: `<repo>/.claude/skills/`
-- OpenCode-local: `<repo>/.opencode/skills/`
-- Configured relative OpenCode `skills.paths`
-- Sibling repos: `~/repos/<other>/.claude/skills/`
+Resolve dependencies from the current harness's advertised skill
+registry first, using its exact resource paths. Project deployments may
+live under `.agents/skills/`, `.claude/skills/`, `.opencode/skills/`, or
+configured relative OpenCode `skills.paths`. User skills may be under
+`~/.agents/skills/` or a harness-specific root already advertised by the
+registry.
 
-When the dependency graph references a skill that
-isn't discoverable in the current provider, scan:
-
-1. The user's global `~/.claude/skills/`
-2. The repository's `.claude/skills/` and
-   `.opencode/skills/` directories
-3. Configured `skills.paths` from project OpenCode
-   configuration; flag absolute paths as unportable
-   after recognizing their discovery role
-4. Sibling repos' `.claude/skills/` dirs
-   (glob `~/repos/*/.claude/skills/`)
+If a dependency is missing, inspect those project locations and exact
+advertised global paths. Do not scan the entire home directory or
+sibling repositories. Flag divergent definitions of the same skill;
+do not guess which body or supporting resources to combine. Resolve
+resources relative to the loaded skill directory. For configured
+OpenCode paths, flag absolute paths as unportable.
 
 For each missing dependency found elsewhere:
 
 - Tell the user which skill is missing and where
   it was found.
 - If it is canonical `ai.skillz` content, propose
-  `scripts/deploy.sh <skill> <repo> --provider
-  <claude|opencode|all>` rather than an unmanaged
+  `scripts/deploy.sh <skill> <repo> --harness
+  <claude|opencode|agents|codex|all>` rather than an unmanaged
   provider link.
 - If the skill is repo-specific (e.g. contains
   project-specific test mappings), note that the
@@ -197,7 +192,7 @@ Repeated instructions that could diverge.
 Concrete edits, grouped by skill file.
 
 For each finding, ask the user how they want to
-resolve it (via `AskUserQuestion`) before making
+resolve it using the harness's user-input mechanism before making
 changes. Present options where multiple valid
 approaches exist.
 
@@ -221,10 +216,9 @@ waiting for the user to invoke
 
 After completing a skill change, immediately:
 
-1. Glob for all `SKILL.md` files in
-   `~/.claude/skills/`, the repo's `.claude/skills/`
-   and `.opencode/skills/`, and configured OpenCode
-   `skills.paths`.
+1. Inspect the advertised skill registry and project skill roots
+   listed in step 1. In this source repository, include `skills/`.
+   Open only the affected skills and their declared dependencies.
 2. Identify which skills reference or are
    referenced by the one that just changed.
 3. Run steps 0-6 on the affected subset.
