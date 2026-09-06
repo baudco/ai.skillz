@@ -16,6 +16,12 @@ Make source citations directly navigable without sacrificing readable prose.
 
 ## Format
 
+Follow explicit user and harness rendering requirements first. When
+clickable local-file Markdown links are required, use a verified
+absolute target such as `[file.py](/absolute/path/file.py:42)` with one
+line number, keeping the complete link intact. Otherwise use the
+editor-oriented forms below.
+
 Wrap each location in one inline-code span and use one of these forms:
 
 ```text

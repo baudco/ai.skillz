@@ -6,8 +6,7 @@ description: >
   provenance, substantive-use marking, and
   attribution transparency.
 compatibility: >
-  Designed for Claude Code (or similar agentic
-  coding tools). Requires git CLI.
+  Works with agentic coding harnesses. Requires git CLI.
 metadata:
   author: goodboy
   version: "0.1"
@@ -34,7 +33,7 @@ process:
    Tell the user which tree you're operating on.
 
    Determine `<ai-service>` from the active agent
-   (e.g. `claude` for Claude Code, `copilot` for
+   (e.g. `codex`, `claude` for Claude Code, `copilot` for
    GitHub Copilot).
 
    ```bash
@@ -55,7 +54,7 @@ process:
    | `chat`    | no          | skip           |
 
    When the scope is ambiguous (`docs`, `tests`),
-   ask the human via `AskUserQuestion`:
+   ask the human using the harness's user-input mechanism:
 
    ```
    This interaction generated [docs/test] changes.
