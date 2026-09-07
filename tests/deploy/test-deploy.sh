@@ -1829,6 +1829,14 @@ test_commit_plan_contract() {
         'compare a later boundary with live `HEAD`'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'A one-boundary plan is correct when all changes'
+    assert_file_contains "$ROOT/deploy-manifest.conf" \
+        'skill|commit-plan|hybrid|SKILL.md,scripts|commit-msg,run-tests'
+    assert_file_contains \
+        "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
+        'boundary {ordinal} already complete; skipping'
+    assert_file_contains \
+        "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
+        'HEAD diverged from the planned boundary chain'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'Resolve the repository'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1862,15 +1870,23 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'startup files disabled where supported, parse every fence line'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'must not stage, run project checks, invoke an editor or commit'
+        'executables, but must not stage, run project checks'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'materializes it with isolated Git'
+        'shared, no-checkout clone in a temporary project'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         '`git rev-parse --show-toplevel`'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'documented environment wrapper and fresh-process boundary'
+        'wrapper and fresh-process boundary'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'tested or state-leaking tiers from a later broad process'
+        'exclude separately tested or state-leaking tiers from a'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'full canonical object IDs'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'rejects ambient Git'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'every `--execute` line is a successful no-op'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'partial or complete execution without'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'lightweight structural boundary checks and their outcomes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1983,6 +1999,8 @@ test_commit_plan_contract() {
         "requires healthy opencode skill 'run-tests'"
     bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
+    [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-exec.py" ] \
+        || fail 'commit-plan executor asset was not deployed'
     bash "$DEPLOY" command commit-plan "$REPO" \
         --provider opencode >/dev/null
     rm "$REPO/.opencode/skills/commit-msg/SKILL.md"
@@ -2011,6 +2029,10 @@ test_commit_plan_contract() {
     assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
     assert_file_contains "$TMP_ROOT/failure.out" \
         'skill dependency cycle includes'
+    (
+        cd "$ROOT"
+        python -m unittest tests.test_commit_plan_exec
+    )
     pass 'commit-plan composes with commit-msg and run-tests safely'
 }
 
