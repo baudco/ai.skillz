@@ -1,11 +1,16 @@
 # Deploying `/run-tests`
 
+Configuration and runtime paths follow the
+[shared runtime contract](../../docs/runtime-state.md).
+Use `--harness agents` for whole-directory shared
+discovery; legacy harness deployments below retain hybrid layouts.
+
+
 `run-tests` uses a shared base plus a repository-owned harness reference:
 
 ```text
-.claude/skills/run-tests/
-  SKILL.md -> canonical ai.skillz base
-  test-harness-reference.md
+.agents/skills/run-tests -> canonical ai.skillz base
+.ai/run-tests/test-harness-reference.md
 ```
 
 The base owns execution safety and diagnostics. The local reference owns
@@ -29,18 +34,20 @@ bash /path/to/ai.skillz/scripts/deploy.sh \
   run-tests /path/to/repo --provider all --method submodule
 ```
 
-The script links only `SKILL.md`. It preserves an existing
+Legacy deployment links only `SKILL.md`; shared deployment links
+the canonical skill directory. It preserves an existing
 `test-harness-reference.md` and never creates an unresolved override
 implicitly.
 
 ## Bootstrap The Local Reference
 
-Copy the override template:
+Run `runtime prepare <repo>` and use its `test_harness` path. For a
+fresh or migrated repository, copy the override template:
 
 ```sh
-mkdir -p .claude/skills/run-tests
+mkdir -p .ai/run-tests
 cp /path/to/ai.skillz/templates/run-tests/SKILL.md.j2 \
-  .claude/skills/run-tests/test-harness-reference.md
+  .ai/run-tests/test-harness-reference.md
 ```
 
 Replace every `{{ ... }}` marker before invoking `/run-tests`. The canonical
@@ -93,10 +100,9 @@ bash /path/to/ai.skillz/scripts/deploy.sh \
   run-tests /path/to/repo --provider opencode --method symlink
 ```
 
-The harness remains at `.claude/skills/run-tests/` even for an
-OpenCode-only deployment because both providers share that repository-owned
-configuration path. A harness-only Claude directory is valid local state and
-does not enable the Claude skill by itself.
+All harnesses use the same resolved repository-owned reference.
+Legacy references remain supported until explicit runtime migration.
+A reference alone does not enable a harness's skill discovery.
 
 Use `--method submodule` after portable initialization.
 The canonical shim is tracked at `providers/opencode/commands/run-tests.md`.

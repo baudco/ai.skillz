@@ -112,9 +112,13 @@ instructions and supporting resources together. In legacy discovery
 trees, generic skills use whole-directory links, while hybrid skills
 such as `commit-msg` and `pr-msg` link only declared files and
 resources. Repository-owned runtime state stays outside the shared
-source directories. Existing runtime paths under `.claude/` remain
-in place; source deployment does not migrate or delete message
-archives, configuration, review context, or worktree state.
+source directories. The
+[shared runtime contract](docs/runtime-state.md) uses `.ai/` for
+configuration and `.ai/state/` for generated artifacts in fresh
+repositories. Existing runtime paths under `.claude/` remain in place
+until explicit runtime migration; source deployment does not migrate
+or delete message archives, configuration, review context, or
+worktree state.
 In legacy layouts, `run-tests` is hybrid: its canonical `SKILL.md` is
 linked while each repository owns `test-harness-reference.md`. Shared
 deployment keeps that repository-owned reference at its existing path.
@@ -179,6 +183,18 @@ Always review migration output first. Migration preserves hybrid local
 state and unrelated files. For a local symlink anchor, update the source
 checkout directly instead of using `update`.
 
+Workflow-state migration is separate from source-layout migration:
+
+| Command after `scripts/deploy.sh` | Role |
+|---|---|
+| `runtime status <repo>` | Read-only backend and path inventory |
+| `runtime migrate <repo>` | Read-only migration preview with operations, blockers, and SHA-256 digest |
+| `runtime migrate <repo> --apply <preview-sha256>` | Apply the reviewed preview, preserving legacy originals |
+
+Review the preview before supplying its exact digest to apply. See
+[the runtime contract](docs/runtime-state.md) for configuration
+resolution, migration blockers, and recovery.
+
 `validate-deployment.sh` validates manifest sources and command
 dependencies, runs deployment status, rejects committed absolute
 provider links, and inspects the Git index for tracked or staged runtime
@@ -201,3 +217,8 @@ Commercial licenses available from
 [`baudco`](https://github.com/baudco) for proprietary
 use cases. See [`LICENSING.md`](./LICENSING.md) for
 details.
+
+For configuration resolution and explicit runtime migration, see
+[the runtime contract](docs/runtime-state.md).
+Run `python3 -B tests/deploy/test-workflow-state.py` for migration,
+conflict, index-preservation, and worktree-isolation regressions.

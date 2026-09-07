@@ -1033,6 +1033,73 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('runtime must not use symlinks', result.stderr)
         self.assertEqual(self.commit_count(), 1)
 
+    def test_neutral_commit_message_runtime_executes(self):
+        '''
+        The executor originally authenticated every artifact beneath
+        the legacy `.claude` message archive. Fresh shared-harness
+        repositories instead select `.ai/state/commit-msg/msgs`, so a
+        valid generated plan failed before staging. This test moves
+        the complete fixture runtime to the neutral archive, rewrites
+        only its role-bound artifact paths and removes unrelated
+        project checks. Successful execution and commit identity
+        prove neutral and legacy backends share the same safety path.
+
+        '''
+        legacy = self.runtime.parents[0]
+        old_runtime = self.runtime
+        neutral = (
+            self.root
+            / '.ai'
+            / 'state'
+            / 'commit-msg'
+            / 'msgs'
+        )
+        neutral.parent.mkdir(parents=True)
+        legacy.rename(neutral)
+        self.runtime = neutral / 'test-runtime'
+
+        for name in (
+            'check_count',
+            'editor_count',
+            'editor_sentinel',
+            'check_script',
+            'editor_script',
+            'spec_path',
+        ):
+            old_path = getattr(self, name)
+            relative = old_path.relative_to(old_runtime)
+            setattr(self, name, self.runtime / relative)
+        self.messages = [
+            self.runtime / path.relative_to(old_runtime)
+            for path in self.messages
+        ]
+        self.patches = [
+            self.runtime / path.relative_to(old_runtime)
+            for path in self.patches
+        ]
+        self.editor_script = self.make_editor_script()
+
+        spec = json.loads(self.spec_path.read_text())
+        old_prefix = '.claude/skills/commit-msg/msgs/'
+        new_prefix = '.ai/state/commit-msg/msgs/'
+        for boundary in spec['boundaries']:
+            for role in ('patch', 'message'):
+                path = boundary[role]['path']
+                self.assertTrue(path.startswith(old_prefix))
+                boundary[role]['path'] = path.replace(
+                    old_prefix,
+                    new_prefix,
+                    1,
+                )
+            boundary['project_checks'] = []
+        self.spec_path.write_text(json.dumps(spec, indent=2))
+        self.spec_digest = self.digest(self.spec_path)
+
+        self.invoke('--execute', '1')
+        self.assertEqual(self.commit_count(), 2)
+        subject = self.git('log', '-1', '--format=%s').stdout.strip()
+        self.assertEqual(subject, 'Add one')
+
     def test_relative_path_entry_is_rejected(self):
         '''
         A bare executable resolved through a relative `PATH` entry is

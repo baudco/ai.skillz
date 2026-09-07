@@ -123,3 +123,14 @@ claude_wkts
 # BEGIN ai.skillz: runtime:branch-in-new-terminal
 .claude/.current_session
 # END ai.skillz: runtime:branch-in-new-terminal
+
+# Neutral workflow state and private configuration
+/.ai/state/
+/.ai/commit-msg/conf.toml
+/.ai/pr-msg/conf.toml
+
+# BEGIN ai.skillz: workflow-state
+/.ai/state/
+/.ai/commit-msg/conf.toml
+/.ai/pr-msg/conf.toml
+# END ai.skillz: workflow-state

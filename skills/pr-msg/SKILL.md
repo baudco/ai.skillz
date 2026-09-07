@@ -24,6 +24,13 @@ allowed-tools:
   - Write
 ---
 
+## Repository configuration and runtime paths
+
+Before accessing project guidance or workflow state, read and apply
+[the shared runtime contract](../../docs/runtime-state.md#workflow-integration).
+Resolve this link from the canonical `SKILL.md` location after
+following its symlink. Reuse the resolved paths across composed skills.
+
 ## Scope: PR messages only
 
 The formatting and attribution rules in this skill apply ONLY to
@@ -88,7 +95,7 @@ technical notes).
    `pr_msg_LATEST.md` exists for this branch and
    determine the invocation mode.
 
-   a. Read `.claude/skills/pr-msg/pr_msg_LATEST.md`.
+   a. Read `<pr_latest>`.
       If it does not exist or its `<!-- pr-msg-meta`
       `branch:` field does not match the current
       branch, this is a **fresh** invocation — skip
@@ -574,10 +581,10 @@ hardcoded `claude-code` link-reference footers.
 ```
 
 6. **Write to TWO files**:
-   - `.claude/skills/pr-msg/msgs/<timestamp>_<branch>_pr_msg.md`
+   - `<pr_messages>/<timestamp>_<branch>_pr_msg.md`
      * `<timestamp>` from `date -u +%Y%m%dT%H%M%SZ`
      * `<branch>` from `git branch --show-current`
-   - `.claude/skills/pr-msg/pr_msg_LATEST.md`
+   - `<pr_latest>`
      (overwrite)
 
 7. **Present the raw markdown** to the user in a
