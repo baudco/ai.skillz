@@ -14,7 +14,9 @@ Codex CLI 0.153.2 discovers symlinked skill directories but skips
 symlinked `SKILL.md` files inside real directories. The shared deployer
 therefore links whole directories, including the three skills that
 use hybrid layouts in legacy deployments. Repository-owned runtime
-state stays at its existing paths outside those source directories.
+state uses the [shared runtime contract](runtime-state.md), outside
+those source directories. Existing state requires explicit migration;
+fresh repositories use `.ai` configuration and `.ai/state` artifacts.
 
 Start a fresh Codex session in the target worktree and use `/skills`
 to inspect discovery. Invoke `$commit-plan`, or request the installed

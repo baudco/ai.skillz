@@ -105,9 +105,17 @@ conflict manually before rerunning, and review the dry-run output
 before applying changes.
 
 Message archives, test references, configuration, and review context
-retain their existing paths, including `.claude/` locations. Runtime
-migration and deployment across consumer repositories are separate
-follow-up work. Before removing an existing discovery layout, verify
+use the [shared runtime contract](runtime-state.md). Fresh repositories
+use `.ai/` configuration and `.ai/state/` artifacts; existing legacy
+data keeps its legacy backend until an explicit runtime migration.
+Consumer runtime migration remains separate from source deployment.
+Use `runtime status` to inspect, `runtime migrate` to preview, and
+`runtime migrate --apply <preview-sha256>` with the target repository
+and reviewed digest to apply. These are `deploy.sh runtime` commands,
+distinct from the non-interactive source-layout `migrate` above; see
+the runtime contract for exact invocations and blockers.
+
+Before removing an existing discovery layout, verify
 the shared replacement with that consumer's installed harness.
 Retain command wrappers wherever their explicit entry points are used.
 

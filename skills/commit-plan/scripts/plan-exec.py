@@ -34,6 +34,10 @@ GIT_REDIRECT_VARS = (
     'GIT_OBJECT_DIRECTORY',
     'GIT_WORK_TREE',
 )
+RUNTIME_PATHS = (
+    ('.ai', 'state', 'commit-msg', 'msgs'),
+    ('.claude', 'skills', 'commit-msg', 'msgs'),
+)
 
 
 class PlanError(RuntimeError):
@@ -658,19 +662,27 @@ def canonical_root(value: Any) -> Path:
     return root
 
 
-def runtime_root(root: Path) -> Path:
+def runtime_root(root: Path, value: Path) -> Path:
     '''
     Resolve the canonical runtime without accepting symlinked
     parents.
 
     '''
+    raw = value if value.is_absolute() else root / value
+    lexical = Path(os.path.abspath(raw))
+    selected = None
+    for parts in RUNTIME_PATHS:
+        candidate = root.joinpath(*parts)
+        try:
+            lexical.relative_to(candidate)
+        except ValueError:
+            continue
+        selected = candidate
+        break
+    if selected is None:
+        raise PlanError('file is outside commit-msg runtime')
     current = root
-    for part in (
-        '.claude',
-        'skills',
-        'commit-msg',
-        'msgs',
-    ):
+    for part in selected.relative_to(root).parts:
         current /= part
         if current.is_symlink():
             raise PlanError(
@@ -687,38 +699,48 @@ def runtime_root(root: Path) -> Path:
     return resolved
 
 
-def runtime_file(root: Path, value: Path, label: str) -> Path:
+def runtime_file(
+    root: Path,
+    value: Path,
+    label: str,
+    runtime: Path | None = None,
+) -> Path:
     '''
     Validate one runtime file path before its descriptor-based read.
 
     '''
-    runtime = runtime_root(root)
     raw = value if value.is_absolute() else root / value
     lexical = Path(os.path.abspath(raw))
+    selected = runtime or runtime_root(root, lexical)
     try:
-        relative = lexical.relative_to(runtime)
+        relative = lexical.relative_to(selected)
     except ValueError as error:
         raise PlanError(f'{label} is outside commit-msg runtime') \
             from error
-    current = runtime
+    current = selected
     for part in relative.parts[:-1]:
         current /= part
         if current.is_symlink():
             raise PlanError(f'{label} parent must not be a symlink')
     try:
-        lexical.resolve(strict=True).relative_to(runtime)
+        lexical.resolve(strict=True).relative_to(selected)
     except (OSError, ValueError) as error:
         message = f'{label} is missing or outside commit-msg runtime'
         raise PlanError(message) from error
     return lexical
 
 
-def read_runtime(root: Path, value: Path, label: str) -> bytes:
+def read_runtime(
+    root: Path,
+    value: Path,
+    label: str,
+    runtime: Path | None = None,
+) -> bytes:
     '''
     Hold every runtime parent while opening its regular file.
 
     '''
-    path = runtime_file(root, value, label)
+    path = runtime_file(root, value, label, runtime)
     parts = path.relative_to(root).parts
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     with contextlib.ExitStack() as stack:
@@ -738,20 +760,22 @@ def read_runtime(root: Path, value: Path, label: str) -> bytes:
         )
 
 
-def spec_runtime_root(path: Path) -> Path:
+def spec_runtime_root(path: Path) -> tuple[Path, Path]:
     '''
-    Locate the runtime anchor without opening the spec by pathname.
+    Locate the repository and runtime before reading the spec.
 
     '''
     absolute = Path(os.path.abspath(path))
     for parent in absolute.parents:
-        if len(parent.parents) < 4:
-            continue
-        names = tuple(item.name for item in parent.parents[:3])
-        if parent.name == 'msgs' and names == (
-            'commit-msg', 'skills', '.claude',
-        ):
-            return canonical_root(str(parent.parents[3]))
+        for parts in RUNTIME_PATHS:
+            if (
+                len(parent.parents) >= len(parts)
+                and parent.parts[-len(parts):] == parts
+            ):
+                root = canonical_root(
+                    str(parent.parents[len(parts) - 1])
+                )
+                return root, parent
     raise PlanError(
         'plan specification is outside commit-msg runtime'
     )
@@ -820,7 +844,7 @@ def load_spec(path: Path, expected_digest: str) -> dict[str, Any]:
     Load and authenticate one specification byte snapshot.
 
     '''
-    root = spec_runtime_root(path)
+    root, runtime = spec_runtime_root(path)
     payload = read_runtime(root, path, 'plan specification')
     if digest(payload) != expected_digest:
         raise PlanError('plan specification digest changed')
@@ -832,6 +856,7 @@ def load_spec(path: Path, expected_digest: str) -> dict[str, Any]:
     spec = validate_spec(data)
     if Path(spec['repo_root']) != root:
         raise PlanError('plan specification repository changed')
+    spec['_runtime_root'] = str(runtime)
     return spec
 
 
@@ -1025,7 +1050,8 @@ def artifact_snapshot(
     '''
     root = Path(spec['repo_root'])
     raw = Path(description['path'])
-    payload = read_runtime(root, raw, role)
+    runtime = Path(spec['_runtime_root'])
+    payload = read_runtime(root, raw, role, runtime)
     if digest(payload) != description['sha256']:
         raise PlanError(f'{role} digest changed')
     return payload
