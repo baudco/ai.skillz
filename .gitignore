@@ -124,6 +124,10 @@ claude_wkts
 .claude/.current_session
 # END ai.skillz: runtime:branch-in-new-terminal
 
+# BEGIN ai.skillz: direct:symlink:claude:git-mgmt
+/.claude/skills/git-mgmt
+# END ai.skillz: direct:symlink:claude:git-mgmt
+
 # Neutral workflow state and private configuration
 /.ai/state/
 /.ai/commit-msg/conf.toml
