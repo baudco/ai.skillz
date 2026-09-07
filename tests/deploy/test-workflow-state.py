@@ -136,11 +136,47 @@ class MigrationTests(unittest.TestCase):
             text,
         )
 
-    def test_symlink_and_pending_helper_refused(self) -> None:
-        self.write(
-            STATE.PATHS['commit_messages'][0] + '/plan.py', 'pass'
-        )
-        self.assertTrue(STATE.preview(self.root)['blockers'])
+    def test_archived_helpers_preserve_bytes_and_modes(self) -> None:
+        '''
+        Preserve opaque helper archives instead of blocking migration.
+
+        Migration previously classified every archived patch or
+        executable helper as pending based only on its extension. The
+        fixture writes each supported helper type with an executable
+        mode. A successful migration proves that their exact bytes and
+        modes reach neutral state while each legacy source remains.
+
+        '''
+        sources: list[str] = []
+        suffix: str
+        for suffix in ('.patch', '.py', '.sh', '.xsh'):
+            source: str = (
+                STATE.PATHS['commit_messages'][0]
+                + '/helper'
+                + suffix
+            )
+            path: Path = self.write(source, f'helper {suffix}\n')
+            path.chmod(0o750)
+            sources.append(source)
+
+        self.assertEqual(STATE.preview(self.root)['blockers'], [])
+        self.migrate()
+        for source in sources:
+            legacy: Path = self.root / source
+            neutral: Path = self.root / STATE.destination(source)
+            self.assertEqual(neutral.read_bytes(), legacy.read_bytes())
+            self.assertEqual(neutral.stat().st_mode & 0o777, 0o750)
+            self.assertTrue(legacy.exists())
+
+    def test_symlink_layout_refused(self) -> None:
+        '''
+        Reject a neutral root that could escape repository isolation.
+
+        A symlinked `.ai` directory could redirect migrated state
+        outside the worktree. The fixture points it at legacy state;
+        preview must reject the unsafe path before writing anything.
+
+        '''
         (self.root / '.ai').symlink_to(
             self.root / '.claude', target_is_directory=True
         )
