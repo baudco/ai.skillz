@@ -81,12 +81,18 @@ rules using the repository's existing method and harness selection.
 The first workflow invocation also installs the neutral state ignores.
 Keep the permanent source checkout as the link target.
 
-Pause workflow writers in the target worktree before migration.
-Finish pending commit plans or archive their execution helpers outside
-the managed paths, then regenerate any plan that will still be used.
-The preview refuses `.patch`, `.py`, `.sh`, and `.xsh` archive helpers;
-it cannot determine whether they are still pending. Do not blindly
-rewrite patches, cached indexes, or executable plans.
+Pause workflow writers in the target worktree when an exact migration
+snapshot is required. Archived patches, cached indexes, and executable
+helpers are opaque runtime payloads: migration copies their bytes and
+file modes but never executes them or rewrites paths inside them. A
+filename extension alone does not determine whether archived work is
+pending. Regenerate any saved plan that will still be executed after
+migration so its commands use the resolved neutral paths.
+
+Run-specific helpers stay in the archive for recovery and provenance.
+If a helper implements generally reusable behavior, promote that logic
+to the owning skill's canonical `scripts/` directory through a separate
+review. Migration does not infer reusable source from generated state.
 
 These commands work as individual shell lines, including in xonsh:
 
