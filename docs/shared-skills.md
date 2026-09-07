@@ -99,9 +99,10 @@ dry run before applying it. Existing local discovery directories are
 refused for manual reconciliation rather than replaced automatically.
 
 Message archives, test references, configuration, and review context
-retain their existing paths, including `.claude/` locations. Runtime
-migration and deployment across consumer repositories are separate
-follow-up work. Keep harness-specific discovery adapters until their
+use the [shared runtime contract](runtime-state.md). Fresh repositories
+use `.ai` paths; existing repositories retain their legacy backend
+until an explicit runtime migration. Consumer migration remains a
+separate operation from source deployment. Keep harness-specific discovery adapters until their
 shared replacements have been verified.
 
 ## Validation and harness notes

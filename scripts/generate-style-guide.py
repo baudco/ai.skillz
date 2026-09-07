@@ -929,7 +929,7 @@ def main():
         type=Path,
         help=(
             'Output file path (default: stdout). '
-            'Typical: .claude/skills/commit-msg/'
+            'Typical: .ai/commit-msg/'
             'style-guide-reference.md'
         ),
     )

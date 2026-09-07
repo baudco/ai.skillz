@@ -28,6 +28,7 @@ Usage:
   deploy.sh update <repo> [--ref REF] [--stage]
   deploy.sh status <repo> [--harness claude|opencode|agents|codex|all]
   deploy.sh migrate <repo> [--dry-run] [--stage]
+  deploy.sh runtime <status|prepare|migrate> <repo> [--apply PREVIEW_SHA256]
   deploy.sh gitignore <repo> [skill]
 
 Defaults:
@@ -2192,7 +2193,9 @@ record_status_direct_root() {
 
 runtime_owner_enabled() {
     local target="$1" name="$2"
-    [ -e "$target/.claude/skills/$name" ] \
+    [ -e "$target/.agents/skills/$name" ] \
+        || [ -L "$target/.agents/skills/$name" ] \
+        || [ -e "$target/.claude/skills/$name" ] \
         || [ -L "$target/.claude/skills/$name" ] \
         || [ -e "$target/.opencode/skills/$name" ] \
         || [ -L "$target/.opencode/skills/$name" ] \
@@ -3296,6 +3299,11 @@ cmd_gitignore() {
     fi
     printf 'Updated bounded ai.skillz ignore blocks in %s/.gitignore\n' "$TARGET"
 }
+
+if [ "${1:-}" = runtime ]; then
+    shift
+    exec python3 "$SKILLZ_ROOT/scripts/workflow-state.py" "$@"
+fi
 
 validate_manifest
 [ $# -gt 0 ] || { usage; exit 1; }

@@ -15,6 +15,13 @@ argument-hint: "[test-path-or-pattern] [--opts]"
 
 # Run Tests
 
+## Repository configuration and runtime paths
+
+Before accessing project guidance or workflow state, read and apply
+[the shared runtime contract](../../docs/runtime-state.md#workflow-integration).
+Resolve this link from the canonical `SKILL.md` location after
+following its symlink. Reuse the resolved paths across composed skills.
+
 Run the active repository's tests using a shared safety and diagnosis
 workflow plus repository-owned harness instructions.
 
@@ -29,7 +36,7 @@ Use `git rev-parse --show-toplevel` when Git is available. Also inspect
 Always look for the local override at:
 
 ```text
-<repo-root>/.claude/skills/run-tests/test-harness-reference.md
+<repo-root>/<test_harness>
 ```
 
 Resolve this path from the active repository root, not relative to this

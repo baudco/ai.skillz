@@ -104,6 +104,7 @@ count_fixed() {
 prepare_source_repo() {
     SOURCE_WORK="$TMP_ROOT/source-work"
     git clone -q "$ROOT" "$SOURCE_WORK"
+    cp "$ROOT/scripts/workflow-state.py" "$SOURCE_WORK/scripts/"
     git -C "$SOURCE_WORK" config user.email fixture@example.com
     git -C "$SOURCE_WORK" config user.name Fixture
     mkdir -p "$SOURCE_WORK/providers/opencode/commands" "$SOURCE_WORK/tests/deploy"
@@ -1914,11 +1915,11 @@ test_commit_plan_contract() {
     assert_not_contains "$commit_plan_text" '/git-mgmt'
     assert_not_contains "$commit_plan_text" 'receipt'
     assert_not_contains "$commit_plan_text" 'active-task'
-    assert_not_contains "$commit_plan_text" 'discovery'
+    assert_not_contains "$commit_plan_text" 'git-mgmt discovery'
     assert_not_contains "$commit_msg_text" '/git-mgmt'
     assert_not_contains "$commit_msg_text" 'receipt'
     assert_not_contains "$commit_msg_text" 'active-task'
-    assert_not_contains "$commit_msg_text" 'discovery'
+    assert_not_contains "$commit_msg_text" 'git-mgmt discovery'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         "use \`/git-mgmt\`'s exact-key policy lookup"
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \

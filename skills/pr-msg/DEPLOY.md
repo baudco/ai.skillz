@@ -1,5 +1,11 @@
 # Deploying `/pr-msg`
 
+Configuration and runtime paths follow the
+[shared runtime contract](../../docs/runtime-state.md).
+Use `--harness agents` for whole-directory shared
+discovery; legacy harness deployments below retain hybrid layouts.
+
+
 `pr-msg` is hybrid: its workflow, references, and scripts are canonical,
 while generated PR descriptions remain local to the consumer repo.
 
@@ -21,10 +27,10 @@ through the anchor. The directories themselves are not replaced.
 OpenCode skill deployment installs the `/pr-msg` command shim automatically;
 use `--no-command` only for an intentional skill-only deployment.
 
-The existing persisted runtime contract remains under
-`.claude/skills/pr-msg/`, including `msgs/` and `pr_msg_LATEST.md`.
-These generated files stay local and ignored. Migration preserves them
-byte-for-byte rather than moving them into `.ai` or `.opencode`.
+Fresh repositories write `.ai/state/pr-msg/msgs/` and
+`.ai/state/pr-msg/LATEST.md`. Existing repositories retain legacy
+paths until explicit runtime migration. Source deployment preserves
+all generated descriptions and never migrates their contents.
 
 Track the canonical provider links only in submodule mode, along with
 `.gitmodules` and the `.ai/ai.skillz` gitlink. Local mode ignores its

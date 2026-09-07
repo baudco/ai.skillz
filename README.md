@@ -111,9 +111,8 @@ Shared `.agents` skills use whole-directory links, which also meet
 Codex's discovery requirements. In legacy discovery trees, generic skills use
 whole-directory links, while hybrid skills such as `commit-msg` and
 `pr-msg` link only declared files and resources. Repository-owned
-runtime state stays outside the shared source directories. Existing
-runtime paths under
-`.claude/` remain in place; source deployment does not migrate or delete
+runtime state stays outside the shared source directories. The [shared runtime contract](docs/runtime-state.md) uses `.ai` for
+fresh repositories. Existing `.claude/` state needs explicit migration; source deployment does not migrate or delete
 message archives, configuration, review context, or worktree state.
 In legacy layouts, `run-tests` is hybrid: its canonical `SKILL.md` is
 linked while each repository owns `test-harness-reference.md`. Shared
@@ -199,3 +198,8 @@ Commercial licenses available from
 [`baudco`](https://github.com/baudco) for proprietary
 use cases. See [`LICENSING.md`](./LICENSING.md) for
 details.
+
+For configuration resolution and explicit runtime migration, see
+[the runtime contract](docs/runtime-state.md).
+Run `python3 -B tests/deploy/test-workflow-state.py` for migration,
+conflict, index-preservation, and worktree-isolation regressions.

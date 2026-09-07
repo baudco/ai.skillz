@@ -22,6 +22,13 @@ allowed-tools:
   - Write
 ---
 
+## Repository configuration and runtime paths
+
+Before accessing project guidance or workflow state, read and apply
+[the shared runtime contract](../../docs/runtime-state.md#workflow-integration).
+Resolve this link from the canonical `SKILL.md` location after
+following its symlink. Reuse the resolved paths across composed skills.
+
 ## XXX NEVER auto-commit!
 
 This skill (and agents working in any repo deploying
@@ -43,7 +50,7 @@ submits. NEVER emit a bare `git commit -F <file>` /
 `--file <file>` (those commit immediately, unreviewed).
 Always use:
 
-    git commit --edit -F .claude/git_commit_msg_<name>.md
+    git commit --edit -F <commit_messages>/<generated-file>
 
 (equivalently `--edit --file <file>`). Non-negotiable: the
 human reviews every message at the editor step.
@@ -153,7 +160,7 @@ When generating commit messages, always follow this process:
    etc.)
 
    **Check for regression context**: look for
-   `.claude/review_regression.md` (written by the
+   `<review_regression>` (written by the
    `/code-review-changes` skill when a self-caused
    regression was found and fixed). If present, read
    it and incorporate its fields into the commit
@@ -161,7 +168,7 @@ When generating commit messages, always follow this process:
    the message is written — it's single-use context.
 
    **Check for review context**: look for
-   `.claude/review_context.md` (written by the
+   `<review_context>` (written by the
    `/code-review-changes` skill after applying
    review fixes). If present, read it and extract
    `pr`, `reviewer`, `review_url`, optionally
@@ -197,9 +204,8 @@ When generating commit messages, always follow this process:
 
 3. **Write the commit message** following these rules:
 
-**Repo-specific style guide**: look for a
-`style-guide-reference.md` in the repo's local
-`.claude/skills/commit-msg/` directory. If present,
+**Repo-specific style guide**: look for the
+`commit_style` path returned by the runtime resolver. If present,
 use it as the primary style reference for that
 repo's conventions (subject patterns, abbreviations,
 domain terms). If absent, fall back to the defaults
@@ -239,7 +245,7 @@ review links) may exceed this.
 - Minor tweaks: "Adjust `behavior` in `component`"
 
 **Regression fix messages** (when
-`.claude/review_regression.md` exists):
+`<review_regression>` exists):
 
 The subject line should describe the actual fix,
 not the regression itself. In the body, add a
@@ -270,7 +276,7 @@ Found-via: `/run-tests` <test-name>
 ```
 
 **Review trailer** (when
-`.claude/review_context.md` exists):
+`<review_context>` exists):
 
 Add a `Review:` block at the end of the body,
 just before the credit footer. Format:
@@ -302,7 +308,7 @@ for click-through. Keeps the 67-col line limit.
 If the context file contains `reply_ids`, hold off on deleting it; step 6 will
 prepare exact local comment-edit candidates after the user commits. If no
 `reply_ids` are present, delete
-`.claude/review_context.md` right after the
+`<review_context>` right after the
 message is written (single-use, same lifecycle
 as `review_regression.md`).
 
@@ -312,15 +318,15 @@ as `review_regression.md`).
    *worktree* root, NOT the main repo):
 
    > **Worktrees:** ALWAYS write both files under the
-   > *active worktree's* own `.claude/` dir — the
+   > *active worktree's* own selected runtime directory — the
    > `git rev-parse --show-toplevel` path from step 0,
    > which for a worktree is the worktree root. Do NOT
-   > redirect them to the main checkout's `.claude/`.
+   > redirect them to the main checkout's runtime directory.
    > Each worktree keeps its own commit-msg state so
-   > `git commit --edit --file .claude/git_commit_msg_LATEST.md`
+   > `git commit --edit --file <commit_latest>`
    > resolves locally without any cross-tree copying.
 
-   - `.claude/skills/commit-msg/msgs/<timestamp>_<hash>_commit_msg.md`
+   - `<commit_messages>/<timestamp>_<hash>_commit_msg.md`
      * with `<timestamp>` from `date -u +%Y%m%dT%H%M%SZ`
        or similar filesystem-safe format.
      * and `<hash>` from `git log -1 --format=%h`
@@ -328,10 +334,10 @@ as `review_regression.md`).
      * `/commit-plan` appends a zero-padded boundary ordinal before
        `_commit_msg.md` when one timestamp/hash pair would otherwise collide.
      * `mkdir -p` the `msgs/` dir if it doesn't exist.
-   - `.claude/git_commit_msg_LATEST.md` (overwrite)
+   - `<commit_latest>` (overwrite)
 
    This ensures
-   `git commit --edit --file .claude/git_commit_msg_LATEST.md`
+   `git commit --edit --file <commit_latest>`
    always works regardless of whether we're in the
    main checkout or a worktree. The `msgs/` backups
    are nice-to-have; if a worktree gets cleaned up
@@ -379,7 +385,7 @@ changes, use subject line only.
    user to commit:
    ```
    git commit --edit --file \
-     .claude/git_commit_msg_LATEST.md
+     <commit_latest>
    ```
 
    Once the user confirms the commit (or a new HEAD is detected), the real
@@ -398,7 +404,7 @@ changes, use subject line only.
       `review_context.md`, falling back to `repo` for
       same-repository fixes).
    - Write a separate candidate file under
-     `.claude/review_replies/<id>_commit_edit.md`.
+     `<review_replies>/<id>_commit_edit.md`.
    - Show the complete rendered candidate, comment ID, backend, repository,
      and SHA-256 digest. Commit authorization and detection of a new HEAD do
      not authorize publication.
@@ -406,13 +412,13 @@ changes, use subject line only.
    Publish only after a separate current human message approves that exact
    candidate body, digest, backend, repository, comment ID, and edit action.
    Delegate the write to `/gish comment-edit`; never call a provider CLI
-   directly. Delete `.claude/review_context.md` and the candidate/source reply
+   directly. Delete `<review_context>` and the candidate/source reply
    files only after every separately approved edit succeeds. If approval is
    absent or publication fails, preserve them for a follow-up session.
 
    If the user declines to commit now (e.g. wants
    to review further), remind them that the
-   `reply_ids` are saved in `.claude/review_context.md`
+   `reply_ids` are saved in `<review_context>`
    and can be prepared and published in a follow-up session.
 
 7. **Propose tracking issue updates** (when the commit

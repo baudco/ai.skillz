@@ -33,6 +33,10 @@ GIT_REDIRECT_VARS = (
     'GIT_OBJECT_DIRECTORY',
     'GIT_WORK_TREE',
 )
+RUNTIME_PATHS = (
+    ('.ai', 'state', 'commit-msg', 'msgs'),
+    ('.claude', 'skills', 'commit-msg', 'msgs'),
+)
 
 
 class PlanError(RuntimeError):
@@ -482,19 +486,27 @@ def canonical_root(value: Any) -> Path:
     return root
 
 
-def runtime_root(root: Path) -> Path:
+def runtime_root(root: Path, value: Path) -> Path:
     '''
     Resolve the canonical runtime without accepting symlinked
     parents.
 
     '''
+    raw = value if value.is_absolute() else root / value
+    lexical = Path(os.path.abspath(raw))
+    selected = None
+    for parts in RUNTIME_PATHS:
+        candidate = root.joinpath(*parts)
+        try:
+            lexical.relative_to(candidate)
+        except ValueError:
+            continue
+        selected = candidate
+        break
+    if selected is None:
+        raise PlanError('file is outside commit-msg runtime')
     current = root
-    for part in (
-        '.claude',
-        'skills',
-        'commit-msg',
-        'msgs',
-    ):
+    for part in selected.relative_to(root).parts:
         current /= part
         if current.is_symlink():
             raise PlanError(
@@ -511,26 +523,31 @@ def runtime_root(root: Path) -> Path:
     return resolved
 
 
-def runtime_file(root: Path, value: Path, label: str) -> Path:
+def runtime_file(
+    root: Path,
+    value: Path,
+    label: str,
+    runtime: Path | None = None,
+) -> Path:
     '''
     Resolve one runtime file without a symlinked directory chain.
 
     '''
-    runtime = runtime_root(root)
     raw = value if value.is_absolute() else root / value
     lexical = Path(os.path.abspath(raw))
+    selected = runtime or runtime_root(root, lexical)
     try:
-        relative = lexical.relative_to(runtime)
+        relative = lexical.relative_to(selected)
     except ValueError as error:
         raise PlanError(f'{label} is outside commit-msg runtime') \
             from error
-    current = runtime
+    current = selected
     for part in relative.parts[:-1]:
         current /= part
         if current.is_symlink():
             raise PlanError(f'{label} parent must not be a symlink')
     try:
-        lexical.resolve(strict=True).relative_to(runtime)
+        lexical.resolve(strict=True).relative_to(selected)
     except (OSError, ValueError) as error:
         message = f'{label} is missing or outside commit-msg runtime'
         raise PlanError(message) from error
@@ -610,7 +627,8 @@ def load_spec(path: Path, expected_digest: str) -> dict[str, Any]:
         raise PlanError(message) from error
     spec = validate_spec(data)
     root = Path(spec['repo_root'])
-    runtime_file(root, path, 'plan specification')
+    spec_path = runtime_file(root, path, 'plan specification')
+    spec['_runtime_root'] = str(runtime_root(root, spec_path))
     return spec
 
 
@@ -774,7 +792,8 @@ def artifact_snapshot(
     '''
     root = Path(spec['repo_root'])
     raw = Path(description['path'])
-    path = runtime_file(root, raw, role)
+    runtime = Path(spec['_runtime_root'])
+    path = runtime_file(root, raw, role, runtime)
     payload = read_regular(path, role)
     if digest(payload) != description['sha256']:
         raise PlanError(f'{role} digest changed')

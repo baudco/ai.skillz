@@ -175,6 +175,7 @@ while read -r mode blob stage path; do
         esac
     fi
     case "$path" in
+        .ai/state|.ai/state/*|.ai/commit-msg/conf.toml|.ai/pr-msg/conf.toml|\
         .claude/skills/*/msgs|.claude/skills/*/msgs/*|\
         .claude/git_commit_msg_LATEST.md|.claude/skills/pr-msg/pr_msg_LATEST.md|\
         .claude/review_context.md|.claude/review_regression.md|\

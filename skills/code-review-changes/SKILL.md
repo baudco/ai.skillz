@@ -27,6 +27,13 @@ allowed-tools:
   - Edit
 ---
 
+## Repository configuration and runtime paths
+
+Before accessing project guidance or workflow state, read and apply
+[the shared runtime contract](../../docs/runtime-state.md#workflow-integration).
+Resolve this link from the canonical `SKILL.md` location after
+following its symlink. Reuse the resolved paths across composed skills.
+
 When addressing PR review comments, always follow
 this process:
 
@@ -214,7 +221,7 @@ Determine whether the failure is:
    - Re-run the affected tests to confirm the
      fix.
    - **Write a regression context file** at
-     `.claude/review_regression.md` so that
+     `<review_regression>` so that
      `/commit-msg` can incorporate it. Format:
      ```
       guilty: pending
@@ -259,10 +266,10 @@ all pass. Only proceed to step 6 once green.
 
 ### Write review context file
 
-Write `.claude/review_context.md` so `/commit-msg`
+Write `<review_context>` so `/commit-msg`
 can add a `Review:` trailer. **Placement rule**:
 write it to the repo where the `fix` changes
-actually land — i.e. `<canonical_worktree_root>/.claude/`
+actually land — i.e. `<canonical_worktree_root>` plus the resolved runtime path
 when cross-repo symlink fixes were applied, NOT
 the PR repo. This ensures `/commit-msg` finds
 the context when run from the correct repo.
@@ -335,7 +342,7 @@ real hash or post approved placeholders. A review
 handoff is not authorization to publish comments.
 
 For every review comment, write the complete reply first under
-`<fix-repo-root>/.claude/review_replies/<parent-id>_candidate.md`, compute its
+`<fix-repo-root>/<review_replies>/<parent-id>_candidate.md`, compute its
 SHA-256 digest, and show the rendered body plus exact target arguments. After
 the separate approval above, first write
 `<parent-id>_publication.json` beside the candidate with the exact target,
@@ -433,7 +440,7 @@ candidate on missing approval or failure.
 
 Track posted comment IDs so separately approved edits can target them.
 For every posted placeholder reply, also preserve the exact submitted body in
-`<fix-repo-root>/.claude/review_replies/<id>_pending.md`, where
+`<fix-repo-root>/<review_replies>/<id>_pending.md`, where
 `<fix-repo-root>` is the same repository receiving `review_context.md` under
 the placement rule in step 6. Record paths relative to that root in
 `reply_files`. This local source lets
@@ -443,7 +450,7 @@ read.
 ### Update review context with reply IDs
 
 After posting all reply comments, append the `reply_ids` and `reply_files`
-fields to `.claude/review_context.md`
+fields to `<review_context>`
 (written in step 6). List the IDs of replies whose
 footer still reads `> 📎 commit pending` so that
 `/commit-msg` (or a follow-up session) can tell
@@ -452,7 +459,7 @@ real commit hash:
 
 ```
 reply_ids: <id1>,<id2>,...
-reply_files: <id1>=.claude/review_replies/<id1>_pending.md,<id2>=.claude/review_replies/<id2>_pending.md
+reply_files: <id1>=<review_replies>/<id1>_pending.md,<id2>=<review_replies>/<id2>_pending.md
 ```
 
 If no replies were posted (all comments were

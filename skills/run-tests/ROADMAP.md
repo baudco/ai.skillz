@@ -1,5 +1,10 @@
 # `/run-tests` — roadmap
 
+Path note: the current workflow resolves repository guidance through
+[the shared runtime contract](../../docs/runtime-state.md). Legacy
+paths below describe the earlier deployment design and examples.
+
+
 ## Current implementation
 
 `run-tests` now uses the shared `skills/run-tests/SKILL.md` base plus a
