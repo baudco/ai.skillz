@@ -275,12 +275,6 @@ def preview(root: Path) -> dict[str, Any]:
         source_path: Path = safe(root, source)
         target_path: Path = safe(root, target)
         payload: bytes = source_path.read_bytes()
-        # Regenerate pending patches and executable plans; never
-        # substitute paths inside their code or diffs.
-        if source_path.suffix in ('.patch', '.py', '.sh', '.xsh'):
-            blockers.append(
-                f'Resolve pending workflow helper: {source}'
-            )
         rewritten: bool = source == PATHS['review_context'][0]
         if rewritten:
             pair: tuple[str, str]
