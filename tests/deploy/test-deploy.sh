@@ -1825,7 +1825,7 @@ test_opencode_command_adapter_contracts() {
 
 test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Create a complete multi-commit package by composing with the'
+        'Create a complete commit package by composing with the'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         '`commit-msg` skill.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1837,21 +1837,49 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'compare a later boundary with live `HEAD`'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Do not execute project checks while generating the plan by default.'
+        'A one-boundary plan is correct when all changes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'Resolve the repository'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Do not repeat that repository inspection for each boundary.'
+        'Use the loaded `/run-tests` contract'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        'safe broad regression'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        'authorization-required commands'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        'fresh-process isolation'
+    assert_file_contains "$ROOT/templates/run-tests/SKILL.md.j2" \
+        '{{ safe_regression_commands }}'
+    assert_file_contains "$ROOT/templates/run-tests/SKILL.md.j2" \
+        '{{ authorization_required_commands }}'
+    assert_file_contains "$ROOT/templates/run-tests/SKILL.md.j2" \
+        '{{ process_isolation }}'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'the full suite once, against the final boundary tree'
+        'authorization-required exclusions'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'omit that check from the execution sequence rather than running it twice'
+        'broadest repository-documented safe regression sequence'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'tree in an isolated temporary checkout'
+        'literal test-root run is'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Run a project check during'
+        'project checks while planning unless the user requests it.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'planning only when the user explicitly requests pre-execution'
+        'omit that check rather than running it twice'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'harness-reported command parser metadata'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'undeclared Python names or one-shot `assert` preconditions'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'startup files disabled where supported, parse every fence line'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'must not stage, run project checks, invoke an editor or commit'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'materializes it with isolated Git'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`git rev-parse --show-toplevel`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'documented environment wrapper and fresh-process boundary'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'tested or state-leaking tiers from a later broad process'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'lightweight structural boundary checks and their outcomes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1945,7 +1973,7 @@ test_commit_plan_contract() {
     assert_not_contains "$(<"$ROOT/skills/commit-plan/SKILL.md")" \
         'every invocation requires a full scan'
     assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
-        'without re-entering the compatibility redirect'
+        're-entering the compatibility redirect'
     assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
         'verify the real index remained unchanged'
     assert_not_contains \
@@ -1958,6 +1986,11 @@ test_commit_plan_contract() {
     assert_file_contains "$TMP_ROOT/failure.out" \
         "requires healthy opencode skill 'commit-msg'"
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    assert_fails bash "$DEPLOY" commit-plan "$REPO" \
+        --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'run-tests'"
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" command commit-plan "$REPO" \
         --provider opencode >/dev/null
@@ -1968,10 +2001,17 @@ test_commit_plan_contract() {
     assert_fails bash "$ROOT/scripts/validate-deployment.sh" "$REPO"
     assert_fails bash "$DEPLOY" command commit-plan "$REPO" \
         --provider opencode
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    rm "$REPO/.opencode/skills/run-tests/SKILL.md"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'dependency run-tests missing or unhealthy'
     local home="$TMP_ROOT/commit-plan-global-home"
     mkdir -p "$home"
     assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
     env HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
+    assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
+    env HOME="$home" bash "$DEPLOY" run-tests --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
     local cycle="$TMP_ROOT/commit-plan-cycle"
     cp -a "$SOURCE_WORK" "$cycle"
@@ -1980,7 +2020,7 @@ test_commit_plan_contract() {
     assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
     assert_file_contains "$TMP_ROOT/failure.out" \
         'skill dependency cycle includes'
-    pass 'commit-plan composes with commit-msg without project pre-checks'
+    pass 'commit-plan composes with commit-msg and run-tests safely'
 }
 
 test_opencode_debug_if_available() {
