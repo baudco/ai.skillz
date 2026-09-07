@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -323,10 +324,10 @@ class CommitPlanExecTests(unittest.TestCase):
         original_head = self.git('rev-parse', 'HEAD').stdout.strip()
         original_index = self.git('write-tree').stdout.strip()
         self.invoke('--preflight')
-        shown = json.loads(self.invoke('--show').stdout)
-        self.assertEqual(
-            shown[0]['commit'][:4],
-            ['git', 'commit', '--edit', '--file'],
+        shown = self.invoke('--show').stdout
+        self.assertIn(
+            '$ git commit --edit --file',
+            shown,
         )
         self.assertEqual(
             self.git('rev-parse', 'HEAD').stdout.strip(),
@@ -337,7 +338,13 @@ class CommitPlanExecTests(unittest.TestCase):
             original_index,
         )
 
-        self.invoke('--execute', '1')
+        first = self.invoke('--execute', '1')
+        self.assertIn('[review] $ git diff --staged', first.stdout)
+        self.assertIn(
+            '[commit] $ git commit --edit --file',
+            first.stdout,
+        )
+        self.assertIn('[boundary 1] PASS', first.stdout)
         self.assertEqual(self.commit_count(), 2)
         self.assertEqual(
             self.git('log', '-1', '--format=%s').stdout.strip(),
@@ -379,6 +386,191 @@ class CommitPlanExecTests(unittest.TestCase):
             self.git('write-tree').stdout.strip(),
             later_index,
         )
+
+    def test_show_renders_plain_user_commands(self):
+        '''
+        A JSON operation dump technically exposed project checks,
+        review and commit argv but made the commands difficult to
+        scan before execution. That obscured the exact tests and
+        final human-controlled gates which matter most during review.
+        This test renders the fixture plan without executing it and
+        compares its text with the same command argv stored in the
+        specification. The assertions prove tests, staged review and
+        the editor-backed commit are plainly visible while
+        environment values remain hidden.
+
+        '''
+        shown = self.invoke('--show').stdout
+        check = shlex.join(
+            [
+                str(self.check_script),
+                str(self.check_count),
+                'one.txt',
+                'two.txt',
+            ]
+        )
+        message = self.relative(self.messages[0])
+        self.assertIn(f'run     $ {check}', shown)
+        self.assertIn('$ git diff --staged', shown)
+        self.assertIn(
+            f'message: {message}',
+            shown,
+        )
+        self.assertIn(
+            '$ git commit --edit --file '
+            'AUTHENTICATED_MESSAGE_SNAPSHOT',
+            shown,
+        )
+        self.assertIn(
+            'env: PLAN_TEST_ENV '
+            '(authenticated values hidden)',
+            shown,
+        )
+        self.assertNotIn('"project_checks"', shown)
+
+    def test_project_check_failure_reports_command_context(self):
+        '''
+        A failing project check previously returned only its output
+        and exit status, leaving the executor phase, command and
+        isolated working directory implicit. This test replaces the
+        boundary check with an absolute helper which writes a known
+        stderr marker and exits 23 after source resolution succeeds.
+        Captured stdout proves the command and temporary cwd were
+        announced before execution; stderr proves the phase, status
+        and original diagnostic remain visible. The final assertions
+        prove failure stops before the editor and commit.
+
+        '''
+        failure = self.runtime / 'fail-check.sh'
+        failure.write_text(
+            '#!/bin/sh\n'
+            'printf "trace failure\\n" >&2\n'
+            'exit 23\n'
+        )
+        failure.chmod(0o755)
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [str(failure)]
+            check['env'] = {}
+            check['resolution_argv'] = ['pwd']
+
+        self.rewrite_spec(update)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 23)
+        self.assertIn(
+            '[project check 1/1] cwd=',
+            result.stdout,
+        )
+        self.assertIn(
+            f'[project check 1/1] $ {failure}',
+            result.stdout,
+        )
+        self.assertIn(
+            '[project check 1/1] FAIL exit=23',
+            result.stderr,
+        )
+        self.assertIn('trace failure', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_show_escapes_terminal_control_characters(self):
+        '''
+        Plain command rendering initially passed authenticated
+        strings directly to `shlex.join()`, which preserves newlines
+        and terminal control bytes. A crafted subject or argument
+        could inject a fake commit phase or alter the terminal.
+        This test adds newline, carriage-return and ANSI escape bytes
+        to previewed fields. Assertions prove they remain visible as
+        escaped text on the intended line and cannot create a forged
+        command line.
+
+        '''
+
+        def update(spec):
+            boundary = spec['boundaries'][0]
+            injected = 'safe\n[commit] fake\r\x1b[2J'
+            boundary['subject'] = injected
+            boundary['project_checks'][0]['argv'].append(injected)
+
+        self.rewrite_spec(update)
+        shown = self.invoke('--show').stdout
+        self.assertNotIn('\n[commit] fake', shown)
+        self.assertNotIn('\r', shown)
+        self.assertNotIn('\x1b', shown)
+        self.assertIn(r'\x0a[commit] fake\x0d\x1b[2J', shown)
+
+    def test_startup_errors_escape_executable_names(self):
+        '''
+        Successful previews escape terminal controls, but
+        command-not-found errors originally interpolated the
+        executable name again. A missing executable containing a
+        newline could therefore forge a commit phase during preflight
+        or execution. This test records one such resolution command,
+        exercises both paths and proves the unsafe bytes appear only
+        in escaped form before any project check or editor starts.
+
+        '''
+        executable = 'missing\n[commit] fake\x1b[2J'
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['resolution_argv'] = [executable]
+
+        self.rewrite_spec(update)
+        for mode in (('--preflight',), ('--execute', '1')):
+            result = self.invoke(*mode, check=False)
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 2)
+            self.assertNotIn('\n[commit] fake', output)
+            self.assertNotIn('\x1b', output)
+            self.assertIn(r'\x0a[commit] fake\x1b[2J', output)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_resolution_failure_redacts_environment_values(self):
+        '''
+        Resolution probes run with the project check's environment
+        and may echo credentials when they fail. Surfacing captured
+        stderr verbatim would turn improved diagnostics into a secret
+        disclosure. This test makes a failing shell probe print an
+        authenticated sentinel from its environment. The trace must
+        retain the phase, exit status and stderr section while
+        replacing the value, then stop before checks or the editor.
+
+        '''
+        explicit_secret = 'authenticated-overlay-value\n'
+        inherited_secret = 'inherited-database-value'
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['env'] = {'PLAN_VALUE': explicit_secret}
+            check['resolution_argv'] = [
+                'sh',
+                '-c',
+                'printf "%s\\n%s" "$DATABASE_URL" '
+                '"$PLAN_VALUE" >&2; exit 19',
+            ]
+
+        self.rewrite_spec(update)
+        result = self.invoke(
+            '--execute',
+            '1',
+            check=False,
+            extra_env={'DATABASE_URL': inherited_secret},
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 19)
+        self.assertNotIn(explicit_secret, output)
+        self.assertNotIn(inherited_secret, output)
+        self.assertIn('<redacted>', result.stderr)
+        self.assertIn(
+            '[project check 1/1 resolve] FAIL exit=19',
+            result.stderr,
+        )
+        self.assertIn('stderr:', result.stderr)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
 
     def test_editor_abort_remains_pending_and_resumes(self):
         '''
@@ -620,6 +812,15 @@ class CommitPlanExecTests(unittest.TestCase):
         result = self.invoke('--execute', '1', check=False)
         self.assertEqual(result.returncode, 2)
         self.assertIn('escaped the boundary root', result.stderr)
+        self.assertIn(
+            '[project check 1/1 resolve] FAIL validation',
+            result.stderr,
+        )
+        self.assertIn('process exit=0', result.stderr)
+        self.assertNotIn(
+            '[project check 1/1 resolve] PASS',
+            result.stdout,
+        )
         self.assertEqual(self.commit_count(), 1)
         self.assertEqual(self.line_count(self.check_count), 0)
         self.assertEqual(self.line_count(self.editor_count), 0)

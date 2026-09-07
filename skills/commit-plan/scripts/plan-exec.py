@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -39,6 +40,213 @@ class PlanError(RuntimeError):
     Report invalid or divergent plan execution safely.
 
     '''
+
+
+def visible_text(value: str) -> str:
+    '''
+    Escape terminal controls while preserving readable text.
+
+    '''
+    rendered = []
+    for character in value:
+        if character.isprintable():
+            rendered.append(character)
+            continue
+        codepoint = ord(character)
+        if codepoint <= 0xff:
+            rendered.append(f'\\x{codepoint:02x}')
+        elif codepoint <= 0xffff:
+            rendered.append(f'\\u{codepoint:04x}')
+        else:
+            rendered.append(f'\\U{codepoint:08x}')
+    return ''.join(rendered)
+
+
+def render_command(arguments: list[str]) -> str:
+    '''
+    Render one subprocess argv without invoking a shell.
+
+    '''
+    safe_arguments = [visible_text(item) for item in arguments]
+    return shlex.join(safe_arguments)
+
+
+def secret_values(
+    environment: dict[str, str],
+) -> tuple[str, ...]:
+    '''
+    Return environment values which trace output must redact.
+
+    '''
+    values = {
+        value
+        for value in environment.values()
+        if value
+    }
+    return tuple(sorted(values, key=len, reverse=True))
+
+
+def append_output(
+    lines: list[str],
+    label: str,
+    payload: str,
+    secrets: tuple[str, ...],
+) -> None:
+    '''
+    Append safely rendered captured process output.
+
+    '''
+    redacted = payload
+    if secrets:
+        alternatives = '|'.join(re.escape(item) for item in secrets)
+        redacted = re.sub(alternatives, '<redacted>', redacted)
+    redacted = redacted.rstrip('\n')
+    lines.append(f'{label}:')
+    lines.extend(
+        f'  {visible_text(item)}'
+        for item in redacted.split('\n')
+    )
+
+
+def trace_start(
+    phase: str,
+    arguments: list[str],
+    root: Path,
+) -> None:
+    '''
+    Announce one user-visible executor operation.
+
+    '''
+    rendered = render_command(arguments)
+    cwd = visible_text(str(root))
+    print(
+        f'[{phase}] cwd={cwd}\n'
+        f'[{phase}] $ {rendered}',
+        flush=True,
+    )
+
+
+def trace_result(
+    phase: str,
+    result: subprocess.CompletedProcess,
+    *,
+    captured: bool = False,
+    secrets: tuple[str, ...] = (),
+) -> None:
+    '''
+    Report one subprocess outcome and captured failure detail.
+
+    '''
+    if not result.returncode:
+        print(f'[{phase}] PASS', flush=True)
+        return
+    lines = [f'[{phase}] FAIL exit={result.returncode}']
+    if captured and result.stdout:
+        append_output(lines, 'stdout', result.stdout, secrets)
+    if captured and result.stderr:
+        append_output(lines, 'stderr', result.stderr, secrets)
+    print('\n'.join(lines), file=sys.stderr, flush=True)
+
+
+def command_error(
+    phase: str,
+    arguments: list[str],
+    root: Path,
+    result: subprocess.CompletedProcess[str],
+    *,
+    secrets: tuple[str, ...] = (),
+) -> PlanError:
+    '''
+    Build an actionable error for a captured internal command.
+
+    '''
+    rendered = render_command(arguments)
+    lines = [
+        f'[{phase}] FAIL exit={result.returncode}',
+        f'cwd: {visible_text(str(root))}',
+        f'command: {rendered}',
+    ]
+    if result.stdout:
+        append_output(lines, 'stdout', result.stdout, secrets)
+    if result.stderr:
+        append_output(lines, 'stderr', result.stderr, secrets)
+    return PlanError('\n'.join(lines))
+
+
+def validation_error(
+    phase: str,
+    arguments: list[str],
+    root: Path,
+    reason: str,
+    result: subprocess.CompletedProcess[str],
+    secrets: tuple[str, ...],
+) -> PlanError:
+    '''
+    Report failed validation after a successful subprocess.
+
+    '''
+    rendered = render_command(arguments)
+    lines = [
+        f'[{phase}] FAIL validation (process exit=0)',
+        f'cwd: {visible_text(str(root))}',
+        f'command: {rendered}',
+        f'reason: {visible_text(reason)}',
+    ]
+    if result.stdout:
+        append_output(lines, 'stdout', result.stdout, secrets)
+    if result.stderr:
+        append_output(lines, 'stderr', result.stderr, secrets)
+    return PlanError('\n'.join(lines))
+
+
+def git_command(*arguments: str) -> list[str]:
+    '''
+    Return one raw-object Git command argv.
+
+    '''
+    return ['git', *arguments]
+
+
+def patch_operation() -> tuple[str, ...]:
+    '''
+    Return the authenticated index transition operation.
+
+    '''
+    return (
+        'apply',
+        '--cached',
+        '--binary',
+        '--whitespace=nowarn',
+        '-',
+    )
+
+
+def structural_operations() -> tuple[tuple[str, ...], ...]:
+    '''
+    Return the staged boundary inspection operations.
+
+    '''
+    return (
+        ('diff', '--cached', '--check'),
+        ('diff', '--cached', '--stat'),
+        ('diff', '--cached', '--name-status'),
+    )
+
+
+def review_operation() -> tuple[str, ...]:
+    '''
+    Return the mandatory human staged-review operation.
+
+    '''
+    return ('diff', '--staged')
+
+
+def commit_operation(message: str) -> tuple[str, ...]:
+    '''
+    Return the mandatory editor-backed commit operation.
+
+    '''
+    return ('commit', '--edit', '--file', message)
 
 
 def digest(payload: bytes) -> str:
@@ -106,9 +314,11 @@ def git(
 
     '''
     active_env = environment or git_environment()
+    command_argv = git_command(*arguments)
+    cwd = visible_text(str(root))
     try:
         result = subprocess.run(
-            ['git', '--no-replace-objects', *arguments],
+            command_argv,
             cwd=root,
             check=False,
             capture_output=True,
@@ -116,28 +326,50 @@ def git(
             env=active_env,
         )
     except OSError as error:
-        raise PlanError('unable to start Git') from error
+        rendered = render_command(command_argv)
+        raise PlanError(
+            '[git query] unable to start\n'
+            f'cwd: {cwd}\n'
+            f'command: {rendered}'
+        ) from error
     if check and result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip()
-        operation = arguments[0] if arguments else 'command'
-        raise PlanError(detail or f'git {operation} failed')
+        raise command_error(
+            'git query',
+            command_argv,
+            root,
+            result,
+        )
     return result
 
 
-def visible_git(root: Path, *arguments: str) -> int:
+def visible_git(
+    root: Path,
+    phase: str,
+    *arguments: str,
+) -> int:
     '''
     Run one executor-owned Git command with visible output.
 
     '''
+    command_argv = git_command(*arguments)
+    cwd = visible_text(str(root))
+    trace_start(phase, command_argv, root)
     try:
-        return subprocess.run(
-            ['git', '--no-replace-objects', *arguments],
+        result = subprocess.run(
+            command_argv,
             cwd=root,
             check=False,
             env=git_environment(),
-        ).returncode
+        )
     except OSError as error:
-        raise PlanError('unable to start Git') from error
+        rendered = render_command(command_argv)
+        raise PlanError(
+            f'[{phase}] unable to start\n'
+            f'cwd: {cwd}\n'
+            f'command: {rendered}'
+        ) from error
+    trace_result(phase, result)
+    return result.returncode
 
 
 def required_string(value: Any, field: str) -> str:
@@ -619,25 +851,26 @@ def apply_patch(root: Path, payload: bytes) -> int:
     Apply the authenticated boundary patch to the real index.
 
     '''
+    arguments = git_command(*patch_operation())
+    cwd = visible_text(str(root))
+    trace_start('stage', arguments, root)
     try:
-        return subprocess.run(
-            [
-                'git',
-                '--no-replace-objects',
-                'apply',
-                '--cached',
-                '--binary',
-                '--whitespace=nowarn',
-                '-',
-            ],
+        result = subprocess.run(
+            arguments,
             cwd=root,
             check=False,
             input=payload,
             env=git_environment(),
-        ).returncode
+        )
     except OSError as error:
-        message = 'unable to apply the boundary patch'
-        raise PlanError(message) from error
+        rendered = render_command(arguments)
+        raise PlanError(
+            '[stage] unable to start\n'
+            f'cwd: {cwd}\n'
+            f'command: {rendered}'
+        ) from error
+    trace_result('stage', result)
+    return result.returncode
 
 
 def isolated_git(
@@ -649,9 +882,11 @@ def isolated_git(
     Run one Git command in independent check metadata.
 
     '''
+    command_argv = git_command(*arguments)
+    cwd = visible_text(str(root))
     try:
         result = subprocess.run(
-            ['git', '--no-replace-objects', *arguments],
+            command_argv,
             cwd=root,
             check=False,
             capture_output=True,
@@ -659,11 +894,19 @@ def isolated_git(
             env=environment,
         )
     except OSError as error:
-        message = 'unable to create isolated Git metadata'
-        raise PlanError(message) from error
+        rendered = render_command(command_argv)
+        raise PlanError(
+            '[isolate] unable to start\n'
+            f'cwd: {cwd}\n'
+            f'command: {rendered}'
+        ) from error
     if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip()
-        raise PlanError(detail or 'isolated Git command failed')
+        raise command_error(
+            'isolate',
+            command_argv,
+            root,
+            result,
+        )
     return result.stdout.strip()
 
 
@@ -692,18 +935,19 @@ def isolated_tree(
         environment.pop('__PYVENV_LAUNCHER__', None)
         environment['PYTHONNOUSERSITE'] = '1'
         environment['AI_SKILLZ_BOUNDARY_ROOT'] = str(root)
+        clone_command = git_command(
+            'clone',
+            '--shared',
+            '--no-checkout',
+            '--quiet',
+            str(source_root),
+            str(root),
+        )
+        clone_cwd = visible_text(value)
+        trace_start('isolate', clone_command, Path(value))
         try:
             result = subprocess.run(
-                [
-                    'git',
-                    '--no-replace-objects',
-                    'clone',
-                    '--shared',
-                    '--no-checkout',
-                    '--quiet',
-                    str(source_root),
-                    str(root),
-                ],
+                clone_command,
                 cwd=Path(value),
                 check=False,
                 capture_output=True,
@@ -711,11 +955,20 @@ def isolated_tree(
                 env=environment,
             )
         except OSError as error:
-            message = 'unable to clone isolated Git metadata'
-            raise PlanError(message) from error
+            rendered = render_command(clone_command)
+            raise PlanError(
+                '[isolate] unable to start\n'
+                f'cwd: {clone_cwd}\n'
+                f'command: {rendered}'
+            ) from error
         if result.returncode:
-            detail = result.stderr.strip() or result.stdout.strip()
-            raise PlanError(detail or 'isolated Git clone failed')
+            raise command_error(
+                'isolate',
+                clone_command,
+                Path(value),
+                result,
+            )
+        trace_result('isolate', result)
         isolated_git(root, environment, 'read-tree', tree)
         isolated_git(
             root,
@@ -776,18 +1029,31 @@ def run_project_checks(
     Run project checks in a fresh exact-tree repository.
 
     '''
+    descriptions = boundary['project_checks']
+    if not descriptions:
+        return 0
     with isolated_tree(
         spec,
         boundary['tree'],
         parent_oid,
     ) as checked:
         root, environment = checked
-        for description in boundary['project_checks']:
+        total = len(descriptions)
+        for index, description in enumerate(descriptions, start=1):
             check_env = environment.copy()
             check_env.update(description['env'])
+            secrets = secret_values(
+                check_env,
+            )
+            resolve_phase = (
+                f'project check {index}/{total} resolve'
+            )
+            resolution = description['resolution_argv']
+            cwd = visible_text(str(root))
+            trace_start(resolve_phase, resolution, root)
             try:
                 probe = subprocess.run(
-                    description['resolution_argv'],
+                    resolution,
                     cwd=root,
                     check=False,
                     capture_output=True,
@@ -795,11 +1061,21 @@ def run_project_checks(
                     env=check_env,
                 )
             except OSError as error:
-                name = description['resolution_argv'][0]
+                name = visible_text(
+                    description['resolution_argv'][0]
+                )
                 raise PlanError(
-                    f'unable to start resolution check: {name}'
+                    f'[{resolve_phase}] unable to start: {name}\n'
+                    f'cwd: {cwd}\n'
+                    f'command: {render_command(resolution)}'
                 ) from error
             if probe.returncode:
+                trace_result(
+                    resolve_phase,
+                    probe,
+                    captured=True,
+                    secrets=secrets,
+                )
                 return probe.returncode
             paths = [
                 line
@@ -807,29 +1083,46 @@ def run_project_checks(
                 if line
             ]
             if not paths:
-                raise PlanError(
-                    'resolution check did not print a path'
+                raise validation_error(
+                    resolve_phase,
+                    resolution,
+                    root,
+                    'resolution check did not print a path',
+                    probe,
+                    secrets,
                 )
             try:
                 Path(paths[-1]).resolve(
                     strict=True
                 ).relative_to(root)
             except (OSError, ValueError) as error:
-                raise PlanError(
-                    'resolution check escaped the boundary root'
+                raise validation_error(
+                    resolve_phase,
+                    resolution,
+                    root,
+                    'resolution check escaped the boundary root',
+                    probe,
+                    secrets,
                 ) from error
+            trace_result(resolve_phase, probe)
+            phase = f'project check {index}/{total}'
+            arguments = description['argv']
+            trace_start(phase, arguments, root)
             try:
                 result = subprocess.run(
-                    description['argv'],
+                    arguments,
                     cwd=root,
                     check=False,
                     env=check_env,
                 )
             except OSError as error:
-                name = description['argv'][0]
+                name = visible_text(description['argv'][0])
                 raise PlanError(
-                    f'unable to start project check: {name}'
+                    f'[{phase}] unable to start: {name}\n'
+                    f'cwd: {cwd}\n'
+                    f'command: {render_command(arguments)}'
                 ) from error
+            trace_result(phase, result)
             if result.returncode:
                 return result.returncode
     return 0
@@ -858,6 +1151,7 @@ def preflight(spec: dict[str, Any], root: Path) -> None:
                     key,
                 ):
                     name = description[key][0]
+                    name = visible_text(name)
                     raise PlanError(
                         f'required executable unavailable: {name}'
                     )
@@ -882,12 +1176,11 @@ def commit_message(
             stream.flush()
             os.fsync(stream.fileno())
         head_before = git(root, 'rev-parse', 'HEAD').stdout.strip()
+        operation = commit_operation(str(path))
         result = visible_git(
             root,
             'commit',
-            '--edit',
-            '--file',
-            str(path),
+            *operation,
         )
         return result, head_before
     finally:
@@ -905,11 +1198,19 @@ def execute(
     '''
     completed = classify(spec, root)
     if ordinal <= completed:
-        print(f'boundary {ordinal} already complete; skipping')
+        print(
+            f'[boundary {ordinal}] SKIP already complete',
+            flush=True,
+        )
         return 0
     if ordinal != completed + 1:
         raise PlanError('an earlier boundary is still pending')
     boundary = spec['boundaries'][ordinal - 1]
+    subject = visible_text(boundary['subject'])
+    print(
+        f'[boundary {ordinal}] pending: {subject}',
+        flush=True,
+    )
     parent_oid = git(root, 'rev-parse', 'HEAD').stdout.strip()
     patch = artifact_snapshot(
         spec,
@@ -938,12 +1239,11 @@ def execute(
             raise PlanError(
                 'staging did not produce the boundary tree'
             )
-    for arguments in (
-        ('diff', '--cached', '--check'),
-        ('diff', '--cached', '--stat'),
-        ('diff', '--cached', '--name-status'),
-    ):
-        result = visible_git(root, *arguments)
+    operations = structural_operations()
+    total = len(operations)
+    for index, arguments in enumerate(operations, start=1):
+        phase = f'structural check {index}/{total}'
+        result = visible_git(root, phase, *arguments)
         if result:
             return result
     result = run_project_checks(spec, boundary, parent_oid)
@@ -954,7 +1254,7 @@ def execute(
         raise PlanError('HEAD changed while checks were running')
     if not index_matches(root, target_tree):
         raise PlanError('a check changed the staged tree')
-    result = visible_git(root, 'diff', '--staged')
+    result = visible_git(root, 'review', *review_operation())
     if result:
         return result
     root = validate_identity(spec)
@@ -965,6 +1265,7 @@ def execute(
     result, head_before = commit_message(root, message)
     completed_after = classify(spec, root)
     if completed_after >= ordinal:
+        print(f'[boundary {ordinal}] PASS', flush=True)
         return 0
     head_after = git(root, 'rev-parse', 'HEAD').stdout.strip()
     if head_after != head_before:
@@ -979,30 +1280,69 @@ def show(spec: dict[str, Any]) -> None:
     Print every pinned boundary operation for human review.
 
     '''
-    rendered = []
+    lines = []
     for boundary in spec['boundaries']:
-        rendered.append(
-            {
-                'ordinal': boundary['ordinal'],
-                'subject': boundary['subject'],
-                'patch': boundary['patch']['path'],
-                'structural_checks': [
-                    ['git', 'diff', '--cached', '--check'],
-                    ['git', 'diff', '--cached', '--stat'],
-                    ['git', 'diff', '--cached', '--name-status'],
-                ],
-                'project_checks': boundary['project_checks'],
-                'review': ['git', 'diff', '--staged'],
-                'commit': [
-                    'git',
-                    'commit',
-                    '--edit',
-                    '--file',
-                    boundary['message']['path'],
-                ],
-            }
+        if lines:
+            lines.append('')
+        ordinal = boundary['ordinal']
+        subject = visible_text(boundary['subject'])
+        patch = visible_text(boundary['patch']['path'])
+        lines.extend(
+            (
+                f'Boundary {ordinal}: {subject}',
+                '  Stage:',
+                f'    patch: {patch}',
+            )
         )
-    print(json.dumps(rendered, indent=2))
+        stage = render_command(git_command(*patch_operation()))
+        lines.append(f'    $ {stage} < authenticated patch')
+        lines.append('  Structural checks:')
+        for operation in structural_operations():
+            command_text = render_command(git_command(*operation))
+            lines.append(f'    $ {command_text}')
+        lines.append('  Project checks:')
+        checks = boundary['project_checks']
+        if not checks:
+            lines.append('    (none)')
+        for index, description in enumerate(checks, start=1):
+            lines.append(f'    Check {index}/{len(checks)}:')
+            lines.append('      cwd: <isolated boundary tree>')
+            if description['env']:
+                names = ', '.join(
+                    visible_text(name)
+                    for name in sorted(description['env'])
+                )
+                lines.append(
+                    f'      env: {names} '
+                    '(authenticated values hidden)'
+                )
+            resolution = render_command(
+                description['resolution_argv']
+            )
+            project_check = render_command(description['argv'])
+            lines.extend(
+                (
+                    f'      resolve $ {resolution}',
+                    f'      run     $ {project_check}',
+                )
+            )
+        review = render_command(git_command(*review_operation()))
+        message = visible_text(boundary['message']['path'])
+        commit = render_command(
+            git_command(
+                *commit_operation('AUTHENTICATED_MESSAGE_SNAPSHOT')
+            )
+        )
+        lines.extend(
+            (
+                '  Review:',
+                f'    $ {review}',
+                '  Commit:',
+                f'    message: {message}',
+                f'    $ {commit}',
+            )
+        )
+    print('\n'.join(lines))
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

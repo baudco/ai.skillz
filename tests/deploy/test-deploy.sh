@@ -1842,7 +1842,7 @@ test_commit_plan_contract() {
         'skill|commit-plan|hybrid|SKILL.md,scripts|commit-msg,run-tests'
     assert_file_contains \
         "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
-        'boundary {ordinal} already complete; skipping'
+        '[boundary {ordinal}] SKIP already complete'
     assert_file_contains \
         "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
         'HEAD diverged from the planned boundary chain'
@@ -1894,6 +1894,15 @@ test_commit_plan_contract() {
         'rejects ambient Git'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'every `--execute` line is a successful no-op'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`git diff --staged` review and `git commit --edit --file`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'boundary phase, cwd and command immediately before running it'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'escape terminal controls and redact authenticated and inherited'
+    assert_file_contains \
+        "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
+        "'[{phase}] FAIL exit={result.returncode}'"
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'partial or complete execution without'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
