@@ -4,9 +4,10 @@ description: >
   Build complete, ready-to-run multi-commit plans with exact boundaries,
   project-style messages, checks, and shell-correct commands. Use when the
   user says "commit plan", "multi-commit plan", or asks to split changes into
-  commits. Requires the `commit-msg` skill.
+  commits. Requires the `commit-msg` and `run-tests` skills.
 compatibility: >
-  Requires git CLI, a deployed commit-msg skill, and a known user shell.
+  Requires git CLI, deployed commit-msg and run-tests skills, and a known
+  command parser.
 metadata:
   author: goodboy
   version: "0.1"
@@ -15,17 +16,18 @@ argument-hint: "[optional-scope-or-boundary-guidance]"
 
 # Commit Plan
 
-Create a complete multi-commit package by composing with `/commit-msg`.
+Create a complete commit package by composing with `/commit-msg`.
 Planning authorizes temporary index changes and ignored message artifacts, not
 commits, pushes, rebases, stashes, or worktree cleanup.
 
-## 1. Load The Dependency
+## 1. Load The Dependencies
 
-Resolve and read the `commit-msg` skill advertised by the current harness
-before inspecting changes. Prefer the current provider's project deployment,
-then a safely resolved deployment from the other supported project provider,
-then an exact global deployment already advertised in the harness skill
-registry. Do not scan `~`, sibling repositories, or arbitrary external roots.
+Resolve and read the `commit-msg` and `run-tests` skills advertised by the
+current harness before inspecting changes. Prefer the current provider's
+project deployment, then a safely resolved deployment from the other supported
+project provider, then exact global deployments already advertised in the
+harness skill registry. Do not scan `~`, sibling repositories, or arbitrary
+external roots.
 
 `commit-msg` owns:
 
@@ -36,30 +38,36 @@ registry. Do not scan `~`, sibling repositories, or arbitrary external roots.
 - archived and latest message file locations;
 - commit-message footers and post-commit follow-up.
 
+`run-tests` owns project environment wrappers, safe test scopes,
+authorization-required exclusions, process-isolation rules, command ordering
+and known outcomes. Its repository-local harness reference is optional; use its
+documented conservative fallback when one is absent.
+
 This skill owns multi-boundary orchestration. When reading `commit-msg`, ignore
 only its **"COMMIT PLAN" compatibility redirect**; following that redirect
 would recurse back into this already-active skill. Apply every other relevant
 `commit-msg` rule.
 
-If a trusted deployed `commit-msg` skill is unavailable, stop and give the
-canonical deployment command. Never invent or copy another repository's
-message conventions.
+If either trusted dependency is unavailable, stop and give the canonical
+deployment command. Never invent message conventions, test commands, package
+names, environments or known outcomes.
 
 ## 2. Interpret The Request
 
-The literal phrase **"commit plan"** (case-insensitive), a request to split
-changes into multiple commits, or an explicit `/commit-plan` invocation
-requests a complete, ready-to-run multi-commit package, not merely proposed
-subjects or boundaries.
+The literal phrase **"commit plan"** (case-insensitive), a request to
+split changes, or an explicit `/commit-plan` invocation requests
+a complete, ready-to-run commit package, not merely proposed subjects
+or boundaries.
 
-Honor human-specified boundaries first. Otherwise inspect the complete staged,
-unstaged, and untracked change set and choose the smallest set of atomic,
-dependency-ordered commits that keeps tests and contracts coherent. Do not add
-backward-compatibility commits or split tightly coupled production and test
-changes solely to increase commit count.
+Honor human-specified boundaries first. Otherwise inspect the
+complete staged, unstaged, and untracked change set and choose the
+fewest atomic, dependency-ordered commits that keep tests and
+contracts coherent. A one-boundary plan is correct when all changes
+form one atomic commit. Do not split tightly coupled production and
+test changes merely to increase the count.
 
-Ask one short question only when two materially different valid boundaries
-cannot be resolved from repository evidence.
+Ask one short question only when two materially different valid
+boundaries cannot be resolved from repository evidence.
 
 ## 3. Preserve The Starting Index
 
@@ -88,11 +96,11 @@ explicitly in the final command sequence.
 
 ## 4. Materialize Every Boundary
 
-Resolve the repository's project-check command catalog once per plan, before
-the boundary loop. Use only a repository-owned run-tests harness reference,
-documented project commands and CI/build configuration already in the current
-repository. Do not repeat that repository inspection for each boundary. Select
-from the catalog for each boundary; do not rediscover equivalent commands.
+Resolve the repository's project-check catalog once per plan, before the
+boundary loop. Use the loaded `/run-tests` contract and its repository-local
+harness reference as authoritative. Use project or CI documentation only where
+that authority is silent. Do not rediscover, merge or broaden commands per
+boundary.
 
 For each planned commit, in dependency order:
 
@@ -103,13 +111,13 @@ For each planned commit, in dependency order:
 3. Read that same parent-relative staged diff and apply `/commit-msg`'s normal
    analysis.
 4. Select required lint and targeted-test commands for that boundary. Assign
-   the full suite once, against the final boundary tree, unless repository
-   evidence explicitly requires an earlier boundary to run it independently.
-   Do not execute project checks while generating the plan by default. Include
-   pending checks in the human execution sequence. Run a project check during
-   planning only when the user explicitly requests pre-execution, always
-   against the exact boundary tree. Record a successful unchanged result and
-   omit that check from the execution sequence rather than running it twice.
+   the broadest repository-documented safe regression sequence, when one
+   exists, once against the final boundary tree. A literal test-root run is
+   allowed only when `/run-tests` classifies it as safe; never synthesize one
+   or include authorization-required coverage implicitly. Do not execute
+   project checks while planning unless the user requests it. Include pending
+   checks in the execution sequence. Record a successful unchanged result and
+   omit that check rather than running it twice.
 5. Generate a distinct project-style message from that exact boundary.
 6. Archive it beneath `.claude/skills/commit-msg/msgs/` using the
    `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
@@ -133,20 +141,32 @@ intended provenance files in a planned commit.
 
 ## 6. Render For The User's Shell
 
-Determine the configured `$SHELL` and use its basename as the single Markdown
-fence language and command syntax. Examples: `/bin/zsh` becomes `zsh`,
-`/bin/bash` becomes `bash`, `/usr/bin/fish` becomes `fish`, and
-`/usr/bin/xonsh` becomes `xonsh`.
+Choose the active command parser from evidence in this order:
 
-For `xonsh`, render every command on one physical line. Never use a trailing
-`\` or any other newline-continuation syntax: pasted continuation lines can
-be parsed as indented Python instead of subprocess arguments. Keep a runnable
-sequence as one command per line inside the same `xonsh` fence.
+1. an explicit parser or shell selected by the user for this command block;
+2. harness-reported command parser metadata from the active provider session;
+3. parser semantics already demonstrated by commands in the current session;
+4. the actual parent/ancestor interpreter from process metadata or an
+   equivalent provider diagnostic;
+5. the basename of `$SHELL`, only as a last-resort hint.
 
-The returned sequence must use one explicitly labelled fence and valid syntax
-for that shell. Never emit an unlabelled fence or hardcode POSIX syntax for a
-different shell. If `$SHELL` is unavailable or unknown, ask which shell to
-target before returning the plan.
+Do not equate inherited login-shell metadata with the active parser. Report
+conflicting signals and which higher-priority evidence won. If equal-priority
+evidence remains ambiguous, ask which parser to target.
+
+Render every command on one physical line. Never use newline continuations,
+undeclared Python names or one-shot `assert` preconditions. Keep rerunnable
+inspection and staging commands in the fence; put multi-step logic in a
+self-contained helper which imports every Python name it uses and fails with
+explicit nonzero exits.
+
+Use one explicitly labelled fence and valid syntax for the selected parser.
+Never emit an unlabelled fence or hardcode syntax for another parser. With
+startup files disabled where supported, parse every fence line and generated
+helper without executing it. Then run only the helper's dedicated read-only
+`--preflight` mode. That mode may resolve imports and required executables, but
+must not stage, run project checks, invoke an editor or commit, access the
+network or enter the normal execution path.
 
 Never assume the user's shell is already in the repository or worktree being
 planned. The first command in the fence must change directory to the exact
@@ -166,19 +186,21 @@ The command block must include, in execution order:
 - exact staging and unstaging commands for every boundary;
 - staged whitespace, statistics, and path checks before every commit;
 - required lint and targeted-test commands against each exact boundary tree;
-- the full suite once against the final boundary tree, except where documented
-  repository evidence requires an earlier independent run;
+- the broadest repository-documented safe regression sequence once against the
+  final boundary tree, when one exists;
 - `git diff --staged` immediately before every commit command so the human can
   review the exact staged patch at the final pre-commit gate;
 - `git commit --edit --file
   .claude/skills/commit-msg/msgs/<generated-file>` for every commit.
 
-For every pending project check, render a generated helper that first verifies
-the current staged tree equals the recorded boundary tree, materializes that
-tree in an isolated temporary checkout, runs the command there and removes the
-checkout. Later-boundary or unrelated live-worktree content must not affect the
-result. Do not render checks already pre-executed successfully against
-unchanged boundary evidence.
+For every pending project check, render a helper that first verifies the staged
+tree equals the recorded boundary tree and materializes it with isolated Git
+metadata in a temporary project root. Require `git rev-parse --show-toplevel`
+to resolve to that root, never a containing repository. Preserve every
+documented environment wrapper and fresh-process boundary; exclude separately
+tested or state-leaking tiers from a later broad process. Remove the temporary
+root afterward. Do not render checks already passed against unchanged boundary
+evidence.
 
 Use each archived message path directly. Never use
 `.claude/git_commit_msg_LATEST.md` in a multi-commit sequence because later
@@ -203,12 +225,16 @@ Before returning a finished plan, verify:
 - lightweight structural boundary checks and their outcomes are recorded;
 - project-check commands were resolved once per repository;
 - each required targeted check is rendered against its exact boundary and the
-  full suite appears only at the final boundary unless documented otherwise;
+  documented broad safe sequence appears only at the final boundary, when one
+  exists;
 - project checks are recorded as pending unless pre-executed against unchanged
   boundary evidence, in which case their outcomes are recorded and they are
   not rendered again;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
+- parser evidence follows the documented hierarchy and conflicts are reported;
+- every fence line and helper passes no-startup parse validation, and helper
+  preflight is read-only and cannot enter normal execution;
 - the command block starts in the exact absolute repository/worktree root;
 - every commit command includes `--edit`;
 - every commit command is immediately preceded by `git diff --staged`;
