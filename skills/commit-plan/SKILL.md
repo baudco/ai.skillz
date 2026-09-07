@@ -206,8 +206,9 @@ original working directory.
 The command block must include, in execution order:
 
 - one `plan-exec.py --preflight` command naming the specification and digest;
-- one `plan-exec.py --show` command so the human can inspect every pinned
-  patch, project check, staged review and commit operation;
+- one `plan-exec.py --show` command which renders every project check,
+  `git diff --staged` review and `git commit --edit --file` operation as a
+  plain command alongside the pinned patch;
 - one `plan-exec.py --execute <ordinal>` command per boundary, naming the same
   specification and digest.
 
@@ -218,6 +219,16 @@ broadest documented safe regression sequence once against the final boundary
 tree when one exists. The executor runs `git diff --staged` immediately before
 constructing the only permitted commit form:
 `git commit --edit --file <authenticated-message-snapshot>`.
+
+Preview and execution must use the same command descriptions. `--show`
+renders the exact argv and an isolated-tree cwd placeholder before anything
+executes. It may show authenticated environment variable names, but must hide
+their values and the inherited environment. `--execute` announces each
+boundary phase, cwd and command immediately before running it, then reports
+`PASS`, `SKIP` or `FAIL exit=<status>`. Preserve captured stdout and stderr on
+failure, but escape terminal controls and redact authenticated and inherited
+environment values. The human must be able to identify the failing
+check without reconstructing hidden subprocess state.
 
 The executor verifies the staged tree, then materializes every pending project
 check boundary by making a shared, no-checkout clone in a temporary project

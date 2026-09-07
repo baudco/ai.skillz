@@ -60,5 +60,13 @@ completed parent/tree prefix before touching the index, checks, editor or
 hooks. Repeating the complete block therefore skips committed boundaries and
 resumes the first pending boundary; unexpected history stops as divergence.
 
+`--show` plainly renders each project check, `git diff --staged` review and
+`git commit --edit --file` command from the same descriptions execution uses.
+At runtime the executor prints each phase, cwd and command before it runs,
+reports its outcome and preserves captured stdout and stderr on failure.
+Environment variable names may be shown, but their authenticated values and
+the inherited environment remain hidden. Captured output escapes terminal
+controls and redacts authenticated and inherited environment values.
+
 Nothing is staged unless `--stage` is explicitly supplied. Quit and restart
 OpenCode after deployment or update.
