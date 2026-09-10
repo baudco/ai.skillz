@@ -7,6 +7,37 @@ partial or complete run. The skill writes generated messages, specifications
 and cached staging patches through `commit-msg`'s ignored repository-local
 runtime directories and uses `run-tests` for project-check selection.
 
+The adjacent `scripts/plan-build.py` asset supplies two-phase mechanical
+planning: `prepare --input ... --output ...` freezes explicit file or
+cached-patch boundaries, then `finalize --prepared ... --sha256 ...
+--messages ...` archives analyzed messages and publishes a pinned v1
+executor spec. See the skill's minimal input example. Both assets ship
+through the existing skill-directory deployment; no manifest entry or
+provider-specific helper is needed. Keep them adjacent for module
+loading. No project checks run during either planning phase.
+New specs record `strict_branch: false`, allowing human branch renames
+or switches at the pinned HEAD or exact completed boundary prefix in
+the same worktree. `/commit-plan --strict` maps to `prepare --strict`
+and persists `strict_branch: true`. Missing fields in shipped v1 specs
+retain strict matching; refresh those plans to opt into flexibility,
+without modifying their pinned artifacts. Executor `--strict` only
+strengthens policy and propagates into rendered calls. Non-boolean
+values fail closed. Both policies refuse detached HEAD and retain
+repository/worktree, history and index guards. No `--auto` or autonomous
+commit mode is implemented or authorized.
+Finalize rematerializes selections in a private index to detect drift
+before invoking read-only executor preflight. All planner Git processes
+disable hooks and fsmonitor; whole-file paths using external clean or
+process filters require supplied cached patches instead. Both scripts
+can run from deployed source without creating adjacent bytecode files.
+
+The agent owns boundaries, check selection and messages; the helper owns
+private Git indexes, parent-relative evidence, hashes, drift checks and
+no-overwrite publication. It rejects transitions that remove unrelated
+staged paths. Partial edits require supplied parent-relative cached
+patches, not interactive staging or a generated patch synthesizer.
+Phase timing output measures mechanical work only, not model latency.
+
 ## Deployment
 
 Deploy the dependencies first:
@@ -64,7 +95,7 @@ subjects mapped to `--execute N`. Transfer it verbatim before the
 shell fence, never as executable text or duplicate subject comments.
 It explains conditions, pinned evidence, symbolic runtime paths and
 the limits of diagnostic current-checkout argv with hidden env values.
-It authenticates the spec/identity without running checks or probes.
+It authenticates spec/identity/history without running checks or probes.
 
 `--render xonsh` generates the complete command block with lossless
 Xonsh diagnostic argv in control-safe comments. `--render comments`
