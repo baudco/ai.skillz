@@ -2058,6 +2058,16 @@ test_commit_plan_contract() {
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
     [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-exec.py" ] \
         || fail 'commit-plan executor asset was not deployed'
+    [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-build.py" ] \
+        || fail 'commit-plan planner asset was not deployed'
+    local planner="$REPO/.opencode/skills/commit-plan/scripts/plan-build.py"
+    local planner_source source_probe source_before
+    planner_source="$(dirname "$(readlink -f "$planner")")"
+    source_probe='import hashlib,pathlib,sys; r=pathlib.Path(sys.argv[1]); print([(str(p),hashlib.sha256(p.read_bytes()).hexdigest(),p.stat().st_mtime_ns) for p in sorted(r.rglob("*")) if p.is_file()])'
+    source_before="$(python -B -c "$source_probe" "$planner_source")"
+    env -u PYTHONDONTWRITEBYTECODE python "$planner" --help >/dev/null
+    assert_eq "$(python -B -c "$source_probe" "$planner_source")" \
+        "$source_before"
     assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
         'source-qualified `# >> ai.skillz/skills/commit-plan/scripts/plan-exec.py`'
     assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
@@ -2098,7 +2108,7 @@ test_commit_plan_contract() {
         'skill dependency cycle includes'
     (
         cd "$ROOT"
-        python -m unittest tests.test_commit_plan_exec
+        python -m unittest tests.test_commit_plan_exec tests.test_commit_plan_build
     )
     pass 'commit-plan composes with commit-msg and run-tests safely'
 }
