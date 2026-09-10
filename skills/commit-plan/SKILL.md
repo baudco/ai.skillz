@@ -152,8 +152,9 @@ For each planned commit, in dependency order:
    allowed only when `/run-tests` classifies it as safe; never synthesize one
    or include authorization-required coverage implicitly. Do not execute
    project checks while planning unless the user requests it. Include pending
-   checks in the execution sequence. Record a successful unchanged result and
-   omit that check rather than running it twice.
+   checks in the execution sequence. Always retain selected commands under
+   the user-facing Micro CI heading, including previously passed checks.
+   Without reusable evidence, render RUN and execute as before.
 5. Generate a distinct project-style message from that exact boundary.
 6. Archive it beneath `<commit_messages>/` using the
    `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
@@ -164,6 +165,25 @@ For each planned commit, in dependency order:
 Do not defer message generation or tell the human to rerun `/commit-msg` after
 each commit. If any boundary cannot be safely materialized or verified, stop
 and report the blocker instead of returning a partial plan.
+
+An optional `prior_pass` object inside each `project_checks` command
+records exactly `tree`, `source`, `outcome`, and integer `exit: 0`.
+The tree must equal the boundary tree. The attributable source and
+outcome summary must be non-empty, safe, non-secret strings. Embed
+evidence only after the exact boundary tree, argv, environment overlay
+and resolution probe in that same authenticated command object have
+passed unchanged. Archive raw outputs and provenance in local runtime.
+The specification digest binds that association; it is an attestation,
+not independent verification of external tools or ambient environment.
+Do not copy evidence when any of those inputs changes. No cache or
+journal is involved. Absent evidence preserves v1 execution behavior;
+malformed claimed reuse or a tree mismatch must fail closed. Failed or
+unproven checks remain pending, with observations in the verification
+report rather than claimed reuse. Never omit a selected passed check.
+Render SKIP prior PASS with outcome and exit status; retain source
+and tree evidence in the pinned specification/artifacts. Do not run
+its probe/check, require its executable in preflight, or create a clone
+solely for reused checks. Completed-boundary no-op behavior is unchanged.
 
 ## 5. Verify The Starting Index
 
@@ -191,19 +211,82 @@ Do not equate inherited login-shell metadata with the active parser. Report
 conflicting signals and which higher-priority evidence won. If equal-priority
 evidence remains ambiguous, ask which parser to target.
 
-Render every command on one physical line. Never use newline continuations,
-undeclared Python names or one-shot `assert` preconditions.
+Use shell-native bindings and continuations for the selected parser.
+Never use undeclared Python names or one-shot `assert` preconditions.
 
 Use one explicitly labelled fence and valid syntax for the selected parser.
 Never emit an unlabelled fence or hardcode syntax for another parser. With
-startup files disabled where supported, parse every fence line and validate
+startup files disabled where supported, compile the complete block and validate
 the specification without executing it. Then run only
-`plan-exec.py --preflight`. Preflight may resolve imports and required
-executables, but must not stage, run project checks, invoke an editor or
-commit, access the network or enter normal execution.
+`plan-exec.py --preflight`. Preflight validates identities, history,
+pending artifacts and required executable availability; it does not
+run import-resolution probes, project checks, staging, an editor or
+a commit, access the network or enter normal execution.
+
+First generate `--overview` with the same `--spec` and `--sha256`.
+Transfer its stdout verbatim as normal Markdown before the shell
+fence. It owns shared conditions, execution context, symbolic runtime
+path and diagnostic limits, evidence location and numbered subjects
+mapped to `--execute N`. Do not reconstruct these from source or
+duplicate boundary subjects in shell comments. This read-only mode
+authenticates the spec and identity without running probes or checks.
+
+For Xonsh, generate the entire fence body with the deployed executor:
+`python3 <executor> --spec <spec> --sha256 <digest> --render xonsh`.
+Substitute shell-quoted absolute executor/spec paths and the pinned
+digest. Rendering authenticates the specification and validates
+identity, but does not perform preflight or execute any operation.
+Transfer stdout verbatim into an `xsh` fence. Do not reconstruct
+per-boundary comments, argv, invocations or spacing in agent prose.
+Bind exactly `PYVM`, `PLAN_SCRIPT`, `PLAN_SPEC`, and `PLAN_SHA256`
+as top-level Xonsh Python variables, not exported environment values.
+Use mechanically escaped ASCII string literals, including the digest.
+Keep each binding on one line; use short multiline executor calls
+with `@(PYVM) @(PLAN_SCRIPT)` and the bound spec and digest.
+Live headers use the bound script's basename, normally `plan-exec.py`.
+Do not add unused message or single-use root bindings. Keep diagnostic
+argv self-contained, independent of these variables. Comments-only
+and show output emit no bindings, setup or executable invocations.
+After the initial directory change, the generated block sets
+`$XONSH_SUBPROC_CMD_RAISE_ERROR = True` so a failed executor call
+stops the pasted block instead of continuing to later boundaries.
+This setting intentionally remains enabled in the user's shell;
+do not restore it or append a command after the final executor call.
+Comments-only output does not emit this Xonsh-specific setting.
+
+For Bash, use `--render bash` and transfer stdout verbatim into a
+`bash` fence. This shares the same summaries and execution path,
+but uses native quoted bindings, `"$PYVM" "$PLAN_SCRIPT"` calls,
+and Bash diagnostic argv. Greedily pack complete quoted argv tokens
+to the comment width, breaking only between arguments with a
+backslash. Indivisible tokens may exceed this soft width limit;
+never split a Bash string or executable word. Controls use ANSI-C
+quotes. Setup
+sets `set -e` before `cd` so failures stop the generated Bash script.
+This is not a guarantee about every interactive or conditional shell
+context. The setting is not restored. Its show call explicitly uses
+`--show --show-shell bash`; plain `--show` remains Xonsh by default.
+
+For other shells, use the same command with `--render comments`.
+This emits only generated comments grouped under
+source-qualified `# >> ai.skillz/skills/commit-plan/scripts/plan-exec.py`
+headers for `--preflight`, `--show` and `--execute N`.
+Keep constructing the directory
+change and executor argv using the selected shell's correct syntax,
+then copy each complete comment group above its matching invocation.
+Do not reconstruct underlying operations or descriptions. Validate
+the resulting fence with that shell's parser as before; comments-only
+rendering does not restrict which shells can receive a commit plan.
+Underlying diagnostic argv in these comments is Xonsh-only, even when
+the surrounding executor invocations target another shell. Do not
+claim those diagnostic lines are copyable in another parser. `--show`
+uses the generated Markdown overview followed by the same compact
+operation comments, probe catalog and width-controlled Xonsh argv.
+It omits executor invocations and preflight/show instructions, and
+does not run checks or probes. Version 1 specifications remain valid.
 
 Never assume the user's shell is already in the repository or worktree being
-planned. The first command in the fence must change directory to the exact
+planned. Before any subprocess, change directory to the exact
 absolute root returned by `git rev-parse --show-toplevel`. Render it as a
 standalone shell-correct command, quoting the path when required; do not chain
 it to the first staging command. When a plan intentionally spans repositories
@@ -224,6 +307,71 @@ The command block must include, in execution order:
 - one `plan-exec.py --execute <ordinal>` command per boundary, naming the same
   specification and digest.
 
+Every Python invocation must have the executor's generated shell
+comments immediately above it. Preflight comments describe validation
+without execution; show comments describe display only. Each boundary
+preview includes its inputs and operations; the generated overview
+owns conditional no-op, patch skip, order refusal and fail-fast rules.
+Important argv, Git cwd, isolated-check cwd and source probes
+come from the same descriptions used by execution and `--show`.
+Keep common environment metadata once in the preflight group under
+`osenv:` using `|_PWD:`, `|_SHELL:`, `|_VIRTUAL_ENV:` and `|_env:`.
+Show differing check environments at their uses with values hidden.
+Keep preflight/show summaries short under `ops-summary:`. Use one
+`# >> plan-exec.py --execute N` header per boundary.
+Group patch/message paths under `inputs:` with `|_patch:` and
+`|_message:` tags, then staging/structural operations under
+`--- staging/checks ---` immediately followed by `cmds:`.
+Separate `--- micro-ci ---` from `--- review/commit ---`,
+each with `cmds:`.
+Omit Micro-CI entirely when no checks are selected. Show every selected
+check, including prior PASS skips with evidence, but omit redundant
+`=> RUN pending` and `=> RUN resolution probe` annotations.
+Separate subsection chunks with actual empty lines. Within
+preflight, use `#` separator lines, never whitespace-only lines.
+Describe preflight validation and show display positively; reserve
+execution commands for execute headers. Use aligned `|_PATCH>`,
+`|_CHECK>`, `|_PROBE>`, `|_REVIEW>`, and `|_COMMIT>` tags.
+Pending probes use `|_PROBE> probe-N` without redundant RUN prose.
+Skipped probes use `|_SKIP-PROBE=> prior PASS`; skipped checks use
+`|_SKIP-CHECK=> prior PASS exit=0: <outcome>`. Always place their
+raw command or catalog reference on the next line, even when short.
+Retain every Micro CI argv, including skips; do not display source
+hashes or trees beside skips. Those remain pinned in the spec.
+Catalog repeated probes by raw argv plus environment identity; print
+each catalog argv once under `probe-catalog:` using `|_PROBE-N>`
+and reference its run/skip semantics at uses.
+Unique probes may stay inline. Probes still execute before each pending
+check, never once per plan; retained prior PASS probes are skipped.
+Keep shared overview prose concise rather than listing every internal
+subprocess. Runtime-created paths remain placeholders;
+environment values stay hidden. Show accurate PWD and explicitly label
+Xonsh diagnostic syntax, including comments-only mode. VIRTUAL_ENV may
+disclose only a
+safe validated selection from the spec or resolved interpreter;
+otherwise use `not selected` or redact uncertain configured values.
+Never infer selection from an unrelated inherited environment or run
+probes just to render. Escape controls and prefix every
+physical comment line with `#` so specification text cannot inject
+shell commands. Generated Xonsh invocations inject the assigned Python
+variables, not POSIX shell quoting. Diagnostic argv and navigation
+keep conservative safe tokens bare and inject escaped Python string
+literals for other tokens.
+`--comment-width` defaults to 69, with a minimum of 40. It bounds
+Xonsh command previews including the comment prefix, not metadata
+or actual executor invocations. Keep short commands inline after their
+tag; otherwise put the tag on its own line and align comment
+continuations with `#   ` and shell-safe wrapping. Xonsh long arguments
+and executable paths use adjacent escaped string literals inside `@()` without
+truncation, expansion or alteration of raw argv.
+Use those same lossless tokens for underlying Xonsh comment commands
+before control-safe comment prefixing. Diagnostic check argv is copyable
+from the repository root, but uses the current checkout without the
+hidden environment overlay, not exact isolated execution. Clearly label
+staging and commit placeholders as symbolic runtime paths in one
+generated overview, alongside the diagnostic argv context, rather
+than repeating caveats for every check.
+
 The executor applies the authenticated patch, then runs staged whitespace,
 statistics and path checks before every commit. The specification includes
 required lint and targeted tests against each exact boundary tree and the
@@ -233,8 +381,8 @@ constructing the only permitted commit form:
 `git commit --edit --file <authenticated-message-snapshot>`.
 
 Preview and execution must use the same command descriptions. `--show`
-renders the exact argv and an isolated-tree cwd placeholder before anything
-executes. It may show authenticated environment variable names, but must hide
+renders the diagnostic argv and describes exact-tree isolation before
+anything executes. It may show environment variable names, but must hide
 their values and the inherited environment. `--execute` announces each
 boundary phase, cwd and command immediately before running it, then reports
 `PASS`, `SKIP` or `FAIL exit=<status>`. Preserve captured stdout and stderr on
@@ -252,8 +400,8 @@ Preserve every documented environment wrapper and fresh-process boundary in
 the specification; exclude separately tested or state-leaking tiers from a
 later broad process. The executor clears ambient Python path overrides, and
 the import check must reject an editable install resolving outside the
-temporary root. The executor removes the root afterward. Do not include checks
-already passed against unchanged boundary evidence.
+temporary root. The executor removes the root afterward. Retain checks
+already passed against unchanged boundary evidence with `prior_pass`.
 
 For each `--execute` call, the canonical executor walks backward from `HEAD`
 to the recorded initial parent. Each intervening commit must have exactly one
@@ -283,10 +431,15 @@ Never use `<commit_latest>` in a multi-commit sequence because later message
 generation overwrites it. The executor authenticates the archived message
 once and passes an immutable snapshot to `git commit --edit --file`.
 
-Visually separate boundary executor calls inside the command fence. Emit
-exactly one blank line after every non-final `--execute` command. The final
-executor call normally terminates the fence, so do not require or add a
-trailing blank line after it.
+After bindings and a blank line, use `cd ROOT  # nav to git wkt`,
+then the fail-stop setting with
+the inline comment `# Stop on failure`. Emit one
+blank line after setup. Follow the preflight header immediately with
+`# ops-summary:`; use `#` between its summary, osenv and catalog.
+Put each invocation immediately after its final comment, then exactly
+one blank line between invocation groups. End at the final command
+without an extra trailing blank line before the closing fence.
+Comments-only output permits empty lines but no executable invocations.
 
 Keep `git diff --staged` as an intentional human review gate even when the
 earlier summary and path checks passed. It may open Git's pager; the human can
@@ -310,11 +463,15 @@ Before returning a finished plan, verify:
   exists;
 - project checks are recorded as pending unless pre-executed against unchanged
   boundary evidence, in which case their outcomes are recorded and they are
-  not rendered again;
+   rendered as SKIP prior PASS with their commands and evidence;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
+- the Xonsh/Bash block is transferred from its native renderer,
+  or another
+  shell's validated commands include matching `--render comments`
+  groups above every Python invocation without reconstructing previews;
 - parser evidence follows the documented hierarchy and conflicts are reported;
-- every fence line and specification passes no-startup validation, and
+- the complete block and specification pass no-startup validation, and
   preflight is read-only and cannot enter normal execution;
 - the command block starts in the exact absolute repository/worktree root;
 - every boundary binds one archived message and the executor constructs only
@@ -322,8 +479,9 @@ Before returning a finished plan, verify:
 - the executor runs `git diff --staged` immediately before that commit;
 - the complete sequence succeeds after partial or complete execution without
   rerunning completed checks, editors, hooks or commits;
-- every non-final executor call is followed by exactly one blank line, while
-  the final call has no required trailing blank line;
+- every Python invocation immediately follows its final comment;
+- exactly one blank line separates invocation groups, with no extra
+  trailing blank after the final command;
 - no command commits automatically before the editor opens;
 - no push appears unless the human separately requests a push plan.
 

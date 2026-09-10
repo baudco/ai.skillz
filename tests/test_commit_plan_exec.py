@@ -1,12 +1,16 @@
+import contextlib
 import hashlib
+import importlib.util
+import io
 import json
 import os
-import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +21,11 @@ SCRIPT = (
     / 'scripts'
     / 'plan-exec.py'
 )
+MODULE_SPEC = importlib.util.spec_from_file_location(
+    'plan_exec', SCRIPT,
+)
+PLAN_EXEC = importlib.util.module_from_spec(MODULE_SPEC)
+MODULE_SPEC.loader.exec_module(PLAN_EXEC)
 
 
 class CommitPlanExecTests(unittest.TestCase):
@@ -326,7 +335,7 @@ class CommitPlanExecTests(unittest.TestCase):
         self.invoke('--preflight')
         shown = self.invoke('--show').stdout
         self.assertIn(
-            '$ git commit --edit --file',
+            '|_COMMIT> git commit --edit --file',
             shown,
         )
         self.assertEqual(
@@ -387,46 +396,1141 @@ class CommitPlanExecTests(unittest.TestCase):
             later_index,
         )
 
-    def test_show_renders_plain_user_commands(self):
+    def test_show_reuses_compact_comments_without_execution(self):
         '''
-        A JSON operation dump technically exposed project checks,
-        review and commit argv but made the commands difficult to
-        scan before execution. That obscured the exact tests and
-        final human-controlled gates which matter most during review.
-        This test renders the fixture plan without executing it and
-        compares its text with the same command argv stored in the
-        specification. The assertions prove tests, staged review and
-        the editor-backed commit are plainly visible while
-        environment values remain hidden.
+        Show retained verbose POSIX prose after generated comments
+        adopted compact Xonsh summaries. Render the v1 two-boundary
+        fixture through both surfaces at three widths. Removing only
+        invocation headers and preflight/show instructions must leave
+        identical operations, shared context and probe catalog.
+        Unchanged index bytes and absent sentinels prove display runs
+        no checks, probes or commits; legacy noise stays absent.
 
         '''
-        shown = self.invoke('--show').stdout
-        check = shlex.join(
-            [
-                str(self.check_script),
-                str(self.check_count),
-                'one.txt',
-                'two.txt',
+        index = self.root / '.git' / 'index'
+        before = index.read_bytes()
+        for width in ('40', '69', '100'):
+            shown = self.invoke(
+                '--show', '--comment-width', width,
+            ).stdout
+            comments = self.invoke(
+                '--render', 'comments', '--comment-width', width,
+            ).stdout
+            shared = comments.index('# osenv:')
+            show_header = comments.index('# >> ', shared)
+            boundary = comments.index('# >> ', show_header + 1)
+            overview = self.invoke('--overview').stdout
+            expected = overview + '\n' + comments[
+                shared:show_header
+            ] + '\n'.join(
+                line for line in comments[boundary:].splitlines()
+                if not line.startswith('# >>')
+            ) + '\n'
+            self.assertEqual(shown, expected)
+            self.assertIn('|_REVIEW> git diff --staged', shown)
+            self.assertIn(
+                'env: PLAN_TEST_ENV (values hidden)', shown,
+            )
+            self.assertEqual(shown.count('probe-catalog:'), 1)
+            for obsolete in (
+                'Diagnostic argv only', 'not run', 'run     $',
+                '--show', '--preflight', 'plan-exec.py',
+            ):
+                self.assertNotIn(obsolete, shown)
+        self.assertEqual(
+            self.invoke('--show').stdout,
+            self.invoke('--show', '--comment-width', '69').stdout,
+        )
+        self.assertEqual(index.read_bytes(), before)
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_render_matches_spec_and_preserves_command_spacing(self):
+        '''
+        Agent-written comments could drift from pinned boundary
+        checks or omit the conditional executor gates. Render the
+        two-boundary fixture and compare each generated invocation
+        and its preceding comments with the authenticated spec.
+        Exact line assertions preserve command spacing and prove
+        the complete block can be transferred without rebuilding
+        boundary descriptions. Comments must abut each call, with one
+        blank after nonfinal calls, and separate inputs, staging and
+        Micro-CI without changing pinned subject capitalization.
+
+        '''
+        rendered = self.invoke('--render', 'xonsh').stdout
+        lines = rendered.splitlines()
+        for name, value in (
+            ('PYVM', sys.executable),
+            ('PLAN_SCRIPT', str(SCRIPT.resolve())),
+            ('PLAN_SPEC', str(self.spec_path.resolve())),
+            ('PLAN_SHA256', self.spec_digest),
+        ):
+            self.assertEqual(
+                lines.pop(0), f'{name} = {ascii(value)}',
+            )
+        self.assertEqual(lines.pop(0), '')
+        root = str(self.root.resolve())
+        self.assertEqual(
+            lines.pop(0), f'cd {root}  # nav to git wkt',
+        )
+        self.assertEqual(
+            lines.pop(0),
+            '$XONSH_SUBPROC_CMD_RAISE_ERROR = True'
+            '  # Stop on failure',
+        )
+        self.assertEqual(lines.pop(0), '')
+        spec = json.loads(self.spec_path.read_text())
+        modes = [
+            ['--preflight'],
+            ['--show'],
+            ['--execute', '1'],
+            ['--execute', '2'],
+        ]
+        comments = []
+        groups = []
+        for position, line in enumerate(lines):
+            if line.startswith('#'):
+                comments.append(line)
+            elif line.startswith('@(PYVM)'):
+                mode = modes[len(groups)]
+                self.assertEqual(
+                    line,
+                    '@(PYVM) @(PLAN_SCRIPT) --spec @(PLAN_SPEC) \\',
+                )
+                self.assertEqual(
+                    lines[position + 1],
+                    '    --sha256 @(PLAN_SHA256) ' + ' '.join(mode),
+                )
+                self.assertTrue(comments)
+                self.assertTrue(lines[position - 1].startswith('#'))
+                if position + 2 < len(lines):
+                    self.assertEqual(lines[position + 2], '')
+                    self.assertTrue(
+                        lines[position + 3].startswith(
+                            '# >> ',
+                        ),
+                    )
+                header = ' '.join(mode)
+                self.assertEqual(
+                    comments[0],
+                    f'# >> plan-exec.py {header}',
+                )
+                groups.append('\n'.join(comments))
+                comments = []
+            elif not line:
+                comments.append('')
+                if (
+                    position
+                    and not lines[position - 1].startswith('#')
+                ):
+                    comments = []
+        self.assertEqual(len(groups), 4)
+        self.assertTrue(rendered.endswith('\n'))
+        self.assertFalse(rendered.endswith('\n' * 2))
+        self.assertEqual(groups[0].splitlines()[1], '# ops-summary:')
+        self.assertNotIn('\n\n', groups[0])
+        self.assertTrue(all(
+            not line or line.strip() for line in lines
+        ))
+        self.assertNotIn('cmds-summary:', rendered)
+        self.assertIn('executable availability', groups[0])
+        self.assertIn('display pinned operations', groups[1])
+        for group in groups[:2]:
+            self.assertNotIn('|_COMMIT>', group)
+            self.assertNotIn('run-summary:', group)
+        self.assertNotIn('No staging', rendered)
+        self.assertNotIn('no reusable', rendered)
+        self.assertEqual(rendered.count('osenv:'), 1)
+        for heading in ('conditions:', 'legend:', 'Boundary '):
+            self.assertNotIn(heading, rendered)
+        self.assertEqual(rendered.count('# |_env:'), 1)
+        self.assertNotIn('=> RUN pending', rendered)
+        self.assertNotIn('=> RUN resolution probe', rendered)
+        for boundary, group in zip(spec['boundaries'], groups[2:]):
+            for line in group.splitlines():
+                if '|_' in line:
+                    self.assertTrue(line.startswith('# |_'))
+                if '=>' in line:
+                    self.assertTrue(
+                        line.startswith('# |_SKIP-'),
+                    )
+            ordinal = boundary['ordinal']
+            self.assertIn(
+                f'# >> plan-exec.py --execute {ordinal}',
+                group,
+            )
+            self.assertNotIn(boundary['subject'], rendered)
+            self.assertIn(
+                f'--execute {ordinal}\n'
+                '# inputs:\n', group,
+            )
+            for role in ('patch', 'message'):
+                path = boundary[role]['path']
+                self.assertIn(f'# |_{role}: {path}\n', group)
+            self.assertIn(
+                '\n#\n# --- staging/checks ---\n'
+                '# cmds:\n# |_PATCH>\n', group,
+            )
+            self.assertIn(
+                '\n'
+                '\n# --- micro-ci ---\n'
+                '# cmds:\n# |_PROBE> ', group,
+            )
+            self.assertNotIn('before this pending check', group)
+            self.assertIn('# --- review/commit ---\n', group)
+            for expected in (
+                str(self.root),
+                'git apply --cached --binary',
+                'git diff --cached --check',
+                'git diff --cached --stat',
+                'git diff --cached --name-status',
+                'git diff --staged',
+                'git commit --edit --file',
+                'AUTHENTICATED_MESSAGE_SNAPSHOT',
+            ):
+                self.assertIn(expected, rendered)
+            headings = [
+                group.index(heading) for heading in (
+                    '# >>', '|_PATCH>', '|_CHECK>',
+                    '|_PROBE>', '|_REVIEW>', '|_COMMIT>',
+                )
             ]
-        )
-        message = self.relative(self.messages[0])
-        self.assertIn(f'run     $ {check}', shown)
-        self.assertIn('$ git diff --staged', shown)
+            self.assertEqual(headings, sorted(headings))
+
+    def test_overview_owns_subjects_and_is_read_only(self):
+        '''
+        Shared prose and subjects used to overwhelm shell previews.
+        Give a boundary Markdown, controls and shell substitution
+        and render the standalone overview and both shells. The
+        escaped subject occurs only in overview/show, never in shell
+        comments. Unchanged index/HEAD and absent markers prove the
+        new mode neither evaluates text nor runs probes or checks.
+
+        '''
+        subject = 'Title `code`\n$(touch forged) <script>\x1b[2J'
+
+        def update(spec):
+            spec['boundaries'][0]['subject'] = subject
+
+        self.rewrite_spec(update)
+        index = self.root / '.git' / 'index'
+        before = index.read_bytes()
+        overview = self.invoke('--overview').stdout
         self.assertIn(
-            f'message: {message}',
-            shown,
+            r'1. Title \`code\`\\x0a$\(touch forged\)', overview,
+        )
+        self.assertIn(r'\<script\>\\x1b\[2J', overview)
+        self.assertIn('(`--execute 1`)', overview)
+        self.assertIn('pinned spec/artifacts', overview)
+        self.assertIn('symbolic runtime paths', overview)
+        self.assertIn('probe-N references the catalog', overview)
+        for control in ('\x1b', '\r', '\t'):
+            self.assertNotIn(control, overview)
+        for shell in ('bash', 'xonsh'):
+            block = self.invoke('--render', shell).stdout
+            for prose in ('Title', 'Prior PASS skips', 'Refuse '):
+                self.assertNotIn(prose, block)
+            shown = self.invoke('--show', '--show-shell', shell)
+            self.assertTrue(shown.stdout.startswith(overview + '\n'))
+        self.assertEqual(index.read_bytes(), before)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertFalse((self.root / 'forged').exists())
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+
+    def test_skip_annotations_always_put_argv_below_status(self):
+        '''
+        Short skipped commands previously ran inline with a generic
+        tag and verbose provenance after them. Build both unique and
+        catalogued probes with short argv and exact-tree prior PASS.
+        Pin the status/next-line layout in both shells and show;
+        hashes and sources must remain solely in authenticated data.
+        A pending twin retains CHECK/PROBE without redundant RUN.
+
+        '''
+        def update(spec):
+            boundary = spec['boundaries'][0]
+            evidence = {
+                'tree': boundary['tree'], 'exit': 0,
+                'source': 'raw.log sha256=private-evidence-digest',
+                'outcome': '34 tests passed, no skips',
+            }
+            check = {
+                'argv': ['true'], 'env': {},
+                'resolution_argv': ['pwd'], 'prior_pass': evidence,
+            }
+            boundary['project_checks'] = [
+                check, dict(check, resolution_argv=['pwd', '-P']),
+                {key: value for key, value in check.items()
+                 if key != 'prior_pass'},
+            ]
+            spec['boundaries'][1]['project_checks'] = []
+
+        self.rewrite_spec(update)
+        for mode in (
+            ('--render', 'bash'), ('--render', 'xonsh'),
+            ('--render', 'comments'), ('--show',),
+            ('--show', '--show-shell', 'bash'),
+        ):
+            output = self.invoke(*mode).stdout
+            for expected in (
+                '# --- staging/checks ---\n# cmds:\n# |_PATCH>',
+                '# |_PROBE-1> pwd',
+                '# |_SKIP-PROBE=> prior PASS\n#   probe-1',
+                '# |_SKIP-PROBE=> prior PASS\n#   pwd -P',
+                '# |_SKIP-CHECK=> prior PASS exit=0: '
+                '34 tests passed, no skips\n#   true',
+                '# |_PROBE> probe-1\n# |_CHECK> true',
+                '# --- review/commit ---\n# cmds:\n'
+                '# |_REVIEW> git diff --staged',
+            ):
+                self.assertIn(expected, output)
+            for obsolete in (
+                'raw.log', 'private-evidence-digest', self.tree_one,
+                '|_RUN>', 'before this pending', 'run-summary>>',
+            ):
+                self.assertNotIn(obsolete, output)
+
+    def test_bash_width_packs_complete_tokens_greedily(self):
+        '''
+        The former Bash wrapper split long words into unindented
+        literal fragments and placed every argument on its own line.
+        Render short words around an indivisible long quoted token.
+        Exact lines pin greedy packing, aligned continuations and the
+        soft-width exception, while the companion argv capture test
+        proves these previews preserve spaces, controls and metatext.
+
+        '''
+        token = 'with spaces ' * 6
+        preview = PLAN_EXEC.comment_command(
+            'CHECK', ['printf', '%s', 'alpha', 'beta', token, 'end'],
+            40, shell='bash',
+        )
+        self.assertEqual(preview, [
+            '|_CHECK>', '  printf %s alpha beta \\',
+            "  '" + token + "' \\", '  end',
+        ])
+        self.assertEqual(PLAN_EXEC.comment_command(
+            'CHECK', ['git', 'status'], 69, shell='bash',
+        ), ['|_CHECK> git status'])
+
+    def test_comment_groups_match_full_block_without_commands(self):
+        '''
+        Restricting generated previews to Xonsh blocked previously
+        supported shells. Render the same fixture in both modes and
+        prove comments-only output retains every invocation header
+        and operation from the full block without runnable lines.
+        Removing the second boundary's checks also proves isolation
+        notes appear only where execution actually creates a clone.
+
+        '''
+
+        def update(spec):
+            '''
+            Leave one checked boundary and one without checks.
+
+            '''
+            spec['boundaries'][1]['project_checks'] = []
+
+        self.rewrite_spec(update)
+        comments = self.invoke('--render', 'comments').stdout
+        full = self.invoke('--render', 'xonsh').stdout
+        lines = comments.splitlines()
+        self.assertNotIn('XONSH_SUBPROC_CMD_RAISE_ERROR', comments)
+        self.assertTrue(all(
+            not line or line.startswith('#') for line in lines
+        ))
+        full_lines = full.splitlines()[8:]
+        invocation_lines = {
+            adjacent
+            for position, line in enumerate(full_lines)
+            if line.startswith('@(PYVM)')
+            for adjacent in (position, position + 1)
+        }
+        self.assertEqual(
+            comments.replace(
+                'ai.skillz/skills/commit-plan/scripts/', '',
+            )
+            .splitlines(),
+            [
+                line for position, line in enumerate(full_lines)
+                if position not in invocation_lines
+            ],
+        )
+        self.assertEqual(
+            [
+                line for line in lines
+                if line.startswith('# >> ')
+            ],
+            [
+                '# >> ai.skillz/skills/commit-plan/scripts/'
+                'plan-exec.py '
+                + mode for mode in (
+                    '--preflight', '--show',
+                    '--execute 1', '--execute 2',
+                )
+            ],
         )
         self.assertIn(
-            '$ git commit --edit --file '
-            'AUTHENTICATED_MESSAGE_SNAPSHOT',
-            shown,
+            'SHELL: Xonsh diagnostic syntax', comments,
+        )
+        first, second = comments.split(
+            '# >> ai.skillz/skills/commit-plan/scripts/'
+            'plan-exec.py '
+            '--execute 2',
+        )
+        self.assertIn('temporary exact-tree', self.invoke(
+            '--overview',
+        ).stdout)
+        self.assertNotIn('sanitize Python paths', first)
+        self.assertNotIn('CHECK_PWD: temporary', second)
+        self.assertNotIn('sanitize Python paths', second)
+        self.assertNotIn('--- micro-ci ---', second)
+        self.assertIn('--- review/commit ---', second)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+
+    def test_render_is_read_only_and_comments_are_inert(self):
+        '''
+        Copying raw specification text into shell comments lets
+        newlines forge executable lines, and environment dumps can
+        expose credentials. Inject controls and shell metacharacters
+        into each displayed field, including a spec filename used
+        by the generated invocations. Assert all added text remains
+        on comment lines or in escaped argument literals and secrets
+        stay hidden. Index bytes, HEAD and sentinel assertions prove
+        rendering runs no staging, probe, check, editor or commit.
+
+        '''
+        injected = 'safe\n$(touch forged); `false`\r\x1b[2J\t\\'
+        secret = 'do-not-display-this-environment-value'
+        probe_marker = self.runtime / 'probe-ran'
+
+        def update(spec):
+            '''
+            Put hostile text in every displayed specification role.
+
+            '''
+            boundary = spec['boundaries'][0]
+            boundary['subject'] = injected
+            for role in ('patch', 'message'):
+                boundary[role]['path'] = injected
+            check = boundary['project_checks'][0]
+            check['argv'].append(injected)
+            marker = str(probe_marker)
+            check['resolution_argv'] = [
+                sys.executable,
+                '-c',
+                f'open({marker!r}, "w").close()',
+                injected,
+            ]
+            check['env'] = {injected: secret}
+
+        self.rewrite_spec(update)
+        renamed = self.runtime / 'plan\n$(touch forged).json'
+        self.spec_path.rename(renamed)
+        self.spec_path = renamed
+        index = self.root / '.git' / 'index'
+        before = index.read_bytes()
+        result = self.invoke(
+            '--render',
+            'xonsh',
+            extra_env={'INHERITED_SECRET': secret},
+        )
+        rendered = result.stdout
+        self.assertNotIn(secret, rendered)
+        for control in ('\r', '\x1b', '\t'):
+            self.assertNotIn(control, rendered)
+        self.assertIn(r'safe\x0a$(touch forged)', rendered)
+        self.assertIn(r'\x0d\x1b[2J\x09', rendered)
+        for line in rendered.splitlines()[8:]:
+            self.assertTrue(
+                not line
+                or line.startswith('$XONSH_SUBPROC_CMD_RAISE_ERROR')
+                or line.startswith(('#', '@(PYVM)', '    --sha256'))
+            )
+        spec_literal = ascii(str(self.spec_path.resolve()))
+        self.assertIn(f'PLAN_SPEC = {spec_literal}\n', rendered)
+        comments = self.invoke('--render', 'comments').stdout
+        self.assertNotIn(secret, comments)
+        shown = self.invoke('--show').stdout
+        self.assertNotIn(secret, shown)
+        operations = shown.removeprefix(
+            self.invoke('--overview').stdout + '\n',
+        )
+        self.assertTrue(all(
+            not line or line.startswith('#')
+            for line in operations.splitlines()
+        ))
+        self.assertEqual(
+            [
+                line for line in comments.replace(
+                    'ai.skillz/skills/commit-plan/scripts/', '',
+                ).splitlines() if line
+            ],
+            [
+                line for line in rendered.splitlines()[8:]
+                if line.startswith('#')
+            ],
+        )
+        self.assertEqual(index.read_bytes(), before)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertFalse(probe_marker.exists())
+        self.assertFalse((self.root / 'forged').exists())
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+
+    def test_render_environment_is_selected_not_inherited(self):
+        '''
+        Inherited virtual environments can belong to another repo.
+        Render with an unrelated ambient selection, then an explicit
+        secret-like VIRTUAL_ENV overlay. Neither may be presented as
+        a trusted selected path. Empty overlays report not selected;
+        uncertain configured values are redacted, without probes.
+
+        '''
+        secret = '/unrelated/private-environment'
+        shown = self.invoke(
+            '--render', 'xonsh', extra_env={'VIRTUAL_ENV': secret},
+        ).stdout
+        self.assertNotIn(secret, shown)
+        self.assertIn('VIRTUAL_ENV: not selected', shown)
+
+        def update(spec):
+            for boundary in spec['boundaries']:
+                boundary['project_checks'][0]['env'][
+                    'VIRTUAL_ENV'
+                ] = secret
+
+        self.rewrite_spec(update)
+        shown = self.invoke('--render', 'comments').stdout
+        self.assertNotIn(secret, shown)
+        self.assertIn('SHELL: Xonsh diagnostic syntax', shown)
+        self.assertIn(
+            '<redacted; see configured environment>', shown,
+        )
+        self.assertFalse(self.check_count.exists())
+
+    def test_render_parses_in_xonsh_without_execution(self):
+        '''
+        POSIX quoting is not a reliable Xonsh argument contract.
+        Use a spec path containing quotes, substitutions, controls
+        and shell separators, then compile the entire generated
+        block with Xonsh startup disabled. Compilation must accept
+        the argument literals and comments without executing any
+        invocation; unchanged index and sentinel assertions guard
+        against accidentally evaluating the rendered block.
+
+        '''
+        xonsh = shutil.which('xonsh')
+        if xonsh is None:
+            self.skipTest('xonsh is required for parser validation')
+        renamed = self.runtime / 'quote\'"$();\nplan.json'
+        self.spec_path.rename(renamed)
+        self.spec_path = renamed
+        rendered = self.invoke('--render', 'xonsh').stdout
+        index = self.root / '.git' / 'index'
+        before = index.read_bytes()
+        result = subprocess.run(
+            [
+                xonsh,
+                '--no-rc',
+                '-c',
+                '__xonsh__.execer.compile('
+                '__import__("sys").stdin.read(), '
+                'mode="exec", glbs={})',
+            ],
+            input=rendered,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(index.read_bytes(), before)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+
+    def test_bound_invocations_preserve_runtime_argv(self):
+        '''
+        Repeated absolute argv made pasted plans unreadable, while
+        interpolated shell text could expand hostile paths or reuse
+        ambient variables. Render with hostile interpreter, script
+        and spec paths, substituting only a harmless JSON argv stub
+        for the executor. Run the entire block twice with conflicting
+        Python and environment variables. Exact captured argv proves
+        assignments override ambient values and preserve each token
+        across all flags; the stub also proves bindings are not
+        exported and unrelated Python state survives the paste.
+
+        '''
+        xonsh = shutil.which('xonsh')
+        if xonsh is None:
+            self.skipTest('xonsh is required for live validation')
+        hostile = ' space\'";$(touch forged)\n\t\\'
+        executable = self.runtime / ('python' + hostile)
+        executable.symlink_to(sys.executable)
+        script = self.runtime / ('capture' + hostile + '.py')
+        script.write_text(
+            'import json, os, sys\n'
+            'print(json.dumps([sys.argv, '
+            'os.environ.get("PLAN_SCRIPT")]))\n'
+        )
+        renamed = self.runtime / ('spec' + hostile + '.json')
+        self.spec_path.rename(renamed)
+        self.spec_path = renamed
+        args = PLAN_EXEC.parse_args([
+            '--spec', str(renamed), '--sha256', self.spec_digest,
+            '--render', 'xonsh',
+        ])
+        output = io.StringIO()
+        with (
+            patch.object(PLAN_EXEC, '__file__', str(script)),
+            patch.object(sys, 'executable', str(executable)),
+            contextlib.redirect_stdout(output),
+        ):
+            PLAN_EXEC.render(json.loads(renamed.read_text()), args)
+        block = output.getvalue()
+        self.assertEqual(block.count(' = '), 5)
+        self.assertNotIn('COMMIT_MSG', block)
+        self.assertFalse(block.rstrip().endswith('\\'))
+        basename = PLAN_EXEC.visible_text(script.name)
+        self.assertIn(f'# >> {basename} --preflight\n', block)
+        environment = os.environ.copy()
+        names = ('PYVM', 'PLAN_SCRIPT', 'PLAN_SPEC', 'PLAN_SHA256')
+        environment.update(dict.fromkeys(names, 'ambient'))
+        setup = '\n'.join(f'{name} = "wrong"' for name in names)
+        result = self.run_process([
+            xonsh, '--no-rc', '-c',
+            setup + '\nunrelated = "retained"\n' + block + block
+            + 'assert unrelated == "retained"\n',
+        ], env=environment)
+        self.assertNotIn('DeprecationWarning', result.stderr)
+        expected = [
+            [[str(script), '--spec', str(renamed), '--sha256',
+              self.spec_digest, *mode], 'ambient']
+            for mode in (
+                ['--preflight'], ['--show'],
+                ['--execute', '1'], ['--execute', '2'],
+            )
+        ]
+        captured = [
+            json.loads(line) for line in result.stdout.splitlines()
+        ]
+        self.assertEqual(captured, expected * 2)
+        self.assertFalse((self.root / 'forged').exists())
+        self.assertFalse(self.check_count.exists())
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_xonsh_block_stops_after_failed_preflight(self):
+        '''
+        Default Xonsh subprocess failures did not stop the generated
+        block. A missing later patch could fail preflight yet allow
+        the first boundary to stage, run checks and commit. Render a
+        valid two-boundary fixture, remove its second patch, then
+        execute the block with error raising initially disabled.
+        The preflight error and absent execute trace prove fail-stop
+        behavior; unchanged index bytes, HEAD and sentinels prove no
+        boundary operations ran. All execution stays in the fixture.
+
+        '''
+        xonsh = shutil.which('xonsh')
+        if xonsh is None:
+            self.skipTest('xonsh is required for live validation')
+        self.invoke('--preflight')
+        rendered = self.invoke('--render', 'xonsh').stdout
+        self.patches[1].unlink()
+        index = self.root / '.git' / 'index'
+        before = index.read_bytes()
+        head = self.git('rev-parse', 'HEAD').stdout
+        environment = os.environ.copy()
+        environment['GIT_EDITOR'] = str(self.editor_script)
+        block = '$XONSH_SUBPROC_CMD_RAISE_ERROR = False\n' + rendered
+        result = subprocess.run(
+            [xonsh, '--no-rc', '-c', block],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('DeprecationWarning', result.stderr)
+        self.assertIn('commit-plan:', result.stderr)
+        self.assertIn('boundary patch is missing', result.stderr)
+        self.assertNotIn('[boundary 1]', result.stdout)
+        self.assertEqual(index.read_bytes(), before)
+        self.assertEqual(self.git('rev-parse', 'HEAD').stdout, head)
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+        self.assertFalse(self.editor_sentinel.exists())
+
+    def test_bash_bindings_capture_exact_argv(self):
+        '''
+        Xonsh bindings and injections cannot run in Bash. Render the
+        complete Bash block with hostile paths and a harmless JSON
+        capture stub instead of the executor. Syntax-check and run
+        that block with conflicting ambient bindings; exact captured
+        argv proves quotes, controls and substitutions stay literal
+        for preflight, Bash show and every boundary. No real plan
+        execution occurs, and fixture HEAD and check sentinels stay
+        unchanged. CLI rendering must also remain read-only.
+
+        '''
+        rendered = self.invoke('--render', 'bash').stdout
+        self.assertIn('SHELL: Bash diagnostic syntax', rendered)
+        self.assertNotIn('@(', rendered)
+        self.assertIn('# >> plan-exec.py --preflight', rendered)
+        self.assertIn('--show --show-shell bash', rendered)
+        shown = self.invoke('--show', '--show-shell', 'bash').stdout
+        self.assertIn('SHELL: Bash diagnostic syntax', shown)
+        self.assertNotIn('@(', shown)
+        operations = shown.removeprefix(
+            self.invoke('--overview').stdout + '\n',
+        )
+        self.assertTrue(all(
+            not line or line.startswith('#')
+            for line in operations.splitlines()
+        ))
+        hostile = ' space\'";$(touch forged)`false`\n\t\\'
+        executable = self.runtime / ('python' + hostile)
+        executable.symlink_to(sys.executable)
+        script = self.runtime / ('capture' + hostile + '.py')
+        script.write_text(
+            'import json, sys\n'
+            'print(json.dumps(sys.argv))\n'
+        )
+        renamed = self.runtime / ('spec' + hostile + '.json')
+        self.spec_path.rename(renamed)
+        args = PLAN_EXEC.parse_args([
+            '--spec', str(renamed), '--sha256', self.spec_digest,
+            '--render', 'bash',
+        ])
+        spec = json.loads(renamed.read_text())
+        directory = self.runtime / ('cwd' + hostile)
+        directory.mkdir()
+        spec['repo_root'] = str(directory)
+        output = io.StringIO()
+        with (
+            patch.object(PLAN_EXEC, '__file__', str(script)),
+            patch.object(sys, 'executable', str(executable)),
+            contextlib.redirect_stdout(output),
+        ):
+            PLAN_EXEC.render(spec, args)
+        block = output.getvalue()
+        path = self.runtime / 'preview.sh'
+        path.write_text(block)
+        self.run_process([
+            'bash', '--noprofile', '--norc', '-n', str(path),
+        ])
+        environment = os.environ.copy()
+        names = ('PYVM', 'PLAN_SCRIPT', 'PLAN_SPEC', 'PLAN_SHA256')
+        environment.update(dict.fromkeys(names, 'ambient'))
+        result = self.run_process([
+            'bash', '--noprofile', '--norc', str(path),
+        ], env=environment)
+        expected = [
+            [str(script), '--spec', str(renamed), '--sha256',
+             self.spec_digest, *mode]
+            for mode in (
+                ['--preflight'], ['--show', '--show-shell', 'bash'],
+                ['--execute', '1'], ['--execute', '2'],
+            )
+        ]
+        captured = [
+            json.loads(line) for line in result.stdout.splitlines()
+        ]
+        self.assertEqual(captured, expected)
+        self.assertFalse((directory / 'forged').exists())
+        self.assertFalse(self.check_count.exists())
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_bash_diagnostic_argv_is_lossless(self):
+        '''
+        Xonsh diagnostic injections are invalid Bash, while naive
+        wrapping splits long arguments or expands shell syntax.
+        Render a harmless JSON argv capture through a long executable
+        path, strip only comment prefixes, and evaluate with Bash.
+        Exact equality at three widths proves empty args, quotes,
+        controls, Unicode and indivisible long tokens survive without
+        expansion. Check the symbolic patch redirect stays native.
+
+        '''
+        executable = self.runtime / ('python-' + 'long-' * 30)
+        executable.symlink_to(sys.executable)
+        hostile = (
+            'local x = "quotes\\and\\slashes"; '
+            "return {'$(touch forged)', '$HOME', `false`}; "
+        ) * 15
+        arguments = [
+            '', "'\"", hostile, '\n\r\t\x1b\\',
+            '\u2603\U0001f642\u2028', '$(touch forged)',
+            ''.join(chr(code) for code in range(1, 32)),
+            '\x7f\x85\xa0',
+        ]
+        argv = [
+            str(executable), '-c',
+            'import json, sys; print(json.dumps(sys.argv[1:]))',
+            *arguments,
+        ]
+        for width in (40, 69, 100):
+            with self.subTest(width=width):
+                preview = PLAN_EXEC.comment_command(
+                    'RUN', argv, width, shell='bash',
+                )
+                comments = ['# ' + item for item in preview]
+                self.assertTrue(all(
+                    item.startswith('#   ') for item in comments[1:]
+                ))
+                self.assertIn(
+                    PLAN_EXEC.bash_token(hostile),
+                    '\n'.join(comments),
+                )
+                command = '\n'.join(
+                    item[2:] for item in comments[1:]
+                )
+                result = self.run_process([
+                    'bash', '--noprofile', '--norc', '-c', command,
+                ])
+                self.assertEqual(
+                    json.loads(result.stdout), arguments,
+                )
+        preview = PLAN_EXEC.comment_command(
+            'PATCH', ['git', *PLAN_EXEC.patch_operation()], 69,
+            ' < AUTHENTICATED_PATCH', shell='bash',
         )
         self.assertIn(
-            'env: PLAN_TEST_ENV '
-            '(authenticated values hidden)',
-            shown,
+            ' < AUTHENTICATED_PATCH',
+            '\n'.join(preview).replace(' \\\n  ', ' '),
         )
-        self.assertNotIn('"project_checks"', shown)
+        self.assertFalse((self.root / 'forged').exists())
+        self.assertFalse(self.check_count.exists())
+
+    def test_bash_script_stops_after_failed_preflight(self):
+        '''
+        Without native fail-stop setup, a failed Bash preflight could
+        continue into staging and commits. Render the full fixture
+        script, remove its second patch and run with errexit disabled
+        initially. The missing-patch error, unchanged index and HEAD,
+        and absent boundary/editor/check traces prove the script
+        stops before its first execute call. All mutations are local
+        to the disposable fixture, never the real pinned package.
+
+        '''
+        rendered = self.invoke('--render', 'bash').stdout
+        self.patches[1].unlink()
+        index = self.root / '.git' / 'index'
+        before = index.read_bytes()
+        head = self.git('rev-parse', 'HEAD').stdout
+        path = self.runtime / 'preview.sh'
+        path.write_text('set +e\n' + rendered)
+        result = self.run_process([
+            'bash', '--noprofile', '--norc', str(path),
+        ], check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('boundary patch is missing', result.stderr)
+        self.assertNotIn('[boundary 1]', result.stdout)
+        self.assertEqual(index.read_bytes(), before)
+        self.assertEqual(self.git('rev-parse', 'HEAD').stdout, head)
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+
+    def test_render_rejects_shell_and_mode_conflicts(self):
+        '''
+        A renderer must not silently substitute Xonsh syntax for
+        an unsupported shell or combine preview with execution.
+        Exercise parser rejection for both cases and prove neither
+        reaches staging, checks or an editor-backed commit.
+
+        '''
+        for mode in (
+            ('--render', 'powershell'),
+            ('--render', 'xonsh', '--execute', '1'),
+            ('--render', 'comments', '--execute', '1'),
+            ('--render', 'bash', '--execute', '1'),
+            ('--render', 'comments', '--show-shell', 'bash'),
+        ):
+            result = self.invoke(*mode, check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, '')
+        self.assertEqual(self.commit_count(), 1)
+        self.assertFalse(self.check_count.exists())
+        self.assertFalse(self.editor_count.exists())
+
+    def test_retained_prior_pass_and_pending_checks(self):
+        '''
+        Passed checks used to disappear from the plan. Retain one
+        evidenced check beside its pending twin and execute boundary
+        one. Both argv descriptions and prior provenance must appear;
+        only the pending twin may run, with the original isolation
+        assertions still enforced by the fixture check script.
+
+        '''
+        def update(spec):
+            boundary = spec['boundaries'][0]
+            check = boundary['project_checks'][0]
+            reused = dict(check, prior_pass={
+                'tree': boundary['tree'],
+                'source': 'fixture exact-tree verification log',
+                'outcome': 'fixture assertions passed',
+                'exit': 0,
+            })
+            boundary['project_checks'].insert(0, reused)
+
+        self.rewrite_spec(update)
+        for mode in (('--show',), ('--render', 'xonsh')):
+            shown = self.invoke(*mode).stdout
+            self.assertIn(
+                '|_SKIP-PROBE=> prior PASS\n#   probe-1', shown,
+            )
+            self.assertIn('# |_SKIP-CHECK=> prior PASS ', shown)
+            self.assertIn('--- micro-ci ---', shown)
+            self.assertIn('|_CHECK>', shown)
+            self.assertIn('prior PASS exit=0', shown)
+            self.assertIn('fixture assertions passed', shown)
+            self.assertNotIn(
+                'fixture exact-tree verification log', shown,
+            )
+        result = self.invoke('--execute', '1')
+        self.assertIn(
+            '[micro CI 1/2] SKIP prior PASS', result.stdout,
+        )
+        self.assertIn('[project check 2/2] PASS', result.stdout)
+        self.assertEqual(self.line_count(self.check_count), 1)
+
+    def test_all_reused_checks_need_no_tools_or_isolation(self):
+        '''
+        Evidence must bypass tool lookup as well as execution. Give
+        every check nonexistent absolute probe/check executables and
+        valid prior success. Preflight and execution must succeed
+        without a clone, probe or check, and a completed rerun must
+        preserve the existing boundary-level no-op contract.
+
+        '''
+        def update(spec):
+            for boundary in spec['boundaries']:
+                check = boundary['project_checks'][0]
+                check['argv'] = ['/missing/reused-check']
+                check['resolution_argv'] = ['/missing/reused-probe']
+                check['prior_pass'] = {
+                    'tree': boundary['tree'],
+                    'source': 'fixture historical tools log',
+                    'outcome': 'passed before tools were removed',
+                    'exit': 0,
+                }
+
+        self.rewrite_spec(update)
+        self.invoke('--preflight')
+        shown = self.invoke('--render', 'xonsh').stdout
+        self.assertNotIn('Check cwd: temporary', shown)
+        result = self.invoke('--execute', '1')
+        self.assertIn('SKIP prior PASS', result.stdout)
+        self.assertNotIn('[isolate]', result.stdout)
+        self.assertNotIn(' resolve]', result.stdout)
+        self.assertFalse(self.check_count.exists())
+        result = self.invoke('--execute', '1')
+        self.assertIn('SKIP already complete', result.stdout)
+        self.assertNotIn('prior PASS', result.stdout)
+
+    def test_malformed_prior_pass_fails_closed(self):
+        '''
+        Claimed reuse must not be dropped by command normalization
+        or accepted for another tree. Exercise missing fields, wrong
+        types, nonzero status and mismatched trees through
+        authenticated specs. Every mode must refuse before staging
+        or running tools.
+
+        '''
+        valid = {
+            'tree': self.tree_one,
+            'source': 'fixture log',
+            'outcome': 'passed',
+            'exit': 0,
+        }
+        for evidence in (
+            None, {}, dict(valid, exit=1), dict(valid, exit=False),
+            dict(valid, source=''), dict(valid, outcome=3),
+            dict(valid, tree=self.tree_two), dict(valid, extra=True),
+        ):
+            with self.subTest(evidence=evidence):
+                def update(spec):
+                    boundary = spec['boundaries'][0]
+                    check = boundary['project_checks'][0]
+                    check['prior_pass'] = evidence
+
+                self.rewrite_spec(update)
+                for mode in (
+                    ('--preflight',), ('--show',),
+                    ('--render', 'xonsh'), ('--execute', '1'),
+                ):
+                    result = self.invoke(*mode, check=False)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn('prior_pass', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertFalse(self.check_count.exists())
+
+    def test_comment_check_argv_is_lossless_xonsh(self):
+        '''
+        POSIX display quoting loses raw controls and does not match
+        Xonsh subprocess parsing. Add quotes, expansion syntax and
+        controls to a check argv; extract its show comment and
+        ask no-rc Xonsh to print that argv as JSON. Exact equality
+        proves copying the diagnostic tokens preserves each byte
+        without running the check or implying isolated reproduction.
+
+        '''
+        xonsh = shutil.which('xonsh')
+        if xonsh is None:
+            self.skipTest('xonsh is required for token validation')
+        arguments = ['quote\'"', '$HOME; $(false)', 'a\nb\t\\']
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [
+                sys.executable, '-c',
+                'import json, sys; print(json.dumps(sys.argv[1:]))',
+                *arguments,
+            ]
+
+        self.rewrite_spec(update)
+        shown = self.invoke('--show').stdout
+        lines = shown.splitlines()
+        start = lines.index('# |_CHECK>') + 1
+        command_lines = []
+        for preview in lines[start:]:
+            command_lines.append(preview[4:])
+            if not preview.endswith('\\'):
+                break
+        line = '\n'.join(command_lines)
+        result = self.run_process([xonsh, '--no-rc', '-c', line])
+        self.assertEqual(json.loads(result.stdout), arguments)
+        self.assertIn('current checkout', shown)
+        self.assertIn('symbolic runtime paths', shown)
+        self.assertFalse(self.check_count.exists())
+
+    def test_wrapped_hostile_argv_evaluates_losslessly(self):
+        '''
+        Long Lua-like strings and executable paths overflowed comment
+        previews. Naive text wrapping can split escapes, expand shell
+        substitutions or change argv boundaries. Render a harmless
+        JSON argv capture through a long executable symlink, then
+        evaluate its uncommented diagnostic in no-rc Xonsh. Equality
+        covers empty strings, quotes, Unicode, controls and injection
+        syntax at multiple widths; no preview check is executed.
+
+        '''
+        xonsh = shutil.which('xonsh')
+        if xonsh is None:
+            self.skipTest('xonsh is required for argv validation')
+        executable = self.runtime / ('python-' + 'long-' * 30)
+        executable.symlink_to(sys.executable)
+        hostile = (
+            'local x = "quotes\\and\\slashes"; '
+            "return {'$(touch forged)', '$HOME', `false`}; "
+        ) * 15
+        arguments = [
+            '', "'\"", hostile, '\n\r\t\x1b\\',
+            '\u2603\U0001f642\u2028', '$(touch forged)',
+        ]
+        argv = [
+            str(executable), '-c',
+            'import json, sys; print(json.dumps(sys.argv[1:]))',
+            *arguments,
+        ]
+        for width in (40, 69, 100):
+            with self.subTest(width=width):
+                preview = PLAN_EXEC.comment_command(
+                    'RUN', argv, width,
+                )
+                comments = ['# ' + item for item in preview]
+                self.assertEqual(comments[0], '# |_RUN>')
+                self.assertTrue(all(
+                    len(item) <= width for item in comments
+                ))
+                command = '\n'.join(
+                    item[4:] for item in comments[1:]
+                )
+                result = self.run_process([
+                    xonsh, '--no-rc', '-c', command,
+                ])
+                self.assertEqual(
+                    json.loads(result.stdout), arguments,
+                )
+        self.assertFalse((self.root / 'forged').exists())
+        self.assertFalse(self.check_count.exists())
+        self.assertEqual(
+            PLAN_EXEC.comment_command('RUN', ['git', 'status'], 69),
+            ['|_RUN> git status'],
+        )
+
+    def test_comment_width_validation(self):
+        '''
+        Too-small widths cannot fit an escaped character injection
+        with its comment prefix. Reject invalid widths at the CLI,
+        and accept the minimum and default without executing checks.
+        Compare explicit/default output to pin the 69-column default.
+
+        '''
+        for value in ('39', '0', '-1', 'nan'):
+            result = self.invoke(
+                '--render', 'comments', '--comment-width', value,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('--comment-width', result.stderr)
+        default = self.invoke('--render', 'comments').stdout
+        explicit = self.invoke(
+            '--render', 'comments', '--comment-width', '69',
+        ).stdout
+        self.assertEqual(default, explicit)
+        self.invoke('--render', 'comments', '--comment-width', '40')
+        self.assertFalse(self.check_count.exists())
+
+    def test_probe_catalog_preserves_environment_and_execution(self):
+        '''
+        Repeated probe text obscured checks, but deduplicating
+        runtime calls would skip per-check source validation. Build
+        two pairs
+        with identical argv and different secret overlay values, and
+        retain prior PASS for one check. The display must assign two
+        catalog identities without leaking values. Executing this
+        fixture must still resolve each of the three pending checks
+        and skip the retained probe. The second boundary has no CI.
+
+        '''
+        def update(spec):
+            boundary = spec['boundaries'][0]
+            original = boundary['project_checks'][0]
+            checks = []
+            for value in ('secret-one', 'secret-two'):
+                for _ in range(2):
+                    checks.append(dict(original, env={
+                        **original['env'], 'PROBE_FLAVOR': value,
+                    }))
+            checks[0]['prior_pass'] = {
+                'tree': boundary['tree'], 'exit': 0,
+                'source': 'fixture verification', 'outcome': 'PASS',
+            }
+            boundary['project_checks'] = checks
+            spec['boundaries'][1]['project_checks'] = []
+
+        self.rewrite_spec(update)
+        shown = self.invoke('--render', 'comments').stdout
+        self.assertEqual(shown.count('# |_PROBE-'), 2)
+        self.assertEqual(shown.count('# |_env:'), 4)
+        self.assertEqual(shown.count('|_PROBE> probe-1'), 1)
+        self.assertEqual(shown.count('|_PROBE> probe-2'), 2)
+        self.assertIn('SKIP-PROBE=> prior PASS\n#   probe-1', shown)
+        self.assertNotIn('before this pending check', shown)
+        self.assertNotIn('secret-one', shown)
+        self.assertNotIn('secret-two', shown)
+        result = self.invoke('--execute', '1')
+        self.assertEqual(result.stdout.count(' resolve] PASS'), 3)
+        self.assertEqual(self.line_count(self.check_count), 3)
 
     def test_project_check_failure_reports_command_context(self):
         '''
@@ -498,7 +1602,7 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertNotIn('\n[commit] fake', shown)
         self.assertNotIn('\r', shown)
         self.assertNotIn('\x1b', shown)
-        self.assertIn(r'\x0a[commit] fake\x0d\x1b[2J', shown)
+        self.assertIn(r'\\x0a\[commit\] fake\\x0d\\x1b\[2J', shown)
 
     def test_startup_errors_escape_executable_names(self):
         '''

@@ -1882,15 +1882,15 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'project checks while planning unless the user requests it.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'omit that check rather than running it twice'
+        'Never omit a selected passed check.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'harness-reported command parser metadata'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'undeclared Python names or one-shot `assert` preconditions'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'startup files disabled where supported, parse every fence line'
+        'startup files disabled where supported, compile the complete block'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'executables, but must not stage, run project checks'
+        'run import-resolution probes, project checks, staging, an editor or'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'shared, no-checkout clone in a temporary project'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1920,10 +1920,38 @@ test_commit_plan_contract() {
         'lightweight structural boundary checks and their outcomes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'project checks are recorded as pending unless pre-executed'
+    # Pin layout guidance shipped to consumers, not just the renderer.
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'source-qualified `# >> ai.skillz/skills/commit-plan/scripts/plan-exec.py`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Separate `--- micro-ci ---` from `--- review/commit ---`,'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Put each invocation immediately after its final comment, then exactly'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'preflight, use `#` separator lines, never whitespace-only lines.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'the inline comment `# Stop on failure`.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`$XONSH_SUBPROC_CMD_RAISE_ERROR = True`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'uses the generated Markdown overview followed by the same compact'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'First generate `--overview` with the same `--spec` and `--sha256`.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'never split a Bash string or executable word.'
     local commit_plan_text
     local commit_msg_text
     commit_plan_text="$(<"$ROOT/skills/commit-plan/SKILL.md")"
     commit_msg_text="$(<"$ROOT/skills/commit-msg/SKILL.md")"
+    assert_not_contains "$commit_plan_text" 'cmds-summary'
+    assert_not_contains "$commit_plan_text" '$RAISE_SUBPROC_ERROR'
+    assert_not_contains "$commit_plan_text" 'every command on one physical line'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Bind exactly `PYVM`, `PLAN_SCRIPT`, `PLAN_SPEC`, and `PLAN_SHA256`'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'generated block, not individual physical lines.'
+    assert_not_contains "$commit_plan_text" 'blank physical line before and after'
+    assert_not_contains "$commit_plan_text" 'legacy POSIX-style'
     assert_not_contains "$commit_plan_text" '/git-mgmt'
     assert_not_contains "$commit_plan_text" 'receipt'
     assert_not_contains "$commit_plan_text" 'active-task'
@@ -2030,6 +2058,16 @@ test_commit_plan_contract() {
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
     [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-exec.py" ] \
         || fail 'commit-plan executor asset was not deployed'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        'source-qualified `# >> ai.skillz/skills/commit-plan/scripts/plan-exec.py`'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        '`--comment-width` defaults to 69, with a minimum of 40.'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        'Put each invocation immediately after its final comment, then exactly'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        '`$XONSH_SUBPROC_CMD_RAISE_ERROR = True`'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        'Bind exactly `PYVM`, `PLAN_SCRIPT`, `PLAN_SPEC`, and `PLAN_SHA256`'
     bash "$DEPLOY" command commit-plan "$REPO" \
         --provider opencode >/dev/null
     rm "$REPO/.opencode/skills/commit-msg/SKILL.md"
