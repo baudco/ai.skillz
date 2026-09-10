@@ -736,6 +736,8 @@ def validate_spec(data: Any) -> dict[str, Any]:
     '''
     if not isinstance(data, dict) or data.get('version') != 1:
         raise PlanError('unsupported plan specification version')
+    if type(data.get('strict_branch', True)) is not bool:
+        raise PlanError('strict_branch must be a boolean')
     root = canonical_root(data.get('repo_root'))
     data['repo_root'] = str(root)
     for field in (
@@ -844,12 +846,18 @@ def validate_identity(spec: dict[str, Any]) -> Path:
     if normalize_git_path(root, git_dir) != spec['git_dir']:
         raise PlanError('worktree Git directory changed')
     branch = git(root, 'symbolic-ref', '-q', 'HEAD', check=False)
-    branch_changed = (
-        branch.returncode
-        or branch.stdout.strip() != spec['branch_ref']
-    )
-    if branch_changed:
-        raise PlanError('checked-out branch changed')
+    if branch.returncode:
+        raise PlanError('detached HEAD refused; switch to a branch')
+    if (
+        spec.get('strict_branch', True)
+        and branch.stdout.strip() != spec['branch_ref']
+    ):
+        expected = visible_text(spec['branch_ref'])
+        raise PlanError(
+            f'checked-out branch changed; strict policy requires '
+            f'{expected}. Switch back or generate a fresh plan '
+            f'without --strict; do not edit pinned evidence.'
+        )
     validate_objects(spec, root)
     initial_tree = git(
         root,
@@ -1901,6 +1909,9 @@ def execute(
         return 0
     if ordinal != completed + 1:
         raise PlanError('an earlier boundary is still pending')
+    branch_ref = git(
+        root, 'symbolic-ref', '-q', 'HEAD',
+    ).stdout.strip()
     boundary = spec['boundaries'][ordinal - 1]
     subject = visible_text(boundary['subject'])
     print(
@@ -1991,9 +2002,9 @@ def execute(
                 checkout_state['retain'] = True
                 raise PlanError('branch changed before publication')
             try:
-                with protected_branch(root, spec['branch_ref']):
+                with protected_branch(root, branch_ref):
                     git(
-                        checkout, 'update-ref', spec['branch_ref'],
+                        checkout, 'update-ref', branch_ref,
                         head_after, parent_oid,
                     )
             except PlanError as error:
@@ -2253,7 +2264,14 @@ def overview(spec: dict[str, Any]) -> str:
     Generate shared Markdown context without evaluating spec text.
 
     '''
+    policy = (
+        'Branch policy: strict; require the recorded branch ref.'
+        if spec.get('strict_branch', True) else
+        'Branch policy: flexible; allow a renamed/switched branch '
+        'at the pinned HEAD or an exact completed boundary prefix.'
+    )
     lines = [
+        policy + ' Detached HEAD is refused.',
         'Authenticate artifacts and identity/history/index; '
         'check, review, commit, then verify the tree.',
         'Refuse order/history/index divergence; stop on failures. '
@@ -2418,6 +2436,8 @@ def render(spec: dict[str, Any], args: argparse.Namespace) -> None:
             '"$PLAN_SHA256"' if shell == 'bash'
             else '@(PLAN_SHA256)'
         )
+        if args.strict:
+            invocation += ' --strict'
         lines.extend((
             call,
             f'    --sha256 {checksum} {invocation}',
@@ -2437,6 +2457,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('--spec', required=True, type=Path)
     parser.add_argument('--sha256', required=True)
+    parser.add_argument(
+        '--strict', action='store_true',
+        help='strengthen this invocation to exact branch matching',
+    )
     parser.add_argument('--comment-width', type=int, default=69)
     parser.add_argument(
         '--show-shell', choices=('xonsh', 'bash'), default='xonsh',
@@ -2467,10 +2491,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         git_environment()
         spec = load_spec(args.spec, args.sha256)
+        if args.strict:
+            spec['strict_branch'] = True
         root = validate_identity(spec)
         validate_index_file(root)
         if args.no_pager and args.execute is None:
             raise PlanError('--no-pager requires --execute')
+        if args.overview or args.show or args.render:
+            classify(spec, root)
         if args.preflight:
             preflight(spec, root)
         elif args.overview:

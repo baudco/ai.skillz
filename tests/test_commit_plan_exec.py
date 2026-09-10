@@ -406,6 +406,174 @@ class CommitPlanExecTests(unittest.TestCase):
             later_index,
         )
 
+    def test_flexible_branch_rename_and_resume(self):
+        '''
+        Exact branch matching blocked renames at unchanged HEAD.
+
+        Rename before boundary one, then switch branches at its
+        completed HEAD. Preflight/show and editor-backed execution
+        must succeed; rerunning must not repeat checks or commits.
+        Counts and final tree prove history-based continuation works.
+
+        '''
+        self.rewrite_spec(
+            lambda spec: spec.update(strict_branch=False)
+        )
+        self.git('branch', '-m', 'renamed')
+        self.invoke('--preflight')
+        self.assertIn('Branch policy: flexible',
+                      self.invoke('--show').stdout)
+        self.invoke('--execute', '1')
+        self.git('switch', '-c', 'continued')
+        self.invoke('--preflight')
+        self.invoke('--execute', '1')
+        self.invoke('--execute', '2')
+        self.assertEqual(self.commit_count(), 3)
+        self.assertEqual(self.line_count(self.check_count), 2)
+        self.assertEqual(self.line_count(self.editor_count), 2)
+        self.assertEqual(
+            self.git('rev-parse', 'HEAD^{tree}').stdout.strip(),
+            self.tree_two,
+        )
+
+    def test_strict_and_legacy_branch_refusal(self):
+        '''
+        Flexible defaults must not weaken shipped pins or --strict.
+
+        Switch branches at the same HEAD and test missing, true and
+        false-plus-override policies across every CLI mode. Refusals
+        before index mutation, checks or editor invocation prove the
+        exact branch guard applies even to inspection and rendering.
+
+        '''
+        self.git('switch', '-c', 'other')
+        index = (self.root / '.git/index').read_bytes()
+        for policy in (None, True, False):
+            if policy is not None:
+                self.rewrite_spec(
+                    lambda spec: spec.update(strict_branch=policy)
+                )
+            flags = ['--strict'] if policy is False else []
+            for mode in (
+                ['--preflight'], ['--show'], ['--overview'],
+                ['--render', 'xonsh'], ['--execute', '1'],
+            ):
+                with self.subTest(policy=policy, mode=mode):
+                    result = self.invoke(*mode, *flags, check=False)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn('strict policy', result.stderr)
+                    self.assertIn('fresh plan', result.stderr)
+        self.assertEqual(
+            (self.root / '.git/index').read_bytes(), index,
+        )
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_strict_render_override_and_invalid_policy(self):
+        '''
+        A rendering override could silently lose strictness later.
+
+        Render a flexible spec with --strict for both shells. Check
+        every executable call retains it without rewriting the spec.
+        Malformed boolean substitutes must refuse before execution,
+        not treat false-like values as permission to switch branches.
+
+        '''
+        self.rewrite_spec(
+            lambda spec: spec.update(strict_branch=False)
+        )
+        original = self.spec_path.read_bytes()
+        for shell in ('xonsh', 'bash'):
+            result = self.invoke('--render', shell, '--strict')
+            calls = [line for line in result.stdout.splitlines()
+                     if line.startswith('    --sha256')]
+            self.assertEqual(len(calls), 4)
+            self.assertTrue(
+                all('--strict' in line for line in calls)
+            )
+        self.assertIn('Branch policy: strict',
+                      self.invoke('--show', '--strict').stdout)
+        self.assertEqual(self.spec_path.read_bytes(), original)
+        for invalid in (None, 0, 1, '', 'false', [], {}):
+            self.rewrite_spec(
+                lambda spec: spec.update(strict_branch=invalid)
+            )
+            result = self.invoke('--execute', '1', check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('must be a boolean', result.stderr)
+
+    def test_flexible_identity_and_index_guards(self):
+        '''
+        Flexible branch names must not relax repository/index pins.
+
+        On a same-HEAD new branch, corrupt each repository identity
+        field, then restore it and stage unrelated data.
+        Execution must refuse before patch/check/editor activity;
+        index bytes and counters prove no user state was consumed.
+
+        '''
+        self.rewrite_spec(
+            lambda spec: spec.update(strict_branch=False)
+        )
+        self.git('switch', '-c', 'other')
+        spec = json.loads(self.spec_path.read_text())
+        for field in ('repo_root', 'git_dir', 'git_common_dir'):
+            self.rewrite_spec(lambda data: data.update({
+                field: str(self.root / 'missing'),
+            }))
+            result = self.invoke('--execute', '1', check=False)
+            self.assertEqual(result.returncode, 2)
+            self.rewrite_spec(lambda data: data.update(spec))
+        self.git('add', 'fixturepkg.py')
+        index = (self.root / '.git/index').read_bytes()
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('real index changed', result.stderr)
+        self.assertEqual(
+            (self.root / '.git/index').read_bytes(), index,
+        )
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_flexible_detached_and_divergent_head_refusal(self):
+        '''
+        Flexible policy must not admit detached or unrelated HEADs.
+
+        Detach at the original HEAD, then create a new branch and an
+        unrelated empty commit. Both states must refuse inspection
+        and execution modes; unchanged index bytes and zero counters
+        prove history validation happens before any planned activity.
+
+        '''
+        self.rewrite_spec(
+            lambda spec: spec.update(strict_branch=False)
+        )
+        self.git('switch', '--detach')
+        for detached in (True, False):
+            if not detached:
+                self.git('switch', '-c', 'divergent')
+                self.git(
+                    'commit', '--allow-empty', '-qm', 'Unrelated',
+                )
+            index = (self.root / '.git/index').read_bytes()
+            for mode in (
+                ['--preflight'], ['--show'], ['--overview'],
+                ['--render', 'xonsh'], ['--execute', '1'],
+            ):
+                result = self.invoke(*mode, check=False)
+                self.assertEqual(result.returncode, 2)
+                expected = (
+                    'detached HEAD' if detached else 'diverged'
+                )
+                self.assertIn(expected, result.stderr)
+            self.assertEqual(
+                (self.root / '.git/index').read_bytes(), index,
+            )
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
     def test_show_reuses_compact_comments_without_execution(self):
         '''
         Show retained verbose POSIX prose after generated comments

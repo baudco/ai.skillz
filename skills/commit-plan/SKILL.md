@@ -82,60 +82,119 @@ test changes merely to increase the count.
 Ask one short question only when two materially different valid
 boundaries cannot be resolved from repository evidence.
 
+Default planning permits a human to rename or switch branches in the
+same worktree at the pinned HEAD, or at an exact completed boundary
+prefix when resuming. `/commit-plan --strict` instead requires the
+recorded branch ref: pass `--strict` to `plan-build.py prepare`.
+New specs explicitly persist boolean `strict_branch` (default false).
+Existing v1 specs without this field retain strict branch matching;
+generate a fresh plan to adopt flexible policy, never edit old pinned
+evidence. Executor `--strict` strengthens any invocation and is carried
+into rendered commands; it cannot weaken a persisted strict policy.
+Repository/worktree identity, parent/tree continuity and index checks
+are unchanged. Detached HEAD is refused under both policies.
+Branch flexibility is not execution authorization: planning never
+commits. `--auto` is not supported; autonomous commits remain forbidden.
+
 ## 3. Preserve The Starting Index
 
-Refuse to plan while the index has unmerged entries. Record the initial index
-tree, staged path set, `git ls-files --stage --debug` output and exact digest of
-the worktree-specific Git index. Record when the index file was initially
-absent. The index may be empty; unlike a normal `/commit-msg` invocation, that
-does not block planning when worktree changes exist.
+Use `scripts/plan-build.py` for the mechanical planning path below.
+It imports the adjacent executor rather than duplicating execution.
+The agent still chooses boundaries, resolves the check catalog once,
+reads every prepared diff and writes project-style messages. Do not
+generate run-specific Git/schema assembly helpers for supported cases.
 
-Never rewrite the user's real index while generating a plan. Materialize each
-boundary in a worktree-private temporary index initialized from its evidenced
-parent tree, then apply the exact cached boundary patch there. Run staged diff
-inspection with `GIT_INDEX_FILE` naming that temporary index. Remove temporary
-indexes only after their boundary evidence and message archives are complete,
-and verify the real index digest and stage metadata stayed unchanged.
+Create an input JSON file under the resolved ignored runtime:
 
-Never use `git reset --hard`, `git clean`, automatic stash, checkout-based
-discard, or any command that overwrites worktree content. Preserve unrelated
-staged entries and user changes.
+```json
+{
+  "checks": {
+    "targeted": {
+      "argv": ["python3", "tests/test_example.py"],
+      "env": {},
+      "resolution_argv": ["python3", "-c", "import pathlib; print(pathlib.Path.cwd())"]
+    }
+  },
+  "boundaries": [
+    {"paths": ["src/example.py", "tests/test_example.py"], "checks": ["targeted"]}
+  ]
+}
+```
 
-Generate a deterministic cached patch for every boundary, including whole-file
-boundaries. Do not use an interactive patch console. Store patches and one
-JSON execution specification beneath the ignored `<commit_messages>/`
-runtime directory. Pin the specification and every patch and message by
-SHA-256. Use full canonical object IDs for the repository's object format.
+Only `boundaries` and one non-empty `paths` list or supplied `patch`
+filename per boundary are required. `checks` is an agent-selected
+catalog of existing executor command objects, referenced by ordered
+names per boundary; omitted selections mean no checks. The example
+commands are illustrative, not a repository test recommendation.
+Use the loaded `run-tests` resolution probe for actual Python imports.
+Whole-file paths are literal repository-relative files, including
+deletions, never directories or pathspec expressions. For overlapping
+edits, supply a cached patch relative to that boundary's parent tree;
+the helper does not synthesize partial hunks. An explicit patch is
+frozen at prepare time; later edits to its original source are ignored.
 
-Use the deployed `scripts/plan-exec.py` executor; do not generate a competing
-state machine. The standalone specification records:
+Run two helper calls, with diff analysis between them:
 
-- canonical repository root, common Git directory, worktree Git directory,
-  branch ref, initial parent/tree and initial index tree;
-- consecutive boundaries with their subject, parent/result trees and expected
-  pre-staging index tree;
-- one role-bound patch and archived message with SHA-256 digests;
-- ordered project-check command objects selected through `/run-tests`, each
-  with an argument vector, explicit environment overlay and a source-resolution
-  probe executed under that same environment.
+```xsh
+python3 <source>/skills/commit-plan/scripts/plan-build.py prepare --input <input.json> --output <commit_messages>/<timestamp>_<hash>
+# Read every NNN.diff, NNN.stat and NNN.paths in that package.
+# Write messages.json as an ordered JSON array of complete messages.
+python3 <source>/skills/commit-plan/scripts/plan-build.py finalize --prepared <package>/prepared.json --sha256 <prepare-digest> --messages <messages.json>
+```
 
-The executor owns patch application, structural checks, exact-tree project
-check isolation, staged review, the editor-backed commit command, boundary
-ordering, completion detection and divergence refusal. Generated commands may
-not replace those operations.
+Each call emits phase timings on stderr and a `{path, sha256}` pin
+on stdout. Finalize archives exact message bytes with boundary ordinals,
+privately rematerializes boundaries to check drift, then publishes
+`final/plan.json` and `final/verification.json` after executor preflight.
+It never stages the real index, runs project checks or commits.
+Use its final pin directly for overview/render/preflight below;
+do not reverse-engineer `validate_spec` for the happy path. Maintain
+`commit_latest` separately under the `commit-msg` contract.
 
-Record relative project executables only when they are executable files in the
-boundary tree. Resolve ignored repository-local tools, including virtual
-environment entry points, to absolute paths. For Python projects, include the
-documented import-resolution probe with every distinct interpreter/environment
-and require exactly one reported import path beneath
-`AI_SKILLZ_BOUNDARY_ROOT`.
+Prepare records real index bytes/metadata, creates private indexes,
+verifies staging patch replay, and emits parent-relative evidence.
+Finalize checks HEAD, branch, index and selected whole-file trees for
+drift before publishing. Unrelated staged paths which the first
+transition would remove are refused, not silently unstaged. Resolve
+such boundaries with the human rather than rewriting their index.
+An initially absent index remains absent. Both phases remove private
+indexes and incomplete phase outputs on handled failures. Existing
+packages are never overwritten; use a fresh output directory after
+changing boundaries. Completed artifacts are SHA-256 pinned, not
+filesystem write-protected. Quiet-worktree assumptions still apply:
+fingerprint checks detect drift but do not lock concurrent writers.
 
-Absolute helpers under the live repository are accepted only when ignored
-and absent from the recorded boundary trees. Record tracked executables as
-relative paths so execution resolves their pinned boundary-tree copies.
-The executor revalidates executable locations in the isolated checkout
-before running the probe or project check.
+Every planner Git process, including executor preflight, disables
+hooks and fsmonitor through process-local configuration. Whole-file
+paths with active external clean/process filters are unsupported;
+supply an explicit cached patch instead. Conversion is never silently
+disabled to manufacture different blobs. Selected ancestor symlinks
+and symlinked output directory components are refused. Patch/evidence
+capture preserves bytes, including CRLF and non-UTF8 content; JSON
+snapshots escape undecodable filesystem bytes without data loss.
+Adjacent executor import does not write bytecode into deployed source.
+
+Never rewrite the user's real index, restore stale bytes, use an
+interactive patch console, stash, clean or overwrite worktree content.
+The helper refuses unmerged entries, records staged paths and
+`git ls-files --stage --debug`, and uses full canonical object IDs.
+Empty initial indexes are allowed. Do not repeat its Git operations.
+
+The shared `scripts/plan-exec.py` owns staging, structural checks,
+isolated project checks, staged review, editor-backed commits and
+history classification. Never generate a competing state machine.
+Record relative project executables only when they are executable
+files in the boundary tree. Resolve ignored repository-local tools,
+including virtual environment entry points, to absolute paths.
+For Python projects, include the documented import-resolution probe
+with every distinct interpreter/environment and require exactly one
+reported import path beneath `AI_SKILLZ_BOUNDARY_ROOT`.
+
+Absolute helpers under the live repository are accepted only when
+ignored and absent from the recorded boundary trees. Record tracked
+executables as relative paths so execution resolves their pinned
+boundary-tree copies. The executor revalidates executable locations
+in the isolated checkout before running the probe or project check.
 
 ## 4. Materialize Every Boundary
 
@@ -145,33 +204,20 @@ harness reference as authoritative. Use project or CI documentation only where
 that authority is silent. Do not rediscover, merge or broaden commands per
 boundary.
 
-For each planned commit, in dependency order:
+Prepare compares each temporary index with that boundary's recorded parent tree
+for whitespace checks and evidence. Read every resulting diff before
+finalizing its message with `/commit-msg`'s normal analysis. Never
+compare a later boundary with live `HEAD` or include earlier changes.
+Finalize only after every message is complete; a failed boundary blocks
+the whole plan, never a request to rerun `/commit-msg` after committing.
 
-1. Materialize that commit's exact boundary in its temporary index.
-2. Compare the temporary index with that boundary's recorded parent tree for
-   `git diff --cached --check`, statistics and name/status inspection. Never
-   compare a later boundary with live `HEAD` or include preceding boundaries.
-3. Read that same parent-relative staged diff and apply `/commit-msg`'s normal
-   analysis.
-4. Select required lint and targeted-test commands for that boundary. Assign
-   the broadest repository-documented safe regression sequence, when one
-   exists, once against the final boundary tree. A literal test-root run is
-   allowed only when `/run-tests` classifies it as safe; never synthesize one
-   or include authorization-required coverage implicitly. Do not execute
-   project checks while planning unless the user requests it. Include pending
-   checks in the execution sequence. Always retain selected commands under
-   the user-facing Micro CI heading, including previously passed checks.
-   Without reusable evidence, render RUN and execute as before.
-5. Generate a distinct project-style message from that exact boundary.
-6. Archive it beneath `<commit_messages>/` using the
-   `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
-   timestamp and unchanged HEAD would otherwise produce a duplicate path.
-7. Record the exact staging transition needed after the preceding commit.
-8. Add the boundary and its immutable evidence to the execution specification.
-
-Do not defer message generation or tell the human to rerun `/commit-msg` after
-each commit. If any boundary cannot be safely materialized or verified, stop
-and report the blocker instead of returning a partial plan.
+Select targeted checks per boundary and assign the
+broadest repository-documented safe regression sequence once to the
+final tree. A literal test-root run is allowed only when `/run-tests`
+classifies it as safe; preserve authorization-required exclusions.
+Do not execute project checks while planning unless the user requests it.
+Keep all selected commands under Micro CI, including previous passes.
+Without exact reusable evidence, checks remain pending.
 
 An optional `prior_pass` object inside each `project_checks` command
 records exactly `tree`, `source`, `outcome`, and integer `exit: 0`.
@@ -238,13 +284,13 @@ fence. It owns shared conditions, execution context, symbolic runtime
 path and diagnostic limits, evidence location and numbered subjects
 mapped to `--execute N`. Do not reconstruct these from source or
 duplicate boundary subjects in shell comments. This read-only mode
-authenticates the spec and identity without running probes or checks.
+authenticates the spec, identity and history without probes or checks.
 
 For Xonsh, generate the entire fence body with the deployed executor:
 `python3 <executor> --spec <spec> --sha256 <digest> --render xonsh`.
 Substitute shell-quoted absolute executor/spec paths and the pinned
 digest. Rendering authenticates the specification and validates
-identity, but does not perform preflight or execute any operation.
+identity/history, but does not perform preflight or run operations.
 Transfer stdout verbatim into an `xsh` fence. Do not reconstruct
 per-boundary comments, argv, invocations or spacing in agent prose.
 Bind exactly `PYVM`, `PLAN_SCRIPT`, `PLAN_SPEC`, and `PLAN_SHA256`
