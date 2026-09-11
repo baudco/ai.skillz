@@ -138,3 +138,9 @@ claude_wkts
 /.ai/commit-msg/conf.toml
 /.ai/pr-msg/conf.toml
 # END ai.skillz: workflow-state
+
+# Python package build and local environment artifacts
+*.egg-info/
+/build/
+/dist/
+/.venv/
