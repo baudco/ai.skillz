@@ -42,6 +42,26 @@ generalized for cross-repo deployment.
 | `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
 
+## Shell utilities
+
+`pyskillz` provides fast local session discovery for Codex, OpenCode,
+and Claude Code, with an importable `name2id()` mapping and an
+`ai.dlogs` Xonsh alias. Install in your shell's Python environment:
+
+```xsh
+import sys
+uv pip install --python @(sys.executable) -e /path/to/ai.skillz
+xontrib load pyskillz
+ai.dlogs --harness oc
+ai.dlogs --harness claude
+ai.dlogs --all
+```
+
+The no-install `source /path/to/ai.skillz/aliases.xsh` entrypoint
+also remains available. See [the package guide](docs/pyskillz.md)
+for the Python API, filtering, storage limitations, and the handoff
+for subsequent package work.
+
 ## Deployment
 
 Portable deployment uses a provider-neutral source anchor at
