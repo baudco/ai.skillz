@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyskillz"
+version = "0.1.0"
+description = "Local session discovery for coding harnesses"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+readme = "README.md"
+dependencies = []
+
+[project.scripts]
+"ai.dlogs" = "pyskillz._dlogs:main"
+
+[project.entry-points."xonsh.xontribs"]
+pyskillz = "xontrib.pyskillz"
+
+[tool.setuptools]
+license-files = ["LICENSE", "LICENSING.md"]
+
+[tool.setuptools.packages.find]
+include = ["pyskillz*", "xontrib*"]
+namespaces = true

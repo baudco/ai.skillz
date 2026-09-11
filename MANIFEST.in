@@ -1,0 +1,6 @@
+prune tests
+include tests/test_dlogs.py
+include tests/test_harness_stores.py
+include aliases.xsh
+include docs/pyskillz.md
+include LICENSING.md
