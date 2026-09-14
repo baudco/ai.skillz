@@ -8,6 +8,7 @@ List saved dialogs without starting a harness or model turn.
 '''
 
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 from collections import Counter
@@ -208,8 +209,8 @@ def table(sessions: list[dict], show_cwd: bool = True) -> str:
     Render full IDs and cap displayed names at 36 characters.
 
     '''
-    keys: list[str] = ['name', 'id']
-    header: list[str] = ['NAME', 'DIALOG ID']
+    keys: list[str] = ['name', 'id', 'updated']
+    header: list[str] = ['NAME', 'DIALOG ID', 'UPDATED (UTC)']
     if show_cwd:
         keys.append('cwd')
         header.append('CWD')
@@ -228,6 +229,19 @@ def table(sessions: list[dict], show_cwd: bool = True) -> str:
         if cwd not in worktrees:
             worktrees[cwd] = _worktree_name(cwd)
         display['wkt'] = worktrees[cwd]
+        updated: object = display.get('updated_at')
+        display['updated'] = ''
+        if isinstance(updated, (int, float)):
+            try:
+                display['updated'] = datetime.fromtimestamp(
+                    updated, timezone.utc,
+                ).strftime('%Y-%m-%d %H:%M')
+            except (
+                OverflowError,
+                OSError,
+                ValueError,
+            ):
+                pass
         if cwd == home:
             display['cwd'] = '~'
         elif cwd.startswith(home_prefix):
