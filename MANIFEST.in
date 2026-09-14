@@ -1,6 +1,7 @@
 prune tests
 include tests/test_dlogs.py
 include tests/test_harness_stores.py
+include tests/test_dialog_timestamps.py
 include aliases.xsh
 include docs/pyskillz.md
 include LICENSING.md

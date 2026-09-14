@@ -229,7 +229,10 @@ class DlogsTests(unittest.TestCase):
         lines: list[str] = table(sessions).splitlines()
         self.assertEqual(
             lines[0].split(),
-            ['NAME', 'DIALOG', 'ID', 'CWD', 'WKT', 'HARNESS'],
+            [
+                'NAME', 'DIALOG', 'ID', 'UPDATED', '(UTC)',
+                'CWD', 'WKT', 'HARNESS',
+            ],
         )
         self.assertTrue(lines[1].startswith(name[:35] + '…'))
         self.assertTrue(lines[2].startswith('x' * 36))
