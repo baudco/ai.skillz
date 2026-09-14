@@ -112,7 +112,12 @@ records with `harness`, `id`, `name`, `cwd`, `source`, and `updated_at`
 (Unix seconds). Use these records when a launcher needs to identify
 which harness owns an ID. OpenCode IDs are not UUIDs.
 
-The CLI orders columns as name, dialog ID, cwd, worktree, then harness.
+The CLI orders columns as name, dialog ID, updated time, cwd,
+worktree, then harness. `UPDATED (UTC)` shows the harness metadata
+update time to the minute. Results already sort newest first using
+the full `updated_at` value; displaying it does not change sorting.
+Codex/OpenCode timestamps come from their stores; Claude uses log
+modification time, which is a proxy for activity.
 `WKT` shows the linked worktree directory name identified by Git at
 the recorded cwd, including cwd values below the worktree root.
 Main checkouts and unknown or deleted locations leave it blank.
@@ -161,6 +166,7 @@ Keep real session inventories outside tracked repository files.
 ```xsh
 python3 -B -m unittest discover -s tests -p test_dlogs.py
 python3 -B -m unittest discover -s tests -p test_harness_stores.py
+python3 -B -m unittest discover -s tests -p test_dialog_timestamps.py
 uv build
 ```
 
