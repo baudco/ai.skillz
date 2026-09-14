@@ -110,7 +110,33 @@ because another has the same name. Exact names are retained in
 `list_dialogs(...)`, which accepts the same filters and returns
 records with `harness`, `id`, `name`, `cwd`, `source`, and `updated_at`
 (Unix seconds). Use these records when a launcher needs to identify
-which harness owns an ID. OpenCode IDs are not UUIDs.
+which harness owns an ID. `name2id()` deliberately returns only
+names and IDs; do not parse duplicate-name suffixes for metadata.
+Use `list_dialogs()` when launching the corresponding harness:
+
+```python
+dialogs = list_dialogs(path='~/repos/example')
+for dialog in dialogs:
+    print(dialog['name'], dialog['id'], dialog['harness'])
+```
+
+For an exact ID lookup across directories:
+
+```python
+from pyskillz import get_dialog
+
+dialog = get_dialog(dialog_id)
+# Optional harness filter; aliases work here too:
+dialog = get_dialog(dialog_id, harness='cx')
+```
+
+`get_dialog()` returns the same metadata record or `None` when no
+eligible dialog matches. If several harnesses share the ID, it raises
+`ValueError` and requires a harness filter. It uses the existing
+readers and source/archive filters; it does not return a transcript.
+Store errors propagate rather than masquerading as a missing ID.
+
+OpenCode IDs are not UUIDs.
 
 The CLI orders columns as name, dialog ID, updated time, cwd,
 worktree, then harness. `UPDATED (UTC)` shows the harness metadata
