@@ -19,7 +19,7 @@ from typing import Any, TextIO
 import unittest
 from unittest.mock import patch
 
-from pyskillz import name2id, list_dialogs
+from pyskillz import name2id, list_dialogs, get_dialog
 from pyskillz._dlogs import main
 from pyskillz._stores import claude_sessions, opencode_sessions
 from pyskillz._xontrib import _load_xontrib_, _unload_xontrib_
@@ -329,6 +329,35 @@ class HarnessStoresTests(unittest.TestCase):
             self.assertEqual(
                 name2id(harness='claude'), {'Shared': 'claude-id'},
             )
+
+    def test_get_dialog_by_id_and_ambiguity(self) -> None:
+        '''
+        ID-only consumers need metadata without choosing a cwd.
+
+        Seed both stores and find a dialog saved outside this repo.
+        Check full metadata, alias filtering and missing-ID behavior.
+        Duplicate an ID across harnesses through mocked metadata and
+        require an ambiguity error rather than silently picking one.
+
+        '''
+        self.seed_oc()
+        self.seed_claude()
+        dialog: dict|None = get_dialog('other')
+        self.assertIsNotNone(dialog)
+        self.assertEqual(dialog['harness'], 'opencode')
+        self.assertEqual(dialog['cwd'], str(self.root))
+        self.assertEqual(get_dialog('ses_a', harness='oc')['id'],
+                         'ses_a')
+        self.assertIsNone(get_dialog('missing'))
+        self.assertIsNone(get_dialog('ses_a', harness='cld'))
+        with patch('pyskillz._dlogs.list_dialogs', return_value=[
+            {'harness': 'codex', 'id': 'shared'},
+            {'harness': 'claude', 'id': 'shared'},
+        ]):
+            with self.assertRaisesRegex(ValueError, 'ambiguous'):
+                get_dialog('shared')
+        with self.assertRaisesRegex(ValueError, 'nonempty'):
+            get_dialog('')
 
     def test_mapping_duplicates_and_all_override(self) -> None:
         '''

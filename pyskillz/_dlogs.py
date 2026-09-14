@@ -124,6 +124,49 @@ def list_dialogs(
     )
 
 
+def get_dialog(
+    dialog_id: str,
+    harness: str|None = None,
+) -> dict|None:
+    '''
+    Resolve an opaque dialog ID to its harness metadata record.
+
+    A launcher or workspace module that retained only an ID can call
+    this to recover `harness`, `name`, saved `cwd`, `source` and
+    `updated_at`. Prefer `list_dialogs()` when selecting many dialogs
+    at once; this helper currently enumerates the selected readers
+    via `list_dialogs(path=None, harness=harness)` and then matches
+    the ID.
+
+    `harness=None` searches all supported harnesses across
+    directories; a canonical name or alias narrows that search.
+    Default source and archive exclusions from `list_dialogs()` still
+    apply. This returns metadata only, with no transcript, WKT
+    enrichment or harness launch.
+
+    Return `None` when no eligible record matches. Raise `ValueError`
+    for an empty/non-string ID or cross-harness ambiguity; callers
+    can resolve ambiguity by supplying the harness. Store errors
+    propagate rather than masquerading as a missing dialog.
+
+    '''
+    if (
+        not isinstance(dialog_id, str)
+        or
+        not dialog_id
+    ):
+        raise ValueError('dialog_id must be a nonempty string')
+    row: dict
+    matches: list[dict] = [
+        row for row in list_dialogs(path=None, harness=harness)
+        if row['id'] == dialog_id
+    ]
+    if len(matches) > 1:
+        raise ValueError('Dialog ID is ambiguous; specify harness')
+    return matches[0] if matches else None
+
+
+
 def name2id(
     path: str|Path|None = '.',
     harness: str|list[str]|None = None,
