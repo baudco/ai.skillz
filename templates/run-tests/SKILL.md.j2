@@ -18,6 +18,13 @@ shared execution and safety workflow in the canonical `SKILL.md`.
 
 ## Commands
 
+For each command, document evidenced child executables (argv0 names
+or paths), such as `git` for Python subprocess tests or `cp` and
+`sed` for shell scripts. Commit plans carry these in optional
+`required_executables` lists and check availability under the exact
+command environment overlay. Record known helpers without claiming
+to enumerate every dynamic dependency.
+
 Base test command:
 
 ```text

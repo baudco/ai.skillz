@@ -79,6 +79,8 @@ class PlanBuildTests(unittest.TestCase):
         and patch replay with independent Git tree construction.
         Record subprocesses to prove planning never invokes checks
         or commits, while byte/metadata snapshots prove preservation.
+        A declared Git child must survive catalog normalization and
+        final spec pinning rather than silently losing preflight.
 
         '''
         self.request['boundaries'].append({'paths': ['two']})
@@ -86,6 +88,7 @@ class PlanBuildTests(unittest.TestCase):
             'never-run': {
                 'argv': [sys.executable, '-c', 'raise RuntimeError'],
                 'env': {},
+                'required_executables': ['git'],
                 'resolution_argv': [
                     sys.executable, '-c', 'raise RuntimeError',
                 ],
@@ -111,6 +114,10 @@ class PlanBuildTests(unittest.TestCase):
         )
         BUILD.EXEC.preflight(spec, self.root)
         first, second = spec['boundaries']
+        self.assertEqual(
+            second['project_checks'][0]['required_executables'],
+            ['git'],
+        )
         self.assertEqual(second['parent_tree'], first['tree'])
         self.assertEqual(
             self.git(
