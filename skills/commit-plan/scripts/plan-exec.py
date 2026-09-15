@@ -576,6 +576,16 @@ def command(value: Any, field: str) -> dict[str, Any]:
         required_string(item, f'{field}.resolution_argv[{index}]')
         for index, item in enumerate(resolution_value)
     ]
+    required_value = value.get('required_executables', [])
+    required_field = f'{field}.required_executables'
+    if not isinstance(required_value, list):
+        raise PlanError(f'{required_field} must be a list')
+    required_executables = [
+        required_string(item, f'{required_field}[{index}]')
+        for index, item in enumerate(required_value)
+    ]
+    if len(set(required_executables)) != len(required_executables):
+        raise PlanError(f'{required_field} contains duplicates')
     env_value = value.get('env', {})
     if not isinstance(env_value, dict):
         raise PlanError(f'{field}.env must be an object')
@@ -601,6 +611,7 @@ def command(value: Any, field: str) -> dict[str, Any]:
         'argv': argv,
         'env': environment,
         'resolution_argv': resolution_argv,
+        'required_executables': required_executables,
     }
     if 'prior_pass' in value:
         evidence = value['prior_pass']
@@ -1114,6 +1125,34 @@ def command_executable(
     return found is not None and external_tool_allowed(spec, found)
 
 
+def check_prerequisites(
+    spec: dict[str, Any],
+    description: dict[str, Any],
+    root: Path,
+    boundary: dict[str, Any],
+    index: int,
+) -> None:
+    '''
+    Resolve declared child tools with the command executable rules.
+
+    '''
+    for name in description.get('required_executables', []):
+        candidate = {'argv': [name], 'env': description['env']}
+        try:
+            available = command_executable(
+                candidate, root, boundary['tree'], 'argv', spec,
+            )
+        except OSError:
+            available = False
+        if not available:
+            ordinal = boundary['ordinal']
+            safe_name = visible_text(name)
+            raise PlanError(
+                f'[boundary {ordinal} Micro CI check {index}] '
+                f'required prerequisite unavailable: {safe_name}'
+            )
+
+
 def validate_index_file(
     root: Path,
     environment: dict[str, str] | None = None,
@@ -1531,6 +1570,10 @@ def run_project_checks(
                     raise PlanError(
                         f'required executable unavailable: {name}'
                     )
+            check_prerequisites(
+                spec, dict(description, env=check_env),
+                root, boundary, index,
+            )
             secrets = secret_values(
                 check_env,
             )
@@ -1654,9 +1697,14 @@ def preflight(spec: dict[str, Any], root: Path) -> None:
             boundary['message'],
             'commit message',
         )
-        for description in boundary['project_checks']:
+        for index, description in enumerate(
+            boundary['project_checks'], start=1,
+        ):
             if description.get('prior_pass'):
                 continue
+            check_prerequisites(
+                spec, description, root, boundary, index,
+            )
             for key in ('resolution_argv', 'argv'):
                 if not command_executable(
                     description,

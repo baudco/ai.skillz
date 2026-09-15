@@ -1488,7 +1488,7 @@ class CommitPlanExecTests(unittest.TestCase):
     def test_all_reused_checks_need_no_tools_or_isolation(self):
         '''
         Evidence must bypass tool lookup as well as execution. Give
-        every check nonexistent absolute probe/check executables and
+        every check nonexistent absolute probe/check/child tools and
         valid prior success. Preflight and execution must succeed
         without a clone, probe or check, and a completed rerun must
         preserve the existing boundary-level no-op contract.
@@ -1499,6 +1499,7 @@ class CommitPlanExecTests(unittest.TestCase):
                 check = boundary['project_checks'][0]
                 check['argv'] = ['/missing/reused-check']
                 check['resolution_argv'] = ['/missing/reused-probe']
+                check['required_executables'] = ['/missing/child']
                 check['prior_pass'] = {
                     'tree': boundary['tree'],
                     'source': 'fixture historical tools log',
@@ -1518,6 +1519,146 @@ class CommitPlanExecTests(unittest.TestCase):
         result = self.invoke('--execute', '1')
         self.assertIn('SKIP already complete', result.stdout)
         self.assertNotIn('prior PASS', result.stdout)
+
+    def test_child_git_uses_overlay_before_probe_and_in_clone(self):
+        '''
+        An absolute Python and successful probe formerly masked a
+        PATH without Git, failing every unittest fixture setup.
+        Keep inherited Git available but remove it from the check
+        overlay. Preflight must reject before probe or index writes;
+        isolated execution must independently reject before probing.
+        Restore the evidenced PATH and execute an actual Python Git
+        child in the exact fixture tree to prove the overlay works.
+
+        '''
+        spec = PLAN_EXEC.load_spec(
+            self.spec_path, self.digest(self.spec_path),
+        )
+        boundary = spec['boundaries'][0]
+        check = boundary['project_checks'][0]
+        check['argv'] = [
+            sys.executable, '-c',
+            'import subprocess; '
+            'subprocess.run(["git", "status"], check=True)',
+        ]
+        check['required_executables'] = ['git']
+        check['env']['PATH'] = '/missing/child-tools'
+        before = (self.root / '.git/index').read_bytes()
+        self.assertIsNotNone(shutil.which('git'))
+        expected = 'boundary 1 Micro CI check 1.*prerequisite.*git'
+        with self.assertRaisesRegex(PLAN_EXEC.PlanError, expected):
+            PLAN_EXEC.preflight(spec, self.root)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(
+                PLAN_EXEC.PlanError, expected,
+            ):
+                PLAN_EXEC.run_project_checks(
+                    spec, boundary, self.initial_parent,
+                )
+        self.assertNotIn(' resolve]', output.getvalue())
+        self.assertFalse(self.check_count.exists())
+        self.assertEqual(
+            (self.root / '.git/index').read_bytes(), before,
+        )
+        check['env']['PATH'] = os.environ['PATH']
+        PLAN_EXEC.preflight(spec, self.root)
+        self.assertEqual(PLAN_EXEC.run_project_checks(
+            spec, boundary, self.initial_parent,
+        ), 0)
+
+    def test_child_tool_schema_is_retained_and_fails_closed(self):
+        '''
+        Silently dropping a declared dependency would recreate the
+        missing-child failure after prepare/finalize. Normalize old
+        commands to an empty list, retain valid names, and reject
+        malformed containers, entries and duplicates before lookup.
+        Diagnostics must not echo command or secret field values.
+
+        '''
+        check = {
+            'argv': [sys.executable],
+            'resolution_argv': [sys.executable],
+        }
+        normalized = PLAN_EXEC.command(check, 'check')
+        self.assertEqual(normalized['required_executables'], [])
+        check['required_executables'] = ['git', '/bin/cp']
+        normalized = PLAN_EXEC.command(check, 'check')
+        self.assertEqual(
+            normalized['required_executables'],
+            ['git', '/bin/cp'],
+        )
+        invalid: object
+        for invalid in (None, 'git', {}, [1], [''], ['a\0b'],
+                        ['git', 'git']):
+            with self.subTest(value=invalid):
+                check['required_executables'] = invalid
+                with self.assertRaisesRegex(
+                    PLAN_EXEC.PlanError, 'required_executables',
+                ):
+                    PLAN_EXEC.command(check, 'check')
+
+    def test_child_tool_paths_and_safe_errors(self):
+        '''
+        Live relative tools can disappear from isolated trees while
+        absolute ignored tools remain usable. Exercise the shared
+        resolver via prerequisites with tracked executable and
+        non-executable files, untracked tools and unsafe PATHs.
+        A hostile missing name must produce one escaped diagnostic
+        without disclosing the environment's secret value.
+
+        '''
+        tool = self.root / 'child.sh'
+        tool.write_text('#!/bin/sh\ncp one.txt copied.txt\n')
+        tool.chmod(0o755)
+        tree = self.index_tree('one.txt', 'child.sh')
+        boundary = {'tree': tree, 'ordinal': 1}
+        check = {'env': {}, 'required_executables': ['./child.sh']}
+        spec = PLAN_EXEC.load_spec(
+            self.spec_path, self.digest(self.spec_path),
+        )
+        PLAN_EXEC.check_prerequisites(
+            spec, check, self.root, boundary, 1,
+        )
+        tool.unlink()
+        shell_check = spec['boundaries'][0]['project_checks'][0]
+        shell_check['argv'] = ['./child.sh']
+        shell_check['required_executables'] = ['./child.sh', 'cp']
+        boundary['project_checks'] = [shell_check]
+        self.assertEqual(PLAN_EXEC.run_project_checks(
+            spec, boundary, self.initial_parent,
+        ), 0)
+        check['required_executables'] = [str(self.check_script)]
+        PLAN_EXEC.check_prerequisites(
+            spec, check, self.root, boundary, 1,
+        )
+        tool.write_text('#!/bin/sh\nexit 0\n')
+        tool.chmod(0o755)
+        check['required_executables'] = [str(tool)]
+        with self.assertRaises(PLAN_EXEC.PlanError):
+            PLAN_EXEC.check_prerequisites(
+                spec, check, self.root, boundary, 1,
+            )
+        tool.unlink()
+        name: str
+        for name in ('./base.txt', './untracked', '../child.sh',
+                     '/missing/absolute', 'missing\n\x1b[2J'):
+            check['required_executables'] = [name]
+            check['env'] = {'SECRET': 'sensitive-value'}
+            with self.assertRaises(PLAN_EXEC.PlanError) as caught:
+                PLAN_EXEC.check_prerequisites(
+                    spec, check, self.root, boundary, 1,
+                )
+            message = str(caught.exception)
+            self.assertNotIn('\n', message)
+            self.assertNotIn('\x1b', message)
+            self.assertNotIn('sensitive-value', message)
+        check['required_executables'] = ['git']
+        check['env'] = {'PATH': '.'}
+        with self.assertRaises(PLAN_EXEC.PlanError):
+            PLAN_EXEC.check_prerequisites(
+                spec, check, self.root, boundary, 1,
+            )
 
     def test_malformed_prior_pass_fails_closed(self):
         '''

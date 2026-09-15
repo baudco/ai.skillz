@@ -16,6 +16,19 @@ through the existing skill-directory deployment; no manifest entry or
 provider-specific helper is needed. Keep them adjacent for module
 loading. No project checks run during either planning phase.
 
+Command objects accept optional `required_executables`, a distinct
+list of non-empty argv0 strings (old v1 defaults to `[]`). Declare
+evidenced child tools from the run-tests catalog, such as `git` for
+Python subprocess tests or utilities invoked by shell checks.
+The normalizer retains them through prepare/finalize and spec pins.
+Preflight and the isolated runner resolve them under the check env
+with the main/probe executable rules; preflight invokes no checks.
+Relative tools must be executable boundary-tree files; ignored local
+tools use absolute paths. Prior PASS reuse skips prerequisite lookup
+and binds declarations with the other unchanged command inputs.
+This checks declared availability, not dynamic dependency discovery
+or child environment changes, and never repairs `PATH` automatically.
+
 Optional `finalize --render xonsh|bash` produces the existing native
 overview and command block in the same call, using the final pin and
 validated specification. `--comment-width` defaults to 69 (minimum
