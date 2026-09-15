@@ -16,6 +16,9 @@ argument-hint: "[optional-scope-or-boundary-guidance]"
 
 # Commit Plan
 
+Repository experiment maintainers can use the optional
+[benchmark capture reference](BENCHMARK.md) for fixed instrumentation.
+
 ## Repository configuration and runtime paths
 
 Before accessing project guidance or workflow state, read and apply
