@@ -111,6 +111,7 @@ Create an input JSON file under the resolved ignored runtime:
   "checks": {
     "targeted": {
       "argv": ["python3", "tests/test_example.py"],
+      "required_executables": ["git"],
       "env": {},
       "resolution_argv": ["python3", "-c", "import pathlib; print(pathlib.Path.cwd())"]
     }
@@ -132,6 +133,25 @@ deletions, never directories or pathspec expressions. For overlapping
 edits, supply a cached patch relative to that boundary's parent tree;
 the helper does not synthesize partial hunks. An explicit patch is
 frozen at prepare time; later edits to its original source are ignored.
+
+Each check may declare `required_executables`: a list of distinct,
+non-empty process-safe argv0 strings, defaulting to `[]` for old v1
+specs. Include evidenced child tools from the `/run-tests` catalog:
+for example, `git` for Python tests spawning Git, or `cp` and `sed`
+for a shell script invoking those utilities. The selecting agent
+declares these dependencies; no arbitrary program is parsed to infer
+them. Prepare retains the normalized list in the pinned command.
+
+Preflight resolves declared tools without running probes or checks,
+using the check's exact environment overlay and the same executable
+rules as its main argv and probe. Absolute tools may live outside the
+tree (including ignored environments); relative paths must name
+executable boundary-tree files. Bare names require absolute, non-empty
+`PATH` entries. The isolated runner repeats prerequisite validation
+before each pending probe/check against its boundary repository.
+Fully reused prior PASS checks require no tool lookup. Availability
+does not prove undeclared dependencies or dynamic child environment
+changes. Never rewrite `PATH` automatically to bypass a failure.
 
 Run two helper calls, with diff analysis between them:
 
@@ -247,7 +267,8 @@ records exactly `tree`, `source`, `outcome`, and integer `exit: 0`.
 The tree must equal the boundary tree. The attributable source and
 outcome summary must be non-empty, safe, non-secret strings. Embed
 evidence only after the exact boundary tree, argv, environment overlay
-and resolution probe in that same authenticated command object have
+and resolution probe, including declared prerequisites, in that same
+authenticated command object have
 passed unchanged. Archive raw outputs and provenance in local runtime.
 The specification digest binds that association; it is an attestation,
 not independent verification of external tools or ambient environment.
