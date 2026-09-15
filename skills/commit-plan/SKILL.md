@@ -151,6 +151,29 @@ Use its final pin directly for overview/render/preflight below;
 do not reverse-engineer `validate_spec` for the happy path. Maintain
 `commit_latest` separately under the `commit-msg` contract.
 
+For a one-call final handoff, select the shell using section 6 before
+finalizing and append `--render xonsh` or `--render bash` to finalize.
+Optional `--comment-width N` uses the executor's default 69/minimum 40.
+This mode emits one JSON receipt line, a blank line, then the complete
+native Markdown overview and fenced command block. Parse only the
+first line as JSON; the whole stdout is deliberately not JSON.
+The receipt retains the final spec `path`/`sha256` and adds `handoff`
+with `shell` and `{path, sha256}` pins for `overview` and `commands`.
+These are `final/overview.md` and `final/commands.xsh` or
+`final/commands.bash`. They are published without replacement; any
+render/publication failure removes the incomplete final package.
+The pinned spec is unchanged by rendering, including its branch policy.
+
+Keep stdout in the tool result and transfer the returned overview and
+fence verbatim. Do not add a dependent receipt read or separate
+overview/render calls solely to recover the final pin or handoff.
+The helper reuses its validated spec and existing executor preflight;
+it does not run a second preflight for rendering. Maintain
+`commit_latest` separately as above. Complete the existing no-startup
+compile, preflight and artifact acceptance steps in section 6 using
+the returned pins; this option does not replace those checks.
+Without `--render`, finalize still emits only its original JSON pin.
+
 Prepare records real index bytes/metadata, creates private indexes,
 verifies staging patch replay, and emits parent-relative evidence.
 Finalize checks HEAD, branch, index and selected whole-file trees for
@@ -278,7 +301,8 @@ Those run only during `--execute` in the isolated boundary tree.
 Preflight must not stage, run project checks, invoke an editor or
 commit, access the network or enter normal execution.
 
-First generate `--overview` with the same `--spec` and `--sha256`.
+Use the optional finalize handoff when already returned; otherwise
+first generate `--overview` with the same `--spec` and `--sha256`.
 Transfer its stdout verbatim as normal Markdown before the shell
 fence. It owns shared conditions, execution context, symbolic runtime
 path and diagnostic limits, evidence location and numbered subjects
@@ -286,7 +310,8 @@ mapped to `--execute N`. Do not reconstruct these from source or
 duplicate boundary subjects in shell comments. This read-only mode
 authenticates the spec, identity and history without probes or checks.
 
-For Xonsh, generate the entire fence body with the deployed executor:
+For Xonsh, use the returned handoff or generate the entire fence body
+with the deployed executor:
 `python3 <executor> --spec <spec> --sha256 <digest> --render xonsh`.
 Substitute shell-quoted absolute executor/spec paths and the pinned
 digest. Rendering authenticates the specification and validates
@@ -309,9 +334,10 @@ This setting intentionally remains enabled in the user's shell;
 do not restore it or append a command after the final executor call.
 Comments-only output does not emit this Xonsh-specific setting.
 
-For Bash, use `--render bash` and transfer stdout verbatim into a
-`bash` fence. This shares the same summaries and execution path,
-but uses native quoted bindings, `"$PYVM" "$PLAN_SCRIPT"` calls,
+For Bash, use the returned handoff or `--render bash` and transfer
+stdout verbatim into a `bash` fence. This shares the same summaries
+and execution path, but uses native quoted bindings,
+`"$PYVM" "$PLAN_SCRIPT"` calls,
 and Bash diagnostic argv. Greedily pack complete quoted argv tokens
 to the comment width, breaking only between arguments with a
 backslash. Indivisible tokens may exceed this soft width limit;

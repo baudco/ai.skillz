@@ -15,6 +15,24 @@ executor spec. See the skill's minimal input example. Both assets ship
 through the existing skill-directory deployment; no manifest entry or
 provider-specific helper is needed. Keep them adjacent for module
 loading. No project checks run during either planning phase.
+
+Optional `finalize --render xonsh|bash` produces the existing native
+overview and command block in the same call, using the final pin and
+validated specification. `--comment-width` defaults to 69 (minimum
+40). Default finalize stdout remains the original JSON pin. Opt-in
+stdout starts with one JSON receipt line, then a blank line and the
+complete Markdown overview plus an `xsh` or `bash` fence. Parse only
+the first line as JSON in this mode. Its additional `handoff` object
+contains `shell` and `overview`/`commands` artifact pins (`path` and
+`sha256`), naming `final/overview.md` and `final/commands.xsh` or
+`final/commands.bash`. The spec is never rewritten to add these pins.
+Render failure removes the incomplete final package; existing output
+is never replaced. This reuses canonical executor functions and the
+existing child preflight, with no additional execution pipeline.
+Transfer the returned handoff verbatim without another receipt read
+or overview/render round. Keep compile/preflight acceptance separate
+and maintain latest-message ownership under `commit-msg` as before.
+
 New specs record `strict_branch: false`, allowing human branch renames
 or switches at the pinned HEAD or exact completed boundary prefix in
 the same worktree. `/commit-plan --strict` maps to `prepare --strict`
