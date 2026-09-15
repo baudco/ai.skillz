@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -55,12 +57,13 @@ class PlanBuildTests(unittest.TestCase):
     def prepare(self):
         return BUILD.prepare(self.root, self.request, self.output)
 
-    def finalize(self, receipt, messages=None):
+    def finalize(self, receipt, messages=None, **options):
         return BUILD.finalize(
             self.root,
             self.root / receipt['path'],
             receipt['sha256'],
             messages or ['Change one\n'],
+            **options,
         )
 
     def assert_cleaned(self):
@@ -173,6 +176,289 @@ class PlanBuildTests(unittest.TestCase):
                 )
                 self.assertIs(spec['strict_branch'], strict)
         self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+
+    def test_finalize_handoff_native_cli_parity(self):
+        '''
+        Receipt-only finalize required a dependent render tool round.
+
+        Finalize each frozen fixture first without rendering, then
+        remove only its disposable final output and opt into each
+        native shell under both persisted branch policies. Identical
+        spec bytes/pins prove rendering does not alter frozen inputs.
+        Compare stdout and artifact bytes with standalone overview
+        and render at that same pin, including non-default width.
+        Snapshot equality proves the handoff leaves index/HEAD alone.
+
+        '''
+        messages = self.runtime / 'messages.json'
+        messages.write_text(json.dumps(['Change `one`\n']))
+        initial = BUILD.snapshot(self.root)[0]
+        for strict in (False, True):
+            for shell in ('xonsh', 'bash'):
+                with self.subTest(strict=strict, shell=shell):
+                    self.output = self.runtime / f'{strict}-{shell}'
+                    prepared = BUILD.prepare(
+                        self.root, self.request, self.output,
+                        strict=strict,
+                    )
+                    plain = self.finalize(
+                        prepared, ['Change `one`\n'],
+                    )
+                    spec_path = self.root / plain['path']
+                    frozen = spec_path.read_bytes()
+                    shutil.rmtree(self.output / 'final')
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(SCRIPT),
+                         '--repo', str(self.root), 'finalize',
+                         '--prepared',
+                         str(self.root / prepared['path']),
+                         '--sha256', prepared['sha256'],
+                         '--messages', str(messages),
+                         '--render', shell, '--comment-width', '40'],
+                        check=True, capture_output=True,
+                    )
+                    first, handoff = result.stdout.split(b'\n\n', 1)
+                    receipt = json.loads(first)
+                    self.assertEqual(
+                        {key: receipt[key] for key in plain}, plain,
+                    )
+                    self.assertEqual(spec_path.read_bytes(), frozen)
+                    spec = BUILD.EXEC.load_spec(
+                        spec_path, receipt['sha256'],
+                    )
+                    self.assertIs(spec['strict_branch'], strict)
+                    native = []
+                    for mode in (
+                        ['--overview'],
+                        ['--render', shell, '--comment-width', '40'],
+                    ):
+                        native.append(subprocess.run(
+                            [sys.executable, '-B',
+                             str(BUILD.EXEC.__file__),
+                             '--spec', str(spec_path),
+                             '--sha256', receipt['sha256'], *mode],
+                            check=True, capture_output=True,
+                        ).stdout)
+                    for key, payload in zip(
+                        ('overview', 'commands'), native,
+                        strict=True,
+                    ):
+                        pin = receipt['handoff'][key]
+                        self.assertEqual(
+                            (self.root / pin['path']).read_bytes(),
+                            payload,
+                        )
+                        self.assertEqual(
+                            pin['sha256'],
+                            BUILD.EXEC.digest(payload),
+                        )
+                    fence = b'xsh' if shell == 'xonsh' else b'bash'
+                    self.assertEqual(
+                        handoff,
+                        native[0] + b'\n```' + fence + b'\n'
+                        + native[1] + b'```\n',
+                    )
+                    self.assertEqual(
+                        receipt['handoff']['shell'], shell,
+                    )
+                    with self.assertRaises(FileExistsError):
+                        self.finalize(prepared, render=shell)
+                    self.assertEqual(spec_path.read_bytes(), frozen)
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.assert_cleaned()
+
+    def test_handoff_failure_cleans_unpublished_package(self):
+        '''
+        Optional rendering must not leave a success-looking package.
+
+        Inject partial renderer stdout then an exception, and a
+        separate commands publication error after overview is stored.
+        Neither may leak stdout or retain final artifacts. Prepared
+        evidence stays byte-identical and can finalize successfully
+        after each fault; the real index/HEAD snapshot stays intact.
+
+        '''
+        prepared = self.prepare()
+        prepared_path = self.root / prepared['path']
+        original = prepared_path.read_bytes()
+        initial = BUILD.snapshot(self.root)[0]
+        store = BUILD.store
+
+        def fail_render(*args):
+            '''
+            Simulate failure after the renderer starts writing.
+
+            '''
+            print('partial render')
+            raise ValueError('render failed')
+
+        def fail_store(root, path, payload):
+            '''
+            Fail commands publication after overview was stored.
+
+            '''
+            if path.name == 'commands.xsh':
+                raise OSError('publish failed')
+            return store(root, path, payload)
+
+        for target, name, replacement in (
+            (BUILD.EXEC, 'render', fail_render),
+            (BUILD, 'store', fail_store),
+        ):
+            with self.subTest(failure=name):
+                stream = io.StringIO()
+                with (
+                    patch.object(target, name, replacement),
+                    contextlib.redirect_stdout(stream),
+                    self.assertRaises((ValueError, OSError)),
+                ):
+                    self.finalize(prepared, render='xonsh')
+                self.assertEqual(stream.getvalue(), '')
+                self.assertFalse((self.output / 'final').exists())
+                self.assertEqual(
+                    prepared_path.read_bytes(), original,
+                )
+                self.assertEqual(
+                    BUILD.snapshot(self.root)[0], initial,
+                )
+                self.finalize(prepared, render='xonsh')
+                shutil.rmtree(self.output / 'final')
+        self.assert_cleaned()
+
+    def test_handoff_invalid_options_publish_nothing(self):
+        '''
+        Bad handoff options must fail before final publication.
+
+        Exercise unsupported shells, too-small/noninteger widths and
+        width without render through CLI and callable entry points.
+        Empty stdout and absent final output prove no partial receipt
+        escaped; unchanged snapshots and a later default call prove
+        the same prepared input remains usable by legacy callers.
+
+        '''
+        prepared = self.prepare()
+        initial = BUILD.snapshot(self.root)[0]
+        messages = self.runtime / 'messages.json'
+        messages.write_text(json.dumps(['Change one\n']))
+        for flags in (
+            ['--render', 'fish'],
+            ['--render', 'bash', '--comment-width', '39'],
+            ['--render', 'xonsh', '--comment-width', 'wide'],
+            ['--comment-width', '40'],
+        ):
+            with self.subTest(flags=flags):
+                result = subprocess.run(
+                    [sys.executable, '-B', str(SCRIPT),
+                     '--repo', str(self.root), 'finalize',
+                     '--prepared', str(self.root / prepared['path']),
+                     '--sha256', prepared['sha256'],
+                     '--messages', str(messages), *flags],
+                    capture_output=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b'')
+                self.assertFalse((self.output / 'final').exists())
+        for options in (
+            {'render': 'fish'},
+            {'render': 'bash', 'comment_width': 39},
+            {'render': 'xonsh', 'comment_width': 'wide'},
+            {'comment_width': 40},
+        ):
+            with self.assertRaises(BUILD.EXEC.PlanError):
+                self.finalize(prepared, **options)
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.assertEqual(set(self.finalize(prepared)), {
+            'path', 'sha256',
+        })
+
+    def test_handoff_retains_evidence_and_drift_refusals(self):
+        '''
+        Fused rendering must not bypass finalize authentication.
+
+        Corrupt prepared evidence, a reviewed diff and the staging
+        patch independently, then introduce worktree, index and HEAD
+        drift. Each optional-shell call must refuse and leave no
+        final directory. Compare snapshots after each mutation to
+        prove refusal preserves rather than restores concurrent work.
+
+        '''
+        prepared = self.prepare()
+        for name in ('prepared.json', '001.diff', '001.patch'):
+            artifact = self.output / name
+            original = artifact.read_bytes()
+            artifact.write_bytes(b'corrupted')
+            for shell in ('xonsh', 'bash'):
+                with self.assertRaises(BUILD.EXEC.PlanError):
+                    self.finalize(prepared, render=shell)
+                self.assertFalse((self.output / 'final').exists())
+            artifact.write_bytes(original)
+        (self.root / 'one').write_text('drift\n')
+        with self.assertRaisesRegex(BUILD.EXEC.PlanError, 'drift'):
+            self.finalize(prepared, render='xonsh')
+        (self.root / 'one').write_text('new\n')
+        self.git('add', 'two')
+        initial = BUILD.snapshot(self.root)[0]
+        with self.assertRaisesRegex(BUILD.EXEC.PlanError, 'drift'):
+            self.finalize(prepared, render='bash')
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.output = self.runtime / 'head-drift'
+        # Include staged two in the first transition.
+        self.request = {'boundaries': [{'paths': ['one', 'two']}]}
+        prepared = self.prepare()
+        self.git('commit', '-qm', 'Concurrent fixture commit')
+        initial = BUILD.snapshot(self.root)[0]
+        with self.assertRaisesRegex(BUILD.EXEC.PlanError, 'drift'):
+            self.finalize(prepared, render='xonsh')
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.assertFalse((self.output / 'final').exists())
+        self.assert_cleaned()
+
+    def test_handoff_only_runs_existing_preflight_child(self):
+        '''
+        Render fusion must not start a second execution pipeline.
+
+        Select a check and probe that raise if invoked, then record
+        every subprocess for both shells. The only Python child must
+        be the existing -B preflight with hooks/fsmonitor disabled.
+        Any extra check, probe or editor launch fails the argv guard;
+        snapshot equality covers index and history preservation.
+
+        '''
+        self.request['checks'] = {
+            'pending': {
+                'argv': [sys.executable, '-c', 'raise RuntimeError'],
+                'env': {},
+                'resolution_argv': [
+                    sys.executable, '-c', 'raise RuntimeError',
+                ],
+            },
+        }
+        self.request['boundaries'][0]['checks'] = ['pending']
+        initial = BUILD.snapshot(self.root)[0]
+        for shell in ('xonsh', 'bash'):
+            self.output = self.runtime / shell
+            prepared = self.prepare()
+            with patch(
+                'subprocess.run', wraps=subprocess.run,
+            ) as run:
+                self.finalize(prepared, render=shell)
+            children = []
+            for call in run.call_args_list:
+                argv = call.args[0]
+                if argv[0] == 'git':
+                    self.assertNotIn('commit', argv)
+                    continue
+                children.append(argv)
+                self.assertEqual(argv[:3], [
+                    sys.executable, '-B', str(BUILD.EXEC.__file__),
+                ])
+                self.assertEqual(argv[-1], '--preflight')
+                config = call.kwargs['env']['GIT_CONFIG_PARAMETERS']
+                self.assertIn("'core.hooksPath=/dev/null'", config)
+                self.assertIn("'core.fsmonitor=false'", config)
+            self.assertEqual(len(children), 1)
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.assert_cleaned()
 
     def test_overlapping_supplied_patch(self):
         '''
@@ -395,7 +681,7 @@ class PlanBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(BUILD.EXEC.PlanError, 'filter'):
             self.finalize(receipt)
         attrs.write_text('* !filter\n')
-        self.finalize(receipt)
+        self.finalize(receipt, render='xonsh')
         self.assertFalse((self.root / 'callback-ran').exists())
         self.assertEqual(BUILD.snapshot(self.root)[0], initial)
         self.assert_cleaned()
@@ -492,8 +778,8 @@ class PlanBuildTests(unittest.TestCase):
         Loading the adjacent executor mutated deployed source.
 
         Copy both scripts into a fresh directory with no pycache,
-        invoke the deployed CLI without -B, and compare its complete
-        file inventory. Import bytecode suppression must also restore
+        invoke help and rendered finalize without -B, and compare its
+        complete file inventory. Bytecode suppression must restore
         the caller's flag instead of leaking process-global state.
 
         '''
@@ -506,6 +792,17 @@ class PlanBuildTests(unittest.TestCase):
         environment.pop('PYTHONDONTWRITEBYTECODE', None)
         subprocess.run(
             [sys.executable, str(deployed / SCRIPT.name), '--help'],
+            env=environment, check=True, capture_output=True,
+        )
+        prepared = self.prepare()
+        messages = self.runtime / 'messages.json'
+        messages.write_text(json.dumps(['Change one\n']))
+        subprocess.run(
+            [sys.executable, str(deployed / SCRIPT.name),
+             '--repo', str(self.root), 'finalize',
+             '--prepared', str(self.root / prepared['path']),
+             '--sha256', prepared['sha256'],
+             '--messages', str(messages), '--render', 'xonsh'],
             env=environment, check=True, capture_output=True,
         )
         self.assertEqual(sorted(deployed.rglob('*')), before)

@@ -1940,7 +1940,13 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'uses the generated Markdown overview followed by the same compact'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'First generate `--overview` with the same `--spec` and `--sha256`.'
+        'Use the optional finalize handoff when already returned; otherwise'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'first generate `--overview` with the same `--spec` and `--sha256`.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'first line as JSON; the whole stdout is deliberately not JSON.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'fence verbatim. Do not add a dependent receipt read or separate'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'never split a Bash string or executable word.'
     local commit_plan_text
@@ -1957,7 +1963,9 @@ test_commit_plan_contract() {
     assert_not_contains "$commit_plan_text" 'blank physical line before and after'
     assert_not_contains "$commit_plan_text" 'legacy POSIX-style'
     assert_not_contains "$commit_plan_text" '/git-mgmt'
-    assert_not_contains "$commit_plan_text" 'receipt'
+    # Finalize now has an opt-in receipt plus native handoff contract.
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Without `--render`, finalize still emits only its original JSON pin.'
     assert_not_contains "$commit_plan_text" 'active-task'
     assert_not_contains "$commit_plan_text" 'git-mgmt discovery'
     assert_not_contains "$commit_msg_text" '/git-mgmt'

@@ -7,6 +7,7 @@ Prepare boundary evidence, then finalize an executor package.
 import argparse
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -417,12 +418,25 @@ def prepare(root, request, output, *, strict=False):
         raise
 
 
-def finalize(root, prepared, checksum, messages):
+def finalize(
+    root, prepared, checksum, messages, *,
+    render=None, comment_width=69,
+):
     '''
     Recheck trees and publish messages plus a pinned v1 spec.
 
+    Optional rendering adds artifact pins and handoff_markdown to
+    the returned receipt. The CLI prints that payload after the JSON
+    receipt line rather than escaping native commands inside JSON.
+
     '''
     started = time.perf_counter()
+    if render not in (None, 'xonsh', 'bash'):
+        raise EXEC.PlanError('--render must be xonsh or bash')
+    if type(comment_width) is not int or comment_width < 40:
+        raise EXEC.PlanError('--comment-width must be at least 40')
+    if render is None and comment_width != 69:
+        raise EXEC.PlanError('--comment-width requires --render')
     prepared = EXEC.runtime_file(root, prepared, 'prepared evidence')
     payload = EXEC.read_regular(prepared, 'prepared evidence')
     if EXEC.digest(payload) != checksum:
@@ -488,6 +502,41 @@ def finalize(root, prepared, checksum, messages):
         )
         if preflight.returncode:
             raise EXEC.PlanError('executor preflight failed')
+        if render is not None:
+            # Reuse spec validated above and by child preflight.
+            # Runtime-only metadata belongs to a separate copy;
+            # never mutate spec after publishing its digest.
+            runtime_spec = {
+                **spec,
+                '_runtime_root': authenticated['_runtime_root'],
+            }
+            args = argparse.Namespace(
+                spec=root / receipt['path'],
+                sha256=receipt['sha256'],
+                render=render, comment_width=comment_width,
+                show=False, strict=False,
+            )
+            overview = EXEC.overview(runtime_spec) + '\n'
+            with contextlib.redirect_stdout(io.StringIO()) as stream:
+                EXEC.render(runtime_spec, args)
+            commands = stream.getvalue()
+            extension = 'xsh' if render == 'xonsh' else 'bash'
+            receipt['handoff'] = {
+                'shell': render,
+                'overview': store(
+                    root, output / 'overview.md', overview.encode(),
+                ),
+                'commands': store(
+                    root, output / f'commands.{extension}',
+                    commands.encode(),
+                ),
+            }
+            receipt['handoff_markdown'] = (
+                f'{overview}\n'
+                f'```{extension}\n'
+                f'{commands}'
+                f'```\n'
+            )
         if snapshot(root)[0] != initial:
             raise EXEC.PlanError('real index or HEAD changed')
         store(
@@ -534,6 +583,8 @@ def main():
     second.add_argument('--prepared', type=Path, required=True)
     second.add_argument('--sha256', required=True)
     second.add_argument('--messages', type=Path, required=True)
+    second.add_argument('--render', choices=('xonsh', 'bash'))
+    second.add_argument('--comment-width', type=int, default=69)
     args = parser.parse_args()
     try:
         root = Path(
@@ -552,8 +603,14 @@ def main():
                 args.prepared,
                 args.sha256,
                 read_json(args.messages),
+                render=args.render, comment_width=args.comment_width,
             )
-        print(json.dumps(result))
+        handoff = result.pop('handoff_markdown', None)
+        receipt = json.dumps(result)
+        output = receipt + '\n'
+        if handoff is not None:
+            output += '\n' + handoff
+        print(output, end='')
         return 0
     except (
         EXEC.PlanError,
