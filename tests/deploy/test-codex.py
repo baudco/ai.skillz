@@ -3,7 +3,7 @@
 Exercise Codex discovery without credentials or a model turn.
 
 The old hybrid layout passed filesystem checks but Codex silently
-skipped its symlinked SKILL.md files. Assert that every manifest
+skipped its symlinked SKILL.md files. Check that every manifest
 skill is discoverable, including commit-plan's commit-msg dependency.
 
 '''
@@ -43,7 +43,8 @@ def check_loader(
         messages: Queue[str] = Queue()
 
         def collect() -> None:
-            assert process.stdout is not None
+            if process.stdout is None:
+                raise RuntimeError('app-server stdout unavailable')
             line: str
             for line in process.stdout:
                 messages.put(line)
@@ -52,7 +53,8 @@ def check_loader(
         reader.start()
 
         def send(message: dict[str, Any]) -> None:
-            assert process.stdin is not None
+            if process.stdin is None:
+                raise RuntimeError('app-server stdin is unavailable')
             process.stdin.write(json.dumps(message) + '\n')
             process.stdin.flush()
 
@@ -61,7 +63,8 @@ def check_loader(
             while True:
                 message = json.loads(messages.get(timeout=30))
                 if message.get('id') == request_id:
-                    assert 'error' not in message, message
+                    if 'error' in message:
+                        raise RuntimeError(message)
                     return message['result']
 
         try:
@@ -86,7 +89,8 @@ def check_loader(
                 },
             })
             listing: dict[str, Any] = receive(2)['data'][0]
-            assert not listing['errors'], listing['errors']
+            if listing['errors']:
+                raise RuntimeError(listing['errors'])
             found: set[str] = set()
             skill: dict[str, Any]
             for skill in listing['skills']:
@@ -94,17 +98,23 @@ def check_loader(
                     continue
                 name: str = skill['name']
                 found.add(name)
-                assert skill['enabled'], name
+                if not skill['enabled']:
+                    raise RuntimeError(f'Disabled skill: {name}')
                 canonical: Path = (
                     source / 'skills' / name / 'SKILL.md'
                 )
-                assert Path(skill['path']).resolve() == canonical
-            assert found == expected, (
-                expected - found,
-                found - expected,
-            )
+                if Path(skill['path']).resolve() != canonical:
+                    raise RuntimeError(f'Noncanonical skill: {name}')
+            if found != expected:
+                missing: set[str] = expected - found
+                extra: set[str] = found - expected
+                raise RuntimeError(
+                    f'Skill mismatch: missing={missing}, '
+                    f'extra={extra}'
+                )
+            count: int = len(found)
             print(
-                f'PASS: Codex discovers {len(found)} shared skills'
+                f'PASS: Codex discovers {count} shared skills'
             )
         finally:
             process.terminate()

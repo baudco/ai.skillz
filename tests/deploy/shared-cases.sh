@@ -96,7 +96,7 @@ test_shared_portable_clone() {
 }
 
 test_shared_self_hosting() {
-    local source="$TMP_ROOT/shared-self-host" clone output
+    local source="$TMP_ROOT/shared-self-host" clone output first before_index
     git clone -q "$SOURCE_WORK" "$source"
     git -C "$source" config user.email fixture@example.com
     git -C "$source" config user.name Fixture
@@ -107,6 +107,19 @@ test_shared_self_hosting() {
     assert_eq "$(readlink "$source/.agents/skills/pr-msg")" \
         '../../skills/pr-msg'
     [ ! -e "$source/.ai/ai.skillz" ] || fail 'self-hosting anchor'
+    # Source inference used to turn these tracked relative links into
+    # absolute consumer links and create an anchor back to the source.
+    # Both migration modes must preserve all bytes and the real index;
+    # the clone below verifies the resulting portability contract.
+    first="$(tree_digest "$source")"
+    before_index="$(index_tree "$source")"
+    output="$(bash "$source/scripts/deploy.sh" migrate "$source" --dry-run)"
+    assert_contains "$output" 'preserve source-repository discovery links'
+    assert_eq "$(tree_digest "$source")" "$first"
+    bash "$source/scripts/deploy.sh" migrate "$source" >/dev/null
+    assert_eq "$(tree_digest "$source")" "$first"
+    assert_eq "$(index_tree "$source")" "$before_index"
+    [ ! -L "$source/.ai/ai.skillz" ] || fail 'migration self-anchor'
     git -C "$source" commit --allow-empty -qm 'shared self-host fixture'
     clone="$TMP_ROOT/shared-self-host-clone"
     git clone -q "$source" "$clone"
@@ -114,6 +127,72 @@ test_shared_self_hosting() {
     assert_not_contains "$output" UNHEALTHY
     bash "$clone/scripts/validate-deployment.sh" "$clone" >/dev/null
     pass 'source-repo shared deployment is relative and cloneable'
+}
+
+test_shared_hybrid_alias_assets() {
+    new_repo shared-hybrid-alias
+    local provider asset output first
+    bash "$DEPLOY" pr-msg "$REPO" --harness agents >/dev/null
+    bash "$DEPLOY" pr-msg "$REPO" --harness all >/dev/null
+    output="$(bash "$DEPLOY" status "$REPO" --harness agents)"
+    assert_contains "$output" 'same-source alias in .claude'
+    assert_contains "$output" 'same-source alias in .opencode'
+    # Matching SKILL.md previously hid a divergent declared asset when
+    # only the shared provider was selected. Exercise both directory
+    # assets and both legacy providers, preserving local runtime files.
+    for provider in .claude .opencode; do
+        printf 'keep\n' > "$REPO/$provider/skills/pr-msg/local.txt"
+        for asset in references scripts; do
+            mkdir -p "$REPO/custom-$asset"
+            ln -sfn "$REPO/custom-$asset" \
+                "$REPO/$provider/skills/pr-msg/$asset"
+            first="$(tree_digest "$REPO")"
+            assert_fails bash "$DEPLOY" status "$REPO" --harness agents
+            assert_file_contains "$TMP_ROOT/failure.out" \
+                "divergent $provider definition"
+            assert_eq "$(tree_digest "$REPO")" "$first"
+            ln -sfn "$ROOT/skills/pr-msg/$asset" \
+                "$REPO/$provider/skills/pr-msg/$asset"
+        done
+        assert_file_contains "$REPO/$provider/skills/pr-msg/local.txt" keep
+    done
+    bash "$DEPLOY" status "$REPO" --harness agents >/dev/null
+    pass 'shared aliases compare every declared hybrid asset'
+}
+
+test_shared_parent_validation() {
+    local parent value outside first output
+    # Descendant-only index patterns missed parent symlinks entirely.
+    # Empty external roots keep leaf validation from masking the bug;
+    # replacing the working link proves the index is checked separately.
+    for parent in .agents .agents/skills; do
+        for value in absolute relative; do
+            new_repo "shared-parent-${parent//\//_}-$value"
+            outside="$REPO/external"
+            mkdir -p "$outside" "$(dirname "$REPO/$parent")"
+            if [ "$value" = absolute ]; then
+                ln -s "$outside" "$REPO/$parent"
+            elif [ "$parent" = .agents ]; then
+                ln -s external "$REPO/$parent"
+            else
+                ln -s ../external "$REPO/$parent"
+            fi
+            git -C "$REPO" add "$parent"
+            first="$(tree_digest "$REPO")"
+            assert_fails bash "$DEPLOY" status "$REPO" --harness agents
+            assert_file_contains "$TMP_ROOT/failure.out" 'symlinked parent'
+            assert_fails bash "$ROOT/scripts/validate-deployment.sh" "$REPO"
+            assert_file_contains "$TMP_ROOT/failure.out" \
+                "committed shared parent link: $parent"
+            assert_eq "$(tree_digest "$REPO")" "$first"
+            rm "$REPO/$parent"
+            mkdir "$REPO/$parent"
+            assert_fails bash "$ROOT/scripts/validate-deployment.sh" "$REPO"
+            assert_file_contains "$TMP_ROOT/failure.out" \
+                "committed shared parent link: $parent"
+        done
+    done
+    pass 'shared parent links are rejected in working tree and index'
 }
 
 test_shared_collisions_and_parents() {
@@ -165,6 +244,10 @@ run_shared_cases() {
     test_shared_global_ownership
     test_shared_portable_clone
     test_shared_self_hosting
+    test_shared_hybrid_alias_assets
+    test_shared_parent_validation
     test_shared_collisions_and_parents
     test_shared_migration
+    python3 "$ROOT/tests/deploy/test-codex-regressions.py"
+    pass 'Codex probe rejects invalid responses with and without optimization'
 }

@@ -12,15 +12,19 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method submodule
 
 bash /path/to/ai.skillz/scripts/deploy.sh resolve-conflicts <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 bash /path/to/ai.skillz/scripts/deploy.sh git-mgmt <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 bash /path/to/ai.skillz/scripts/deploy.sh open-wkt <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 ```
 
-The provider destinations are `.claude/skills/open-wkt` and
-`.opencode/skills/open-wkt`. Local mode uses ignored absolute links;
+Shared deployment (`agents` or its `codex` alias) creates a whole
+directory link at `.agents/skills/open-wkt`. Use the same selector
+for its companions. Legacy selectors use `.claude/skills/open-wkt`
+and/or `.opencode/skills/open-wkt`; `all` retains its Claude plus
+OpenCode meaning. `--provider` remains an alias for `--harness`.
+Local mode uses ignored absolute links;
 submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
 Track provider links, `.gitmodules`, and the anchor gitlink only in submodule

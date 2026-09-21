@@ -24,7 +24,7 @@ Usage:
   deploy.sh <skill> --global [--harness claude|agents|codex|all] [--method symlink] [--direct]
   deploy.sh all <repo> [--harness claude|opencode|agents|codex|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
   deploy.sh command <name|all> <repo> [--harness claude|opencode|agents|codex|all] [--method symlink|submodule] [--direct] [--stage]
-  deploy.sh command <name|all> --global [--provider claude|all]
+  deploy.sh command <name|all> --global [--harness claude|all]
   deploy.sh update <repo> [--ref REF] [--stage]
   deploy.sh status <repo> [--harness claude|opencode|agents|codex|all]
   deploy.sh migrate <repo> [--dry-run] [--stage]
@@ -2231,6 +2231,15 @@ status_provider() {
     local root="$target/$PROVIDER_ROOT" kind name shape assets dependency
     local rest path asset required_skill
     local canonical_asset_present
+    if [ "$provider" = agents ]; then
+        for path in "$root" "$root/skills"; do
+            if [ -L "$path" ]; then
+                printf 'Provider agents: symlinked parent %s [UNHEALTHY]\n' "$path"
+                STATUS_UNHEALTHY=1
+                return 0
+            fi
+        done
+    fi
     if [ ! -d "$root" ]; then
         printf 'Provider %s: disabled\n' "$provider"
         return 0
@@ -2541,15 +2550,27 @@ inspect_opencode_config() {
 }
 
 status_shared_aliases() {
-    local target="$1" kind name rest shared legacy root
-    while IFS='|' read -r kind name rest; do
+    local target="$1" kind name shape assets rest shared legacy root asset same
+    local -a alias_assets
+    [ ! -L "$target/.agents" ] && [ ! -L "$target/.agents/skills" ] || return 0
+    while IFS='|' read -r kind name shape assets rest; do
         [ "$kind" = skill ] || continue
-        shared="$target/.agents/skills/$name/SKILL.md"
+        shared="$target/.agents/skills/$name"
         [ -e "$shared" ] || [ -L "$shared" ] || continue
         for root in .claude .opencode; do
-            legacy="$target/$root/skills/$name/SKILL.md"
-            [ -e "$legacy" ] || [ -L "$legacy" ] || continue
-            if same_resolved_path "$shared" "$legacy"; then
+            legacy="$target/$root/skills/$name"
+            [ -e "$legacy/SKILL.md" ] || [ -L "$legacy/SKILL.md" ] || continue
+            same=yes
+            if [ "$shape" = hybrid ]; then
+                IFS=',' read -ra alias_assets <<< "$assets"
+                for asset in "${alias_assets[@]}"; do
+                    same_resolved_path "$shared/$asset" "$legacy/$asset" \
+                        || same=no
+                done
+            else
+                same_resolved_path "$shared" "$legacy" || same=no
+            fi
+            if [ "$same" = yes ]; then
                 printf 'Shared skill %s: same-source alias in %s\n' \
                     "$name" "$root"
             else
@@ -2915,6 +2936,14 @@ cmd_migrate() {
         resolve_existing_path "$planned_source" \
             || die "planned migration source is unavailable: $planned_source"
         planned_source="$RESOLVED_PATH"
+    fi
+    if [ "$planned_source" = "$TARGET" ] && [ "$anchor_action" = local ]; then
+        # Source discovery is already anchored by the checkout itself.
+        # Treating it as a consumer would replace portable tracked links
+        # with absolute ones and create an anchor pointing back at itself.
+        migration_action "preserve source-repository discovery links"
+        migration_action "make no anchor change (source self-hosting)"
+        return 0
     fi
     SOURCE_ROOT="$planned_source"
     MIGRATE_DIRECT=yes

@@ -10,11 +10,15 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # or use the portable method: --method submodule
 
 bash /path/to/ai.skillz/scripts/deploy.sh inter-skill-review <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 ```
 
-The provider destinations are `.claude/skills/inter-skill-review` and
-`.opencode/skills/inter-skill-review`. Local mode uses ignored absolute
+Shared deployment (`agents` or its `codex` alias) creates a whole
+directory link at `.agents/skills/inter-skill-review`. Legacy selectors
+use `.claude/skills/inter-skill-review` and/or
+`.opencode/skills/inter-skill-review`; `all` retains its Claude plus
+OpenCode meaning. `--provider` remains an alias for `--harness`.
+Local mode uses ignored absolute
 links; submodule mode uses trackable relative links through a version-pinned
 `.ai/ai.skillz` anchor.
 

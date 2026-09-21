@@ -10,11 +10,14 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # or: ... init <repo> --method submodule
 
 bash /path/to/ai.skillz/scripts/deploy.sh prompt-io <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 ```
 
-Provider links are created at `.claude/skills/prompt-io` and/or
-`.opencode/skills/prompt-io`. Local mode uses ignored absolute links;
+Shared deployment (`agents` or its `codex` alias) creates a whole
+directory link at `.agents/skills/prompt-io`. Legacy selectors use
+`.claude/skills/prompt-io` and/or `.opencode/skills/prompt-io`;
+`all` retains its Claude plus OpenCode meaning. `--provider` remains
+an alias for `--harness`. Local mode uses ignored absolute links;
 submodule mode uses trackable relative links through `.ai/ai.skillz`. The
 active service writes under
 `ai/prompt-io/claude/`, `ai/prompt-io/opencode/`, or another matching
