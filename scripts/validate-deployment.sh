@@ -160,12 +160,23 @@ if [ "$TARGET" = "$ROOT" ]; then
     done < "$MANIFEST"
 fi
 
+for parent in .agents .agents/skills; do
+    if [ -L "$TARGET/$parent" ]; then
+        printf 'ERROR: symlinked shared discovery parent: %s\n' "$parent" >&2
+        errors=$((errors + 1))
+    fi
+done
+
 index_entries="$(git -C "$TARGET" ls-files -s)"
 while read -r mode blob stage path; do
     [ -n "$path" ] || continue
     if [ "$stage" = 0 ] && [ "$mode" = 120000 ]; then
         case "$path" in
-            .claude/skills/*|.claude/commands/*|.opencode/skills/*|.opencode/commands/*)
+            .agents|.agents/skills)
+                printf 'ERROR: committed shared parent link: %s\n' "$path" >&2
+                errors=$((errors + 1))
+                ;;
+            .agents/skills/*|.claude/skills/*|.claude/commands/*|.opencode/skills/*|.opencode/commands/*)
                 link_value="$(git -C "$TARGET" cat-file blob "$blob")"
                 if [[ "$link_value" = /* ]]; then
                     printf 'ERROR: committed absolute provider link: %s\n' "$path" >&2

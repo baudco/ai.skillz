@@ -447,8 +447,7 @@ Append to the end of INDEX.md:
 
 ```markdown
 > (this index was generated in some part by
-> [`claude-code`][claude-code-gh])
-> [claude-code-gh]: https://github.com/anthropics/claude-code
+> <actual-harness>; model: <known-model>; provider: <known-provider>)
 ```
 
 # Error Handling

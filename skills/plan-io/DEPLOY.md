@@ -10,11 +10,14 @@ bash /path/to/ai.skillz/scripts/deploy.sh init <repo> --method symlink
 # or use a portable, version-pinned anchor: --method submodule
 
 bash /path/to/ai.skillz/scripts/deploy.sh plan-io <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 ```
 
-Provider links are created at `.claude/skills/plan-io` and/or
-`.opencode/skills/plan-io`. Local mode uses ignored absolute links;
+Shared deployment (`agents` or its `codex` alias) creates a whole
+directory link at `.agents/skills/plan-io`. Legacy selectors use
+`.claude/skills/plan-io` and/or `.opencode/skills/plan-io`;
+`all` retains its Claude plus OpenCode meaning. `--provider` remains
+an alias for `--harness`. Local mode uses ignored absolute links;
 submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
 The active provider writes its own plan namespace, such as

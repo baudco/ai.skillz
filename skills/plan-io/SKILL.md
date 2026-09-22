@@ -6,8 +6,7 @@ description: >
   the repo under `plans/<ai-service>/`. Auto-applied
   when entering or exiting plan mode.
 compatibility: >
-  Designed for Claude Code (or similar agentic coding
-  tools with plan-mode capabilities).
+  Works with agentic coding harnesses that write plans.
 metadata:
   author: goodboy
   version: "0.1"
@@ -23,7 +22,7 @@ root, namespaced by AI service:
 
 ```
 plans/
-└── <ai-service>/          # e.g. claude, copilot, cursor
+└── <ai-service>/          # e.g. codex, claude, copilot
     ├── <plan-name>.md
     └── <plan-name>.summary.md
 ```
@@ -41,7 +40,7 @@ When entering plan mode or writing a plan:
    task (e.g. `init-extraction-plan`,
    `add-auth-feature`, `refactor-api-layer`).
 3. The `<ai-service>` is the name of the AI coding
-   tool generating the plan (e.g. `claude`, `copilot`,
+   tool generating the plan (e.g. `codex`, `claude`,
    `cursor`, `windsurf`).
 
 ### On plan completion
@@ -57,7 +56,8 @@ After executing a plan to completion:
    - Bullet list of high-level changes/steps
    - Backtick markup around code references
    - Present tense (no past tense)
-   - Trailing `claude-code` attribution footer
+   - Attribution naming the actual harness; identify the model
+     and provider only when known, without inferring one from another
 3. Include a `## Deferred` section if any planned
    items were not completed.
 4. Include a `## Stats` section with counts
@@ -90,7 +90,6 @@ Refactor authentication into middleware layer
 - 3 commits, 14 files changed
 - All tests passing
 
-(this patch was generated in some part by
-[`claude-code`][claude-code-gh])
-[claude-code-gh]: https://github.com/anthropics/claude-code
+(this summary was generated in some part by <actual-harness>;
+model: <known-model>; provider: <known-provider>)
 ```

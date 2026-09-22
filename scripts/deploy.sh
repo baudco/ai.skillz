@@ -20,19 +20,22 @@ usage() {
     cat <<'EOF'
 Usage:
   deploy.sh init <repo> [--method symlink|submodule] [--url URL] [--ref REF] [--stage]
-  deploy.sh <skill> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
-  deploy.sh <skill> --global [--provider claude|all] [--method symlink] [--direct]
-  deploy.sh all <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
-  deploy.sh command <name|all> <repo> [--provider claude|opencode|all] [--method symlink|submodule] [--direct] [--stage]
-  deploy.sh command <name|all> --global [--provider claude|all]
+  deploy.sh <skill> <repo> [--harness claude|opencode|agents|codex|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
+  deploy.sh <skill> --global [--harness claude|agents|codex|all] [--method symlink] [--direct]
+  deploy.sh all <repo> [--harness claude|opencode|agents|codex|all] [--method symlink|submodule] [--direct] [--stage] [--no-command]
+  deploy.sh command <name|all> <repo> [--harness claude|opencode|agents|codex|all] [--method symlink|submodule] [--direct] [--stage]
+  deploy.sh command <name|all> --global [--harness claude|all]
   deploy.sh update <repo> [--ref REF] [--stage]
-  deploy.sh status <repo> [--provider claude|opencode|all]
+  deploy.sh status <repo> [--harness claude|opencode|agents|codex|all]
   deploy.sh migrate <repo> [--dry-run] [--stage]
   deploy.sh gitignore <repo> [skill]
 
 Defaults:
   Skill and command deployment defaults to provider "claude".
-  Status defaults to provider "all". Init defaults to method "submodule".
+  --provider is a compatibility alias for --harness.
+  agents and codex both select .agents/skills (no command shims).
+  Deployment "all" retains Claude + OpenCode; status "all" also audits agents.
+  Status defaults to "all". Init defaults to method "submodule".
   The default submodule URL is https://github.com/baudco/ai.skillz.git.
 
 Methods:
@@ -43,6 +46,7 @@ Local symlink deployments use ignored absolute provider links. Submodule
 deployments use trackable relative links through the provider-neutral anchor.
 OpenCode skill deployment also installs manifest commands which depend on the
 skill. Use --no-command for an explicit skill-only deployment.
+Shared deployment into this source repository uses relative links to skills/.
 --direct is retained as an explicit local-link compatibility alias.
 Nothing is staged unless --stage is supplied; this script never commits.
 EOF
@@ -61,8 +65,8 @@ validate_name() {
 
 validate_provider() {
     case "$1" in
-        claude|opencode|all) ;;
-        *) die "invalid provider '$1' (expected claude, opencode, or all)" ;;
+        claude|opencode|agents|codex|all) ;;
+        *) die "invalid provider '$1' (expected claude, opencode, agents, codex, or all)" ;;
     esac
 }
 
@@ -241,6 +245,7 @@ set_providers() {
     case "$1" in
         claude) PROVIDERS=(claude) ;;
         opencode) PROVIDERS=(opencode) ;;
+        agents|codex) PROVIDERS=(agents) ;;
         all) PROVIDERS=(claude opencode) ;;
     esac
 }
@@ -249,6 +254,17 @@ provider_root() {
     case "$1" in
         claude) PROVIDER_ROOT=".claude" ;;
         opencode) PROVIDER_ROOT=".opencode" ;;
+        agents|codex) PROVIDER_ROOT=".agents" ;;
+    esac
+}
+
+# Shared discovery links canonical directories, including hybrid skills.
+# Codex skips symlinked SKILL.md files inside real skill directories.
+# Repository-owned hybrid state stays in its existing runtime location.
+skill_discovery_shape() {
+    DISCOVERY_SHAPE="$2"
+    case "$1:$2" in
+        agents:hybrid|codex:hybrid) DISCOVERY_SHAPE=generic ;;
     esac
 }
 
@@ -457,16 +473,18 @@ preflight_provider_base() {
 }
 
 preflight_global_skill_base() {
-    local home="${HOME:-}" path
+    local global_home="${HOME:-}" path
     GLOBAL_SKILLS_PARENT_CANONICAL=no
-    [ -n "$home" ] && [[ "$home" = /* ]] \
+    [ -n "$global_home" ] && [[ "$global_home" = /* ]] \
         || die "--global requires an absolute HOME"
-    [ -d "$home" ] || die "--global HOME does not exist: $home"
-    path="$home/.claude"
+    [ -d "$global_home" ] \
+        || die "--global HOME does not exist: $global_home"
+    path="$global_home/$GLOBAL_SKILL_PROVIDER_ROOT"
+    GLOBAL_SKILLS_ROOT="$path/skills"
     [ ! -L "$path" ] || die "refusing symlinked global skill parent: $path"
     [ ! -e "$path" ] || [ -d "$path" ] \
         || die "global skill parent is not a directory: $path"
-    path="$home/.claude/skills"
+    path="$GLOBAL_SKILLS_ROOT"
     if [ -L "$path" ]; then
         if same_resolved_path "$path" "$SOURCE_ROOT/skills"; then
             GLOBAL_SKILLS_PARENT_CANONICAL=yes
@@ -883,10 +901,15 @@ atomic_copy() {
 
 relative_skill_target() {
     local shape="$1" skill="$2" asset="${3:-}"
+    local source_rel="$ANCHOR_REL/skills"
+    if [ "$TARGET" = "$SOURCE_ROOT" ] \
+        && [ "$PROVIDER_ROOT" = .agents ]; then
+        source_rel=skills
+    fi
     if [ "$shape" = generic ]; then
-        LINK_TARGET="../../$ANCHOR_REL/skills/$skill"
+        LINK_TARGET="../../$source_rel/$skill"
     else
-        LINK_TARGET="../../../$ANCHOR_REL/skills/$skill/$asset"
+        LINK_TARGET="../../../$source_rel/$skill/$asset"
     fi
 }
 
@@ -1041,12 +1064,20 @@ recognized_legacy_run_tests_link() {
 preflight_skill_provider() {
     local skill="$1" target="$2" provider="$3"
     local source_root asset destination asset_destination
+    local direct="$DEPLOY_DIRECT"
+    local SKILL_SHAPE="$SKILL_SHAPE"
+    skill_discovery_shape "$provider" "$SKILL_SHAPE"
+    SKILL_SHAPE="$DISCOVERY_SHAPE"
     provider_root "$provider"
+    if [ "$target" = "$SOURCE_ROOT" ] \
+        && [ "$PROVIDER_ROOT" = .agents ]; then
+        direct=no
+    fi
     preflight_directory_chain "$target" "$PROVIDER_ROOT/skills"
     source_root="$SOURCE_ROOT/skills/$skill"
     destination="$target/$PROVIDER_ROOT/skills/$skill"
     preflight_runtime_ignores "$skill" "$target"
-    if [ "$DEPLOY_DIRECT" = yes ]; then
+    if [ "$direct" = yes ]; then
         direct_ignore_paths "$provider" "$skill" "$SKILL_SHAPE" "$SKILL_ASSETS"
         local pattern
         for pattern in "${DIRECT_PATTERNS[@]}"; do
@@ -1057,7 +1088,7 @@ preflight_skill_provider() {
     [ "$SKILL_SHAPE" != template ] || return 0
     [ -d "$source_root" ] || die "manifest skill source missing: $source_root"
     if [ "$SKILL_SHAPE" = generic ]; then
-        if [ "$DEPLOY_DIRECT" = yes ]; then
+        if [ "$direct" = yes ]; then
             require_local_path_untracked "$target" "$PROVIDER_ROOT/skills/$skill"
         else
             require_portable_path_trackable "$target" "$PROVIDER_ROOT/skills/$skill"
@@ -1073,7 +1104,7 @@ preflight_skill_provider() {
     if [ -L "$destination" ]; then
         [ "$skill" = run-tests ] && recognized_legacy_run_tests_link "$destination" \
             || die "refusing hybrid provider directory symlink: $destination"
-        if [ "$DEPLOY_DIRECT" = yes ]; then
+        if [ "$direct" = yes ]; then
             require_local_path_untracked "$target" "$PROVIDER_ROOT/skills/$skill"
         else
             require_portable_path_trackable "$target" \
@@ -1097,7 +1128,7 @@ preflight_skill_provider() {
     preflight_directory_chain "$target" "$PROVIDER_ROOT/skills/$skill"
     IFS=',' read -ra ASSET_LIST <<< "$SKILL_ASSETS"
     for asset in "${ASSET_LIST[@]}"; do
-        if [ "$DEPLOY_DIRECT" = yes ]; then
+        if [ "$direct" = yes ]; then
             require_local_path_untracked "$target" \
                 "$PROVIDER_ROOT/skills/$skill/$asset"
         else
@@ -1119,7 +1150,14 @@ preflight_skill_provider() {
 
 deploy_skill_provider() {
     local skill="$1" target="$2" provider="$3" direct="$4"
+    local SKILL_SHAPE="$SKILL_SHAPE"
+    skill_discovery_shape "$provider" "$SKILL_SHAPE"
+    SKILL_SHAPE="$DISCOVERY_SHAPE"
     provider_root "$provider"
+    if [ "$target" = "$SOURCE_ROOT" ] \
+        && [ "$PROVIDER_ROOT" = .agents ]; then
+        direct=no
+    fi
     local destination="$target/$PROVIDER_ROOT/skills/$skill"
     local source_root="$SOURCE_ROOT/skills/$skill"
     local asset asset_destination
@@ -1181,12 +1219,15 @@ deploy_skill_provider() {
     fi
     printf 'Deployed %s to %s/skills/%s (%s)\n' \
         "$skill" "$PROVIDER_ROOT" "$skill" \
-        "$([ "$direct" = yes ] && printf 'local-only absolute' || printf 'relative via anchor')"
+        "$([ "$direct" = yes ] && printf 'local-only absolute' || printf 'relative')"
 }
 
 preflight_global_skill() {
     local skill="$1" source="$SOURCE_ROOT/skills/$skill"
-    local destination="$HOME/.claude/skills/$skill" asset asset_destination
+    local destination="$GLOBAL_SKILLS_ROOT/$skill" asset asset_destination
+    local SKILL_SHAPE="$SKILL_SHAPE"
+    skill_discovery_shape "${GLOBAL_SKILL_PROVIDER_ROOT#.}" "$SKILL_SHAPE"
+    SKILL_SHAPE="$DISCOVERY_SHAPE"
     [ "$SKILL_SHAPE" != template ] || return 0
     [ -d "$source" ] || die "manifest skill source missing: $source"
     [ -f "$source/SKILL.md" ] || die "global skill has no SKILL.md: $skill"
@@ -1229,9 +1270,10 @@ global_skill_deployment_healthy() {
     local skill="$1" source destination
     local shape assets asset asset_destination
     source="$SOURCE_ROOT/skills/$skill"
-    destination="$HOME/.claude/skills/$skill"
+    destination="$GLOBAL_SKILLS_ROOT/$skill"
     get_skill_record "$skill" || return 1
-    shape="$SKILL_SHAPE"
+    skill_discovery_shape "${GLOBAL_SKILL_PROVIDER_ROOT#.}" "$SKILL_SHAPE"
+    shape="$DISCOVERY_SHAPE"
     assets="$SKILL_ASSETS"
     [ "$shape" != template ] || return 1
     if [ "$GLOBAL_SKILLS_PARENT_CANONICAL" = yes ]; then
@@ -1264,8 +1306,11 @@ global_skill_deployment_healthy() {
 
 deploy_global_skill() {
     local skill="$1" source="$SOURCE_ROOT/skills/$skill"
-    local destination="$HOME/.claude/skills/$skill" asset asset_destination
-    mkdir -p "$HOME/.claude/skills"
+    local destination="$GLOBAL_SKILLS_ROOT/$skill" asset asset_destination
+    local SKILL_SHAPE="$SKILL_SHAPE"
+    skill_discovery_shape "${GLOBAL_SKILL_PROVIDER_ROOT#.}" "$SKILL_SHAPE"
+    SKILL_SHAPE="$DISCOVERY_SHAPE"
+    mkdir -p "$GLOBAL_SKILLS_ROOT"
     if [ "$SKILL_SHAPE" = generic ]; then
         if [ -e "$destination" ] && [ ! -L "$destination" ]; then
             replace_source_copy_with_link "$source" "$destination"
@@ -1285,8 +1330,8 @@ deploy_global_skill() {
             fi
         done
     fi
-    printf 'Deployed %s to ~/.claude/skills/%s (global absolute)\n' \
-        "$skill" "$skill"
+    printf 'Deployed %s to %s (global absolute)\n' \
+        "$skill" "$destination"
 }
 
 deploy_skill() {
@@ -1297,7 +1342,7 @@ deploy_skill() {
     local auto_commands=yes
     while [ $# -gt 0 ]; do
         case "$1" in
-            --provider) need_value "$@"; provider="$2"; shift 2 ;;
+            --provider|--harness) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
@@ -1324,7 +1369,11 @@ deploy_skill() {
         [ -z "$method" ] || [ "$method" = symlink ] \
             || die "--global supports only --method symlink"
         [ "$provider" != opencode ] \
-            || die "--global is supported only for Claude skills"
+            || die "--global requires claude, agents, or codex"
+        GLOBAL_SKILL_PROVIDER_ROOT=.claude
+        case "$provider" in
+            agents|codex) GLOBAL_SKILL_PROVIDER_ROOT=.agents ;;
+        esac
         SOURCE_ROOT="$SKILLZ_ROOT"
         preflight_global_skill_base
         if [ -n "$skill_dependency" ] && [ "$skill_dependency" != - ]; then
@@ -1337,17 +1386,17 @@ deploy_skill() {
         preflight_global_skill "$skill"
         if [ "$GLOBAL_SKILLS_PARENT_CANONICAL" = yes ]; then
             if [ "$SKILL_SHAPE" = template ]; then
-                printf 'SKIP %s for global Claude (template-only)\n' "$skill"
+                printf 'SKIP %s for global skills (template-only)\n' "$skill"
                 printf 'Result: 0 deployed, 1 template skipped\n'
             else
-                printf 'Global Claude skills already use canonical parent: %s\n' \
-                    "$HOME/.claude/skills"
+                printf 'Global skills already use canonical parent: %s\n' \
+                    "$GLOBAL_SKILLS_ROOT"
                 printf 'Result: 1 deployed, 0 template skipped\n'
             fi
             return 0
         fi
         if [ "$SKILL_SHAPE" = template ]; then
-            printf 'SKIP %s for global Claude (template-only)\n' "$skill"
+            printf 'SKIP %s for global skills (template-only)\n' "$skill"
             printf 'Result: 0 deployed, 1 template skipped\n'
             return 0
         fi
@@ -1408,7 +1457,7 @@ deploy_all() {
     local auto_commands=yes
     while [ $# -gt 0 ]; do
         case "$1" in
-            --provider) need_value "$@"; provider="$2"; shift 2 ;;
+            --provider|--harness) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
@@ -1738,11 +1787,13 @@ same_resolved_path() {
 
 skill_deployment_healthy() {
     local target="$1" provider="$2" skill="$3" shape assets dependency
+    local PROVIDER_ROOT
     local required_skill
     local asset destination source
     source="$SOURCE_ROOT/skills/$skill"
     get_skill_record "$skill" || return 1
-    shape="$SKILL_SHAPE"
+    skill_discovery_shape "$provider" "$SKILL_SHAPE"
+    shape="$DISCOVERY_SHAPE"
     assets="$SKILL_ASSETS"
     dependency="$SKILL_DEPENDENCY"
     [ "$shape" != template ] || return 1
@@ -1755,6 +1806,15 @@ skill_deployment_healthy() {
     fi
     provider_root "$provider"
     destination="$target/$PROVIDER_ROOT/skills/$skill"
+    # OpenCode can load shared skills. A broken or divergent explicit
+    # OpenCode deployment must still fail instead of being hidden.
+    if [ "$provider" = opencode ] \
+        && [ ! -e "$target/.opencode/skills/$skill" ] \
+        && [ ! -L "$target/.opencode/skills/$skill" ] \
+        && [ -e "$target/.agents/skills/$skill" ]; then
+        skill_deployment_healthy "$target" agents "$skill"
+        return
+    fi
     if [ "$provider" = opencode ] \
         && self_hosted_skill_healthy "$target" "$skill"; then
         return 0
@@ -1950,7 +2010,7 @@ deploy_command() {
     local name="" target_arg="" provider=claude method="" direct=no stage=no global=no
     while [ $# -gt 0 ]; do
         case "$1" in
-            --provider) need_value "$@"; provider="$2"; shift 2 ;;
+            --provider|--harness) need_value "$@"; provider="$2"; shift 2 ;;
             --method) need_value "$@"; method="$2"; shift 2 ;;
             --direct) direct=yes; shift ;;
             --stage) stage=yes; shift ;;
@@ -1973,7 +2033,10 @@ deploy_command() {
         [ "$stage" = no ] || die "--stage is invalid with --global"
         [ -z "$method" ] || [ "$method" = symlink ] \
             || die "--global supports only --method symlink"
-        [ "$provider" != opencode ] || die "--global is supported only for Claude commands"
+        case "$provider" in
+            claude|all) ;;
+            *) die "--global is supported only for Claude commands" ;;
+        esac
         TARGET=""
         SOURCE_ROOT="$SKILLZ_ROOT"
         direct=yes
@@ -2163,10 +2226,20 @@ status_runtime_ignores() {
 
 status_provider() {
     local target="$1" provider="$2"
+    local PROVIDER_ROOT
     provider_root "$provider"
     local root="$target/$PROVIDER_ROOT" kind name shape assets dependency
     local rest path asset required_skill
     local canonical_asset_present
+    if [ "$provider" = agents ]; then
+        for path in "$root" "$root/skills"; do
+            if [ -L "$path" ]; then
+                printf 'Provider agents: symlinked parent %s [UNHEALTHY]\n' "$path"
+                STATUS_UNHEALTHY=1
+                return 0
+            fi
+        done
+    fi
     if [ ! -d "$root" ]; then
         printf 'Provider %s: disabled\n' "$provider"
         return 0
@@ -2174,6 +2247,8 @@ status_provider() {
     printf 'Provider %s: enabled\n' "$provider"
     while IFS='|' read -r kind name shape assets dependency rest; do
         [ "$kind" = skill ] || continue
+        skill_discovery_shape "$provider" "$shape"
+        shape="$DISCOVERY_SHAPE"
         path="$root/skills/$name"
         if [ "$shape" = template ]; then
             if [ -e "$path" ] || [ -L "$path" ]; then
@@ -2474,11 +2549,44 @@ inspect_opencode_config() {
         "$config" "$CONFIG_PARSE_MODE"
 }
 
+status_shared_aliases() {
+    local target="$1" kind name shape assets rest shared legacy root asset same
+    local -a alias_assets
+    [ ! -L "$target/.agents" ] && [ ! -L "$target/.agents/skills" ] || return 0
+    while IFS='|' read -r kind name shape assets rest; do
+        [ "$kind" = skill ] || continue
+        shared="$target/.agents/skills/$name"
+        [ -e "$shared" ] || [ -L "$shared" ] || continue
+        for root in .claude .opencode; do
+            legacy="$target/$root/skills/$name"
+            [ -e "$legacy/SKILL.md" ] || [ -L "$legacy/SKILL.md" ] || continue
+            same=yes
+            if [ "$shape" = hybrid ]; then
+                IFS=',' read -ra alias_assets <<< "$assets"
+                for asset in "${alias_assets[@]}"; do
+                    same_resolved_path "$shared/$asset" "$legacy/$asset" \
+                        || same=no
+                done
+            else
+                same_resolved_path "$shared" "$legacy" || same=no
+            fi
+            if [ "$same" = yes ]; then
+                printf 'Shared skill %s: same-source alias in %s\n' \
+                    "$name" "$root"
+            else
+                printf 'Shared skill %s: divergent %s definition [UNHEALTHY]\n' \
+                    "$name" "$root"
+                STATUS_UNHEALTHY=1
+            fi
+        done
+    done < "$MANIFEST"
+}
+
 cmd_status() {
     local target_arg="" provider=all
     while [ $# -gt 0 ]; do
         case "$1" in
-            --provider) need_value "$@"; provider="$2"; shift 2 ;;
+            --provider|--harness) need_value "$@"; provider="$2"; shift 2 ;;
             --*) die "unknown option: $1" ;;
             *) [ -z "$target_arg" ] || die "unexpected argument: $1"; target_arg="$1"; shift ;;
         esac
@@ -2515,10 +2623,12 @@ cmd_status() {
         printf 'Legacy anchor: none\n'
     fi
     set_providers "$provider"
+    [ "$provider" != all ] || PROVIDERS+=(agents)
     local selected_provider
     for selected_provider in "${PROVIDERS[@]}"; do
         status_provider "$TARGET" "$selected_provider"
     done
+    status_shared_aliases "$TARGET"
     status_runtime_ignores "$TARGET"
     local config
     for config in .opencode/opencode.json .opencode/opencode.jsonc opencode.json opencode.jsonc; do
@@ -2758,6 +2868,7 @@ cmd_migrate() {
     preflight_anchor_parent "$TARGET"
     preflight_provider_base "$TARGET" claude
     preflight_provider_base "$TARGET" opencode
+    preflight_provider_base "$TARGET" agents
     inspect_anchor "$TARGET"
     [ "$ANCHOR_HEALTH" != broken ] && [ "$ANCHOR_HEALTH" != invalid ] \
         || die "refusing migration with $ANCHOR_HEALTH anchor"
@@ -2779,8 +2890,10 @@ cmd_migrate() {
     else
         while IFS='|' read -r kind skill shape assets rest; do
             [ "$kind" = skill ] && [ "$shape" != template ] || continue
-            for provider in claude opencode; do
+            for provider in claude opencode agents; do
                 provider_root "$provider"
+                skill_discovery_shape "$provider" "$shape"
+                shape="$DISCOVERY_SHAPE"
                 path="$TARGET/$PROVIDER_ROOT/skills/$skill"
                 if [ "$shape" = generic ]; then
                     if recognized_source_root "$path" "$skill" ""; then
@@ -2824,6 +2937,14 @@ cmd_migrate() {
             || die "planned migration source is unavailable: $planned_source"
         planned_source="$RESOLVED_PATH"
     fi
+    if [ "$planned_source" = "$TARGET" ] && [ "$anchor_action" = local ]; then
+        # Source discovery is already anchored by the checkout itself.
+        # Treating it as a consumer would replace portable tracked links
+        # with absolute ones and create an anchor pointing back at itself.
+        migration_action "preserve source-repository discovery links"
+        migration_action "make no anchor change (source self-hosting)"
+        return 0
+    fi
     SOURCE_ROOT="$planned_source"
     MIGRATE_DIRECT=yes
     if [ "$anchor_action" = submodule ] \
@@ -2850,8 +2971,10 @@ cmd_migrate() {
     local changed=0 destination expected canonical_present ignore_pattern ignore_id
     while IFS='|' read -r kind skill shape assets rest; do
         [ "$kind" = skill ] && [ "$shape" != template ] || continue
-        for provider in claude opencode; do
+        for provider in claude opencode agents; do
             provider_root "$provider"
+            skill_discovery_shape "$provider" "$shape"
+            shape="$DISCOVERY_SHAPE"
             path="$TARGET/$PROVIDER_ROOT/skills/$skill"
             if [ "$shape" = generic ]; then
                 [ -e "$path" ] || [ -L "$path" ] || continue

@@ -10,9 +10,9 @@ Deploy the dependency first:
 
 ```bash
 bash /path/to/ai.skillz/scripts/deploy.sh commit-msg <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 bash /path/to/ai.skillz/scripts/deploy.sh commit-plan <repo> \
-  --provider <claude|opencode|all>
+  --harness <claude|opencode|agents|codex|all>
 ```
 
 Use the normal `init` command first for a local symlink or portable submodule
@@ -26,18 +26,18 @@ bash /path/to/ai.skillz/scripts/deploy.sh command commit-plan <repo> \
   --provider opencode
 ```
 
-Claude Code and other Agent Skills consumers invoke the generic skill directly
-as `/commit-plan`; no provider command asset is required for them. Use each
-harness's normal project or global Agent Skills directory for both
-`commit-plan` and `commit-msg`, preserving the dependency as a pair:
+Invoke `$commit-plan` in Codex, `/commit-plan` in Claude Code, or
+`/commit-plan` through the OpenCode command adapter. Codex uses native
+skills and needs no command shim. `--harness codex` and
+`--harness agents` both deploy to `.agents/skills/`; a single shared
+deployment can also serve OpenCode's skill loader.
 
-| Harness | Skill location |
-|---|---|
-| Claude Code | `.claude/skills/` or `~/.claude/skills/` |
-| OpenCode | `.opencode/skills/` or configured global skill discovery |
-| Codex | `.agents/skills/` |
-| Gemini CLI | `.agents/skills/` or `.gemini/skills/` |
-| GitHub Copilot | `.agents/skills/` or `.github/skills/` |
+Keep `commit-plan` and `commit-msg` deployed together. A
+root `AGENTS.md` supplies repository guidance; it does not install skills.
+See [Shared skills across harnesses](../../docs/shared-skills.md) for local validation
+and the distinction between discovery, runtime permissions, and
+verified workflow execution. Other compatible harnesses use the same
+shared skill bodies with their own invocation mechanism.
 
 Plan generation resolves project commands once and materializes boundaries in
 private indexes without rewriting the user's index. Targeted checks remain in
