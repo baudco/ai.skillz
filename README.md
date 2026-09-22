@@ -1,10 +1,10 @@
 # `ai.skillz`
 
 Reusable AI agent skills with one canonical workflow per skill and
-shared `.agents/skills/` deployment for compatible harnesses. Codex and
-OpenCode can use that shared tree; existing Claude Code and OpenCode
-adapters remain available. Other harnesses can adopt the same tree
-where their discovery and invocation mechanisms support it.
+shared `.agents/skills/` deployment for compatible harnesses.
+Harness-specific discovery layouts and optional command wrappers
+remain available where needed. Each harness uses the same canonical
+instructions and resources through its supported entry points.
 
 Skills follow the
 [Agent Skills specification](https://agentskills.io/specification).
@@ -50,9 +50,9 @@ anchor in portable mode and ignored absolute links in local mode:
 
 | Discovery target | Skills | Commands |
 |----------|--------|----------|
-| Claude Code | `.claude/skills/` | `.claude/commands/` |
-| OpenCode | `.opencode/skills/` or shared `.agents/skills/` | `.opencode/commands/` |
 | Shared (compatible harnesses) | `.agents/skills/` | Harness-specific invocation |
+| Claude Code | `.claude/skills/` | `.claude/commands/` |
+| OpenCode | Shared `.agents/skills/` or `.opencode/skills/` | Optional `.opencode/commands/` wrappers |
 
 Canonical skill prose is shared. Harness-specific command shims and
 invocation metadata remain small adapters. Metadata is not a portable
@@ -107,14 +107,14 @@ refuses divergent content. An existing selected global skills-root link to this
 checkout's canonical `skills/` tree is accepted as an already-complete global
 deployment; other symlinked parent directories are refused.
 
-Shared `.agents` skills use whole-directory links, which also meet
-Codex's discovery requirements. In legacy discovery trees, generic skills use
-whole-directory links, while hybrid skills such as `commit-msg` and
-`pr-msg` link only declared files and resources. Repository-owned
-runtime state stays outside the shared source directories. Existing
-runtime paths under
-`.claude/` remain in place; source deployment does not migrate or delete
-message archives, configuration, review context, or worktree state.
+Shared `.agents` skills use whole-directory links to keep canonical
+instructions and supporting resources together. In legacy discovery
+trees, generic skills use whole-directory links, while hybrid skills
+such as `commit-msg` and `pr-msg` link only declared files and
+resources. Repository-owned runtime state stays outside the shared
+source directories. Existing runtime paths under `.claude/` remain
+in place; source deployment does not migrate or delete message
+archives, configuration, review context, or worktree state.
 In legacy layouts, `run-tests` is hybrid: its canonical `SKILL.md` is
 linked while each repository owns `test-harness-reference.md`. Shared
 deployment keeps that repository-owned reference at its existing path.
@@ -141,12 +141,14 @@ bash /path/to/ai.skillz/scripts/deploy.sh command commit-msg <repo> \
   --provider opencode
 ```
 
-OpenCode discovers `.opencode/skills/` and `.opencode/commands/`
-without configuration changes. The deploy and migration commands do not
-edit `opencode.json` or `opencode.jsonc`; `status` reports unportable
-`skills.paths` entries for manual review. Quit and restart OpenCode after
-deploying or updating skills or commands because discovery occurs at
-startup.
+OpenCode discovers `.agents/skills/` natively, as well as its existing
+`.opencode/skills/` layout. Optional `.opencode/commands/` wrappers
+provide custom slash-command entry points; skill discovery works
+without them. The deploy and migration commands do not edit
+`opencode.json` or `opencode.jsonc`; `status` reports unportable
+`skills.paths` entries for manual review. Quit and restart OpenCode
+after deploying or updating skills or commands because discovery
+occurs at startup.
 
 OpenCode command shims are provided for user-invoked workflows: code review
 and remediation, commit/PR messages, worktree lifecycle, Git management,

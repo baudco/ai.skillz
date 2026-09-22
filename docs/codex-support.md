@@ -1,11 +1,12 @@
-# Codex adapter and validation notes
+# Codex compatibility and validation notes
 
 Codex uses the common deployment described in
 [Shared skills across harnesses](shared-skills.md). Use
 `--harness agents` or its equivalent `--harness codex` alias; both
 install the same canonical skill directories at `.agents/skills/`.
-The shared architecture and rollout apply to other compatible
-harnesses too. This page records Codex-specific behavior and evidence.
+This page records loader-specific behavior and versioned validation
+evidence. The shared deployment architecture is described in the
+common guide.
 
 ## Discovery and invocation
 

@@ -5,34 +5,37 @@ that can load it. Canonical workflows and resources live in `skills/`;
 we maintain one implementation of each workflow. Harness-specific
 commands and metadata adapt that implementation where necessary.
 
-Use `--harness agents` for shared deployment. `--harness codex` is an
-alias for the same destination, not a separate implementation or a
-choice of model provider. A harness controls discovery, invocation,
-and tools; its model provider is configured separately.
+Use `--harness agents` for shared deployment. A harness controls
+discovery, invocation, and tools; its model provider is configured
+separately. Harness-specific aliases and metadata are described in
+the harness notes below.
 
 ## Support and validation
 
 Deployment support, native discovery, and successful workflow execution
-are separate claims. The current evidence is:
+are separate claims. Named harnesses are listed alphabetically;
+the evidence records what was actually checked for each:
 
 | Harness | Deployment approach | Validation in this change |
 |---|---|---|
-| Codex | Shared `.agents/skills/`; native skill invocation | All 21 skills discovered locally; invocation metadata and repository instructions checked; a local `commit-plan` generated |
-| OpenCode | Shared skills with optional `.opencode/commands/` adapters, or existing `.opencode/skills/` | Shared command dependencies covered by deployment regressions; native discovery checked for the existing OpenCode layout |
 | Claude Code | Existing `.claude/skills/` and command adapters | Legacy deployment covered by regressions; shared discovery has not been verified here |
-| Other harnesses, including Gemini CLI and GitHub Copilot | Use the shared tree wherever their loaders support it; retain an adapter where required | Adoption targets; no native loader or workflow validation in this change |
+| Codex | Shared `.agents/skills/`; native skill invocation | All 21 skills discovered locally; invocation metadata and repository instructions checked; a local `commit-plan` generated |
+| OpenCode | Native `.agents/skills/` discovery or existing `.opencode/skills/`; optional command wrappers | Shared command dependencies covered by deployment regressions; native discovery checked for the existing OpenCode layout |
 
-The intent is to extend shared deployment to other compatible harnesses,
-not create a Codex-only skill collection. Before declaring another
-harness supported, verify its discovery roots, directory symlinks,
+### Adoption targets
+
+Other harnesses, including Gemini CLI and GitHub Copilot, can use the
+shared tree wherever their loaders support it. Native discovery and
+workflow execution have not been validated for these targets here.
+Before declaring support, verify discovery roots, directory symlinks,
 resource resolution, invocation policy, and a representative composed
-workflow. Document any required adapter and the evidence separately.
+workflow. Record any required integration and the evidence separately.
 
 A compatible discovery root does not guarantee identical metadata or
-permissions. `allowed-tools`, Codex's `agents/openai.yaml`, hooks,
-credentials, sandbox rules, and command syntax remain harness-specific.
-No installer step selects models, copies authentication, or translates
-one harness's permissions into another's.
+permissions. Invocation policy, tool permissions, hooks, credentials,
+sandbox rules, and command syntax remain harness-specific. No installer
+step selects models, copies authentication, or translates one harness's
+permissions into another's.
 
 ## Deploy the shared tree
 
@@ -79,7 +82,8 @@ that root. Status audits project roots, not the full global registry.
 
 ## Coexistence and migration
 
-OpenCode can consume shared skills while retaining command adapters:
+OpenCode discovers `.agents/skills/` natively. To also install its
+optional custom slash-command wrappers:
 
 ```bash
 bash scripts/deploy.sh all <repo> --harness agents
@@ -94,15 +98,18 @@ does not assume loaders merge them. See
 [OpenCode skill discovery](https://opencode.ai/docs/skills/).
 
 The `migrate` command recognizes shared deployments when normalizing
-source anchors. It does not remove legacy discovery roots. Review its
-dry run before applying it. Existing local discovery directories are
-refused for manual reconciliation rather than replaced automatically.
+source anchors. It does not remove legacy discovery roots. Migration
+is non-interactive: a conflicting local discovery directory is
+reported as a blocker and refused rather than replaced. Resolve the
+conflict manually before rerunning, and review the dry-run output
+before applying changes.
 
 Message archives, test references, configuration, and review context
 retain their existing paths, including `.claude/` locations. Runtime
 migration and deployment across consumer repositories are separate
-follow-up work. Keep harness-specific discovery adapters until their
-shared replacements have been verified.
+follow-up work. Before removing an existing discovery layout, verify
+the shared replacement with that consumer's installed harness.
+Retain command wrappers wherever their explicit entry points are used.
 
 ## Validation and harness notes
 
@@ -112,8 +119,38 @@ These exercise ownership, dependencies, portable clones, migration,
 coexistence, and probe failures; they do not replace each harness's
 native loader and workflow checks.
 
-[Codex notes](codex-support.md) describe its invocation metadata,
-loader behavior, and optional native discovery test. Add equivalent
-notes and checks as other harnesses are validated. Consumer rollout
-should include representative workflows and locally owned resources,
-not just successful installation.
+Consumer rollout should include representative workflows and locally
+owned resources, not just successful installation. The notes below
+distinguish discovery, invocation, metadata/permissions, and validation.
+
+### Claude Code
+
+- Discovery: the existing deployment uses `.claude/skills/`.
+- Invocation: skill loading and `.claude/commands/` entry points use
+  the canonical workflow bodies.
+- Metadata and permissions: Claude-specific frontmatter remains
+  harness-owned; it does not grant permissions in another harness.
+- Validation: legacy deployment regressions pass; this change does
+  not establish native shared discovery in Claude Code.
+
+### Codex
+
+- Discovery: shared directory links target `.agents/skills/`.
+  `--harness codex` aliases `--harness agents` for the same destination.
+- Invocation: use native skill invocation, such as `$commit-plan`.
+- Metadata and permissions: optional `agents/openai.yaml` sidecars
+  express invocation policy; tool permissions remain harness-owned.
+- Validation: [Codex notes](codex-support.md) record versioned loader,
+  symlink, metadata, and representative workflow evidence.
+
+### OpenCode
+
+- Discovery: project `.agents/skills/` and global `~/.agents/skills/`
+  are native discovery locations alongside existing OpenCode layouts.
+- Invocation: the native `skill` tool loads shared bodies. Optional
+  `.opencode/commands/` wrappers provide custom slash commands.
+- Metadata and permissions: OpenCode owns its skill/tool permissions;
+  command wrappers do not translate another harness's grants.
+- Validation: shared command dependencies are regression-tested;
+  native discovery was checked for the existing OpenCode layout.
+  [OpenCode documents shared discovery](https://opencode.ai/docs/skills/).
