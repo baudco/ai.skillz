@@ -2307,18 +2307,76 @@ def environment_lines(description: dict) -> list[str]:
     return [f'|_env: {names or "none"} (values hidden)']
 
 
-def overview(spec: dict[str, Any]) -> str:
+def overview(spec: dict[str, Any], completed: int = 0) -> str:
     '''
-    Generate shared Markdown context without evaluating spec text.
+    Summarize the checkout and verified progress before shared notes.
+
+    The caller supplies `classify()`'s completed prefix after
+    identity validation. Newly finalized plans have zero completed.
+    Git supplies checkout context, including the current branch.
 
     '''
+    root = Path(spec['repo_root'])
+    listing = git(
+        root, 'worktree', 'list', '--porcelain', '-z',
+    ).stdout
+    main_record = listing.split('\0\0', 1)[0].split('\0')
+    main = Path(next(
+        field[9:] for field in main_record
+        if field.startswith('worktree ')
+    ))
+    branch = git(
+        root, 'symbolic-ref', '--short', 'HEAD',
+    ).stdout.strip()
+    location = (
+        str(root.relative_to(main)) if root.is_relative_to(main)
+        else str(root)
+    )
+    if root == main and 'bare' not in main_record:
+        location = '(main checkout)'
+
+    def escape(value: str) -> str:
+        '''
+        Escape Markdown syntax as well as terminal controls.
+
+        '''
+        return re.sub(
+            r'([\\`*_{}\[\]()<>#!|])', r'\\\1', visible_text(value),
+        )
+
+    total = len(spec['boundaries'])
+    remaining = total - completed
+    lines = [
+        f'**{total} planned commits · {completed} completed · '
+        f'{remaining} remaining**',
+        '',
+        'repo: ' + escape(str(main)) + '  ',
+        'worktree: ' + escape(location) + '  ',
+        'branch: ' + escape(branch),
+        '',
+    ]
+    for boundary in spec['boundaries']:
+        ordinal = boundary['ordinal']
+        status = 'completed' if ordinal <= completed else 'pending'
+        subject = escape(boundary['subject'])
+        lines.append(
+            f'{ordinal}. **{status}:** {subject} '
+            f'(`--execute {ordinal}`)'
+        )
+    lines.extend((
+        '',
+        'mode: review — each pending step stages its patch, runs',
+        'checks, shows the diff, and opens the message editor.',
+        'Stops on failure; completed commits are skipped.',
+        '',
+    ))
     policy = (
         'Branch policy: strict; require the recorded branch ref.'
         if spec.get('strict_branch', True) else
         'Branch policy: flexible; allow a renamed/switched branch '
         'at the pinned HEAD or an exact completed boundary prefix.'
     )
-    lines = [
+    lines.extend((
         policy + ' Detached HEAD is refused.',
         'Authenticate artifacts and identity/history/index; '
         'check, review, commit, then verify the tree.',
@@ -2333,18 +2391,15 @@ def overview(spec: dict[str, Any]) -> str:
         'are symbolic runtime paths.',
         'Diagnostic argv uses the current checkout without hidden '
         'env values; probe-N references the catalog, not execution.',
-        '',
-    ]
-    for boundary in spec['boundaries']:
-        ordinal = boundary['ordinal']
-        subject = visible_text(boundary['subject'])
-        # Escape Markdown syntax as well as terminal controls.
-        subject = re.sub(r'([\\`*_{}\[\]()<>#!|])', r'\\\1', subject)
-        lines.append(f'{ordinal}. {subject} (`--execute {ordinal}`)')
+    ))
     return '\n'.join(lines)
 
 
-def render(spec: dict[str, Any], args: argparse.Namespace) -> None:
+def render(
+    spec: dict[str, Any],
+    args: argparse.Namespace,
+    completed: int = 0,
+) -> None:
     '''
     Generate grouped comments or a complete native command block.
 
@@ -2493,7 +2548,7 @@ def render(spec: dict[str, Any], args: argparse.Namespace) -> None:
         ))
     output = '\n'.join(lines).rstrip('\n')
     if display_only:
-        output = overview(spec) + '\n\n' + output
+        output = overview(spec, completed) + '\n\n' + output
     print(output)
 
 
@@ -2545,16 +2600,17 @@ def main(argv: list[str] | None = None) -> int:
         validate_index_file(root)
         if args.no_pager and args.execute is None:
             raise PlanError('--no-pager requires --execute')
+        completed = 0
         if args.overview or args.show or args.render:
-            classify(spec, root)
+            completed = classify(spec, root)
         if args.preflight:
             preflight(spec, root)
         elif args.overview:
-            print(overview(spec))
+            print(overview(spec, completed))
         elif args.show:
-            render(spec, args)
+            render(spec, args, completed)
         elif args.render:
-            render(spec, args)
+            render(spec, args, completed)
         else:
             if args.execute < 1:
                 raise PlanError('boundary ordinal must be positive')

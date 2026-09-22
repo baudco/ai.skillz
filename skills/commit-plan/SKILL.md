@@ -328,9 +328,14 @@ commit, access the network or enter normal execution.
 Use the optional finalize handoff when already returned; otherwise
 first generate `--overview` with the same `--spec` and `--sha256`.
 Transfer its stdout verbatim as normal Markdown before the shell
-fence. It owns shared conditions, execution context, symbolic runtime
-path and diagnostic limits, evidence location and numbered subjects
-mapped to `--execute N`. Do not reconstruct these from source or
+fence. It leads with planned/completed/remaining commit counts,
+lowercase `repo:`, `worktree:` and `branch:` fields, and exact subjects
+with completion status mapped to `--execute N`. Progress comes from
+verified Git history; context identifies the actual execution checkout
+and current branch. Its `mode: review` note describes editor-backed
+execution. Shared conditions, symbolic runtime path and diagnostic
+limits, evidence location and the legend remain in this Markdown
+overview, outside shell comments. Do not reconstruct these from source or
 duplicate boundary subjects in shell comments. This read-only mode
 authenticates the spec, identity and history without probes or checks.
 

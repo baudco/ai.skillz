@@ -801,13 +801,20 @@ class CommitPlanExecTests(unittest.TestCase):
         before = index.read_bytes()
         overview = self.invoke('--overview').stdout
         self.assertIn(
-            r'1. Title \`code\`\\x0a$\(touch forged\)', overview,
+            r'1. **pending:** Title \`code\`\\x0a$\(touch forged\)',
+            overview,
         )
         self.assertIn(r'\<script\>\\x1b\[2J', overview)
         self.assertIn('(`--execute 1`)', overview)
         self.assertIn('pinned spec/artifacts', overview)
         self.assertIn('symbolic runtime paths', overview)
         self.assertIn('probe-N references the catalog', overview)
+        self.assertIn(
+            '2 planned commits · 0 completed · 2 remaining',
+            overview,
+        )
+        self.assertIn(r'worktree: \(main checkout\)', overview)
+        self.assertIn('mode: review', overview)
         for control in ('\x1b', '\r', '\t'):
             self.assertNotIn(control, overview)
         for shell in ('bash', 'xonsh'):
@@ -821,6 +828,73 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertFalse((self.root / 'forged').exists())
         self.assertFalse(self.check_count.exists())
         self.assertFalse(self.editor_count.exists())
+
+    def test_overview_refreshes_completed_prefix(self):
+        '''
+        Rerendering formerly hid progress after reviewed commits.
+
+        Execute each boundary, then render the pinned plan through
+        overview/show and both shell renderers. Counts and statuses
+        must follow the canonical Git prefix, including completion.
+        Unchanged index, check/editor markers and HEAD prove that
+        rereading progress neither stages nor repeats execution.
+        A flexible branch rename must display the current branch.
+
+        '''
+        self.rewrite_spec(
+            lambda spec: spec.update(strict_branch=False),
+        )
+        self.git('branch', '-m', 'renamed')
+        for completed in (1, 2):
+            self.invoke('--execute', str(completed))
+            index = self.root / '.git' / 'index'
+            before = index.read_bytes()
+            checks = self.check_count.read_bytes()
+            editor = self.editor_count.read_bytes()
+            head = self.git('rev-parse', 'HEAD').stdout
+            overview = self.invoke('--overview').stdout
+            remaining = 2 - completed
+            self.assertIn(
+                f'2 planned commits · {completed} completed · '
+                f'{remaining} remaining', overview,
+            )
+            self.assertIn('branch: renamed', overview)
+            self.assertIn('1. **completed:**', overview)
+            status = 'completed' if completed == 2 else 'pending'
+            self.assertIn(f'2. **{status}:**', overview)
+            for shell in ('bash', 'xonsh'):
+                shown = self.invoke('--show', '--show-shell', shell)
+                self.assertTrue(
+                    shown.stdout.startswith(overview + '\n'),
+                )
+                self.invoke('--render', shell)
+            self.assertEqual(index.read_bytes(), before)
+            self.assertEqual(self.check_count.read_bytes(), checks)
+            self.assertEqual(self.editor_count.read_bytes(), editor)
+            self.assertEqual(
+                self.git('rev-parse', 'HEAD').stdout, head,
+            )
+
+    def test_overview_identifies_linked_checkout(self):
+        '''
+        A repository label alone hides where a linked plan executes.
+
+        Add a real linked checkout with a newline and Markdown in its
+        path. NUL-delimited Git metadata must preserve the path while
+        rendering escapes it. The main repository, relative worktree
+        and actual branch stay distinct without dialog-store access.
+
+        '''
+        linked = self.root / 'wkts' / 'feature\n[context]'
+        self.git('worktree', 'add', '-b', 'feature', str(linked))
+        spec = json.loads(self.spec_path.read_text())
+        spec['repo_root'] = str(linked)
+        text = PLAN_EXEC.overview(spec)
+        self.assertIn('repo: ' + str(self.root), text)
+        self.assertIn(
+            r'worktree: wkts/feature\\x0a\[context\]', text,
+        )
+        self.assertIn('branch: feature', text)
 
     def test_skip_annotations_always_put_argv_below_status(self):
         '''
