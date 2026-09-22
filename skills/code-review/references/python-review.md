@@ -115,12 +115,14 @@ rule never changes the finding's severity or excuses an incorrect fix.
 
 ### Tests
 
-- Match changed behavior to existing test boundaries and fixtures.
-- Ask whether a test would fail before the patch and pass after it.
-- Require regression coverage when the patch fixes or reopens a specific bug,
-  especially for concurrency, cancellation, serialization, and cleanup.
-- Do not demand broad integration coverage when a focused deterministic test
-  proves the relevant invariant.
+- Identify changed behavior for which the patch supplies no credible evidence.
+- Determine whether existing tests reach the boundary where behavior changed,
+  without independently prescribing a replacement test.
+- Treat a specific bug fix without before/after regression evidence as a
+  potential proof gap.
+- Delegate failure models, layer choice, deterministic construction, mock
+  justification, and authored coverage to `/test-design`.
+- Delegate every test command and runtime diagnosis to `/run-tests`.
 
 ## Changed-Line Filtering
 

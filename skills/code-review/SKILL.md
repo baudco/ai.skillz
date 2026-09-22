@@ -6,7 +6,8 @@ description: >
   branch, commit, pull-request checkout, staged changes, or working tree.
 compatibility: >
   Requires repository file access. Git is recommended. Ruff, a configured
-  type checker, Bandit, Semgrep, and run-tests are optional evidence sources.
+  type checker, Bandit, Semgrep, test-design, and run-tests are optional
+  evidence sources.
 metadata:
   author: goodboy
   version: "0.2"
@@ -58,7 +59,10 @@ test configuration, and nearby documentation. If present, also read:
 
 That optional, repository-owned file may define review bases, generated
 paths, trusted analyzer commands, type-checker choice, and known constraints.
-Test selection remains owned by `/run-tests` and its test harness reference.
+Test adequacy, failure models, proof-layer choice, deterministic construction,
+mock justification, and authored regressions remain owned by `/test-design`.
+Repository environment, executable scope, commands, matrices, timeouts,
+execution, diagnosis, and cleanup remain owned by `/run-tests`.
 Reject unfinished template markers such as `{{` or `}}`. Never import another
 repository's review conventions.
 
@@ -157,11 +161,18 @@ Do not install, upgrade, or configure tools during review.
 - Separate unavailable, skipped, failed, and clean checks in the report.
 - Do not weaken a finding merely because a tool is unavailable.
 
-Do not run tests directly. Delegate to `/run-tests` only after the user
-explicitly authorizes test execution. A suspected defect is reason to propose
-an exact test scope, not authorization to execute it. Let `/run-tests` and its
-repository-owned harness resolve the final scope and environment. A failed or
-unavailable test run is evidence, not permission to modify code.
+Do not design or run tests directly. When review identifies missing or
+inadequate evidence, state the changed behavior and suspected proof gap, then
+delegate failure modeling, layer choice, determinism, mocks, and authored
+coverage to `/test-design` when the user requests that work. Delegate every
+runtime execution to `/run-tests` only after the user explicitly authorizes
+test execution.
+
+A suspected defect is reason to propose a behavioral proof obligation, not
+authorization to author or execute it. `/test-design` refines that obligation,
+selects the proof layer, and identifies required boundaries. `/run-tests` and
+the repository-owned harness resolve the executable scope and environment. A
+failed or unavailable run is evidence, not permission to modify code.
 
 ## 6. Triage Findings
 

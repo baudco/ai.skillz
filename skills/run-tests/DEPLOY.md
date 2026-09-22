@@ -8,9 +8,15 @@
   test-harness-reference.md
 ```
 
-The base owns execution safety and diagnostics. The local reference owns
-commands, environments, paths, backend matrices, fixtures, mappings, and
-known outcomes.
+The base owns execution safety and diagnostics. `/test-design` owns failure
+models, layer choice, deterministic test construction, mock justification,
+authored regressions, and proof gaps. `/run-tests` receives those requirements
+and owns every concrete environment, command, matrix, timeout, execution,
+diagnosis, and cleanup decision. `run-tests` remains deployable and usable
+without `test-design`.
+
+The local reference owns commands, environments, paths, backend matrices,
+fixtures, mappings, and known outcomes.
 
 ## Deployment Script
 

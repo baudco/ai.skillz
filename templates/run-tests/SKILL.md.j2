@@ -1,8 +1,11 @@
 # Test Harness Reference: {{ project_name }}
 
 This repository-local file supplements the canonical `/run-tests` skill.
-Keep project commands, paths, fixtures, and expected outcomes here; keep the
-shared execution and safety workflow in the canonical `SKILL.md`.
+Keep repository commands, executable paths, environment setup, harness
+fixtures, backend matrices, and known runtime outcomes here. Keep shared
+execution and safety workflow in canonical `/run-tests`, and keep failure
+models, proof-layer decisions, deterministic test construction, mock
+justification, and authored regressions in `/test-design`.
 
 ## Project And Environment
 
@@ -61,6 +64,9 @@ backend. Do not list planned but unavailable options as runnable.
 Record source data, temporary-copy behavior, environment restoration, and
 other invariants whose violation can create misleading failures.
 
+Record harness-owned runtime invariants only. Do not prescribe proof strategy
+or justify test doubles here; those belong to `/test-design`.
+
 ## Test Layout
 
 ```text
@@ -71,8 +77,9 @@ other invariants whose violation can create misleading failures.
 
 {{ change_test_mapping }}
 
-Prefer deterministic unit tests first, then the smallest relevant
-integration/backend matrix.
+Record executable mappings and supported command progression only. A
+`/test-design` handoff or explicit user request owns the required proof layer;
+`/run-tests` owns how that layer is executed in this repository.
 
 ## Quick Checks
 
