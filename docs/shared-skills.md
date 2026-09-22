@@ -107,9 +107,10 @@ shared replacements have been verified.
 ## Validation and harness notes
 
 Run `bash tests/deploy/test-deploy.sh` for deployment regressions, or
-add `--shared-only` for the six shared-deployment cases. These exercise
-ownership, dependencies, portable clones, migration, and coexistence;
-they do not replace each harness's native loader and workflow checks.
+add `--shared-only` for shared-deployment and Codex probe regressions.
+These exercise ownership, dependencies, portable clones, migration,
+coexistence, and probe failures; they do not replace each harness's
+native loader and workflow checks.
 
 [Codex notes](codex-support.md) describe its invocation metadata,
 loader behavior, and optional native discovery test. Add equivalent
