@@ -1116,6 +1116,143 @@ class CommitPlanExecTests(unittest.TestCase):
         )
         self.assertFalse((self.root / '.git/index.lock').exists())
 
+    def test_hook_output_cannot_inject_terminal_controls(self):
+        '''
+        Git previously inherited terminal streams while running
+        commit hooks. A hook printing ESC could inject terminal
+        controls even when command traces were escaped. Install a
+        fixture hook that prints controls on both streams and verify
+        the boundary still commits but only visible escapes appear.
+
+        '''
+        hook = self.root / '.git' / 'hooks' / 'pre-commit'
+        hook.write_text(
+            '#!/bin/sh\n'
+            "printf '\\033[31mhook\\033[0m\\n'\n"
+            "printf '\\033[32merror\\033[0m\\n' >&2\n"
+        )
+        hook.chmod(0o755)
+        result = self.invoke('--execute', '1')
+        self.assertNotIn('\x1b', result.stdout + result.stderr)
+        self.assertIn('\\x1b', result.stdout)
+        self.assertIn('[boundary 1] PASS', result.stdout)
+
+    def test_direct_review_escapes_staged_controls(self):
+        '''
+        Spooling a diff prevents pager SIGPIPE but copying its bytes
+        unchanged still emits malicious file content to the terminal.
+        Build a planned tree whose added file contains ESC, execute
+        without a pager, and verify review displays escaped controls
+        without losing the line break or blocking the commit.
+
+        '''
+        (self.root / 'one.txt').write_text('one\x1b[31m\n')
+        self.tree_one = self.index_tree('one.txt')
+        self.tree_two = self.index_tree('one.txt', 'two.txt')
+        self.patches = [
+            self.make_patch(
+                'one.patch', self.initial_tree, self.tree_one,
+            ),
+            self.make_patch(
+                'two.patch', self.tree_one, self.tree_two,
+            ),
+        ]
+        self.write_spec()
+        result = self.invoke('--execute', '1')
+        self.assertNotIn('\x1b', result.stdout)
+        self.assertIn('\\x1b[31m', result.stdout)
+        self.assertIn('[boundary 1] PASS', result.stdout)
+
+    def test_pager_receives_only_escaped_staged_controls(self):
+        '''
+        Sanitizing only direct review output would leave the pager
+        input vulnerable. Materialize a planned file containing ESC
+        and display the staged diff through `cat` as a fixture pager.
+        The successful commit and visible escape prove both the gate
+        and its pager path consume sanitized rather than raw bytes.
+
+        '''
+        (self.root / 'one.txt').write_text('one\x1b[31m\n')
+        self.tree_one = self.index_tree('one.txt')
+        self.tree_two = self.index_tree('one.txt', 'two.txt')
+        self.patches = [
+            self.make_patch(
+                'one.patch', self.initial_tree, self.tree_one,
+            ),
+            self.make_patch(
+                'two.patch', self.tree_one, self.tree_two,
+            ),
+        ]
+        self.write_spec()
+        result = self.invoke(
+            '--execute', '1', extra_env={'GIT_PAGER': 'cat'},
+        )
+        self.assertNotIn('\x1b', result.stdout)
+        self.assertIn('\\x1b[31m', result.stdout)
+        self.assertIn('[boundary 1] PASS', result.stdout)
+
+    def test_graft_does_not_fake_completed_boundary(self):
+        '''
+        A local graft can rewrite the parent shown by `git show`
+        even with replacement refs disabled. An unrelated commit
+        with the planned tree and a real extra parent therefore used
+        to appear complete. Forge that view in the fixture graft
+        file, then require raw-object classification to refuse the
+        actual history before checks, staging or editor invocation.
+
+        '''
+        intermediate = self.git(
+            'commit-tree', self.initial_tree,
+            '-p', self.initial_parent, '-m', 'intermediate',
+        ).stdout.strip()
+        other = self.git(
+            'commit-tree', self.tree_one,
+            '-p', intermediate, '-m', 'unrelated',
+        ).stdout.strip()
+        self.git('update-ref', 'HEAD', other)
+        grafts = self.root / '.git' / 'info' / 'grafts'
+        grafts.write_text(f'{other} {self.initial_parent}\n')
+        apparent = self.git(
+            'show', '-s', '--format=%P', other,
+        ).stdout.strip()
+        self.assertEqual(apparent, self.initial_parent)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('diverged', result.stderr)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_untracked_check_outputs_do_not_cross_clones(self):
+        '''
+        Checks ran in separate processes but shared one checkout.
+        The first check could leave an untracked module for a later
+        check to import, so the latter tested state outside the
+        authenticated tree. Make the first check create a file and
+        the second fail if it exists. Both pass only if each has a
+        fresh exact-tree clone, without losing their required order.
+
+        '''
+
+        def update(spec):
+            checks = spec['boundaries'][0]['project_checks']
+            checks[0]['argv'] = [
+                'sh', '-c', 'printf "generated\\n" > generated.txt',
+            ]
+            checks[0]['resolution_argv'] = ['pwd']
+            checks.append({
+                'argv': [
+                    'sh', '-c', 'test ! -e generated.txt',
+                ],
+                'resolution_argv': ['pwd'],
+                'env': {},
+            })
+
+        self.rewrite_spec(update)
+        result = self.invoke('--execute', '1')
+        self.assertEqual(result.stdout.count('[isolate] PASS'), 2)
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.commit_count(), 2)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -367,13 +367,17 @@ def visible_git(
     '''
     command_argv = git_command(*arguments)
     cwd = visible_text(str(root))
+    active_env = environment or git_environment()
     trace_start(phase, command_argv, root)
     try:
         result = subprocess.run(
             command_argv,
             cwd=root,
             check=False,
-            env=environment or git_environment(),
+            env=active_env,
+            capture_output=True,
+            text=True,
+            errors='backslashreplace',
         )
     except OSError as error:
         rendered = render_command(command_argv)
@@ -382,8 +386,24 @@ def visible_git(
             f'cwd: {cwd}\n'
             f'command: {rendered}'
         ) from error
-    trace_result(phase, result)
+    trace_result(
+        phase, result, captured=True,
+        secrets=secret_values(active_env),
+    )
     return result.returncode
+
+
+def safe_review_line(payload: bytes) -> bytes:
+    '''
+    Preserve line breaks while escaping terminal controls in a diff.
+
+    '''
+    text = os.fsdecode(payload)
+    newline = text.endswith('\n')
+    if newline:
+        text = text[:-1]
+    suffix = '\n' if newline else ''
+    return (visible_text(text) + suffix).encode()
 
 
 def review_diff(root: Path) -> int:
@@ -394,39 +414,61 @@ def review_diff(root: Path) -> int:
     arguments = git_command(*review_operation())
     trace_start('review', arguments, root)
     with tempfile.TemporaryFile() as output:
+        environment = git_environment()
         try:
             diff = subprocess.run(
                 arguments,
                 cwd=root,
                 check=False,
                 stdout=output,
-                env=git_environment(),
+                stderr=subprocess.PIPE,
+                env=environment,
             )
         except OSError as error:
             raise PlanError('unable to start staged review') \
                 from error
+        diagnostic = subprocess.CompletedProcess(
+            diff.args,
+            diff.returncode,
+            stderr=os.fsdecode(diff.stderr),
+        )
         if diff.returncode:
-            trace_result('review', diff)
+            trace_result(
+                'review', diagnostic, captured=True,
+                secrets=secret_values(environment),
+            )
             return diff.returncode
+        if diagnostic.stderr:
+            lines = []
+            append_output(
+                lines, 'stderr', diagnostic.stderr,
+                secret_values(environment),
+            )
+            print('\n'.join(lines), flush=True)
         output.seek(0)
-        if sys.stdout.isatty() or os.environ.get('GIT_PAGER'):
-            pager = git(root, 'var', 'GIT_PAGER').stdout.strip()
-            if pager:
-                try:
-                    viewed = subprocess.run(
-                        ['sh', '-c', pager],
-                        cwd=root,
-                        check=False,
-                        stdin=output,
-                        env=git_environment(),
-                    )
-                except OSError as error:
-                    raise PlanError('unable to start review pager') \
-                        from error
-                trace_result('review', viewed)
-                return viewed.returncode
-        shutil.copyfileobj(output, sys.stdout.buffer)
-        sys.stdout.flush()
+        with tempfile.TemporaryFile() as safe:
+            for line in output:
+                safe.write(safe_review_line(line))
+            safe.seek(0)
+            if sys.stdout.isatty() or os.environ.get('GIT_PAGER'):
+                pager = git(root, 'var', 'GIT_PAGER').stdout.strip()
+                if pager:
+                    try:
+                        viewed = subprocess.run(
+                            ['sh', '-c', pager],
+                            cwd=root,
+                            check=False,
+                            stdin=safe,
+                            env=git_environment(),
+                        )
+                    except OSError as error:
+                        raise PlanError(
+                            'unable to start review pager'
+                        ) from error
+                    trace_result('review', viewed)
+                    return viewed.returncode
+            shutil.copyfileobj(safe, sys.stdout.buffer)
+            sys.stdout.flush()
     trace_result('review', diff)
     return 0
 
@@ -782,6 +824,46 @@ def validate_objects(spec: dict[str, Any], root: Path) -> None:
             raise PlanError(f'{field} is not a {expected_type}')
 
 
+def raw_commit_parent_tree(
+    root: Path,
+    oid: str,
+    object_length: int,
+) -> tuple[str, str]:
+    '''
+    Read a commit object without Git graft or replacement semantics.
+
+    '''
+    result = subprocess.run(
+        git_command('cat-file', 'commit', oid),
+        cwd=root,
+        check=False,
+        capture_output=True,
+        env=git_environment(),
+    )
+    if result.returncode:
+        raise PlanError('unable to read raw commit history')
+    header = result.stdout.partition(b'\n\n')[0]
+    parents = [
+        line[7:]
+        for line in header.split(b'\n')
+        if line.startswith(b'parent ')
+    ]
+    trees = [
+        line[5:]
+        for line in header.split(b'\n')
+        if line.startswith(b'tree ')
+    ]
+    pattern = rb'[0-9a-f]{' + str(object_length).encode() + rb'}'
+    if (
+        len(parents) != 1
+        or len(trees) != 1
+        or re.fullmatch(pattern, parents[0]) is None
+        or re.fullmatch(pattern, trees[0]) is None
+    ):
+        raise PlanError('plan history is not a single-parent chain')
+    return parents[0].decode('ascii'), trees[0].decode('ascii')
+
+
 def classify(spec: dict[str, Any], root: Path) -> int:
     '''
     Count the exact completed boundary prefix from raw Git history.
@@ -795,21 +877,11 @@ def classify(spec: dict[str, Any], root: Path) -> int:
             raise PlanError(
                 'HEAD contains commits outside this plan'
             )
-        output = git(
-            root,
-            'show',
-            '-s',
-            '--format=%P%x00%T',
-            current,
-        ).stdout.strip()
-        parent_text, separator, tree = output.partition('\0')
-        parents = parent_text.split()
-        if not separator or len(parents) != 1:
-            raise PlanError(
-                'plan history is not a single-parent chain'
-            )
-        chain.append((current, parents[0], tree))
-        current = parents[0]
+        parent, tree = raw_commit_parent_tree(
+            root, current, len(initial),
+        )
+        chain.append((current, parent, tree))
+        current = parent
     chain.reverse()
     expected_parent = initial
     for index, (commit_oid, parent_oid, tree) in enumerate(chain):
@@ -1112,20 +1184,20 @@ def run_project_checks(
     parent_oid: str,
 ) -> int:
     '''
-    Run project checks in a fresh exact-tree repository.
+    Run every project check in its own exact-tree repository.
 
     '''
     descriptions = boundary['project_checks']
     if not descriptions:
         return 0
-    with isolated_tree(
-        spec,
-        boundary['tree'],
-        parent_oid,
-    ) as checked:
-        root, environment = checked
-        total = len(descriptions)
-        for index, description in enumerate(descriptions, start=1):
+    total = len(descriptions)
+    for index, description in enumerate(descriptions, start=1):
+        with isolated_tree(
+            spec,
+            boundary['tree'],
+            parent_oid,
+        ) as checked:
+            root, environment = checked
             check_env = environment.copy()
             check_env.update(description['env'])
             secrets = secret_values(

@@ -261,6 +261,9 @@ repository/index redirection and ignores replacement refs. It then:
   the pinned patch only when needed and verifies the result tree;
 - runs structural and isolated project checks fail-fast, then staged review
   and its fixed editor-backed commit as one boundary operation;
+- gives each pending project check and its resolution probe a fresh
+  exact-tree clone, so generated files from one check cannot influence
+  another check's result; tracked mutations within a check still refuse;
 - after staged review, locks the real index, revalidates its planned tree,
   commits from a private copy, and reconciles the real index only after an
   exact boundary commit; other Git staging attempts fail while locked;
