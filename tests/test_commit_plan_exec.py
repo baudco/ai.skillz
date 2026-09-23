@@ -887,6 +887,235 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('must be a regular file', result.stderr)
         self.assertEqual(self.commit_count(), 1)
 
+    def test_submodule_ignore_cannot_mask_index_divergence(self):
+        '''
+        Git configuration can hide staged gitlink changes from a
+        cached diff. A result of zero would falsely certify the real
+        index as the planned tree and permit the wrong commit. Stage
+        an extra gitlink in this fixture, enable the ignore setting,
+        and verify execution refuses before running checks or editor.
+
+        '''
+        self.git('config', 'diff.ignoreSubmodules', 'all')
+        self.git(
+            'update-index', '--add', '--cacheinfo',
+            '160000', self.initial_parent, 'external',
+        )
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('real index changed', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.check_count), 0)
+
+    def test_project_output_redacted_on_success_and_failure(self):
+        '''
+        A check inherits environment values, but its raw stdout and
+        stderr previously bypassed probe redaction. Exercise both
+        exit states with a sentinel in both streams. The successful
+        output remains visible without disclosing the value, while
+        failure stops before the commit with the same protection.
+
+        '''
+        secret = 'very-private-check-secret'
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [
+                'sh', '-c',
+                'printf "%s" "$PLAN_SECRET"; '
+                'printf "%s" "$PLAN_SECRET" >&2; '
+                'exit "$CHECK_EXIT"',
+            ]
+            check['resolution_argv'] = ['pwd']
+            check['env'] = {'PLAN_SECRET': secret, 'CHECK_EXIT': '0'}
+
+        self.rewrite_spec(update)
+        success = self.invoke('--execute', '1')
+        self.assertNotIn(secret, success.stdout + success.stderr)
+        self.assertIn('<redacted>', success.stdout)
+        self.assertIn('stdout:', success.stdout)
+        self.assertIn('stderr:', success.stdout)
+        self.assertIn('[boundary 1] PASS', success.stdout)
+
+        def fail(spec):
+            check = spec['boundaries'][1]['project_checks'][0]
+            check['argv'] = [
+                'sh', '-c',
+                'printf "%s" "$PLAN_SECRET"; '
+                'printf "%s" "$PLAN_SECRET" >&2; exit 27',
+            ]
+            check['resolution_argv'] = ['pwd']
+            check['env'] = {'PLAN_SECRET': secret}
+
+        self.rewrite_spec(fail)
+        failure = self.invoke('--execute', '2', check=False)
+        self.assertEqual(failure.returncode, 27)
+        self.assertNotIn(secret, failure.stdout + failure.stderr)
+        self.assertIn('<redacted>', failure.stderr)
+        self.assertEqual(self.commit_count(), 2)
+
+    def test_checks_cannot_change_the_tree_under_test(self):
+        '''
+        A successful check can edit tracked source inside the shared
+        isolated clone. Without a post-check comparison, the next
+        check observes that edited source and passes on content not
+        present in the planned commit. Mutate the clone from a first
+        command and verify execution stops before a second check,
+        review, or commit while the live source remains unchanged.
+
+        '''
+        mutation = self.runtime / 'mutate-clone.sh'
+        mutation.write_text(
+            '#!/bin/sh\n'
+            'printf "VALUE = 42\\n" > fixturepkg.py\n'
+        )
+        mutation.chmod(0o755)
+
+        def update(spec):
+            first = spec['boundaries'][0]['project_checks'][0]
+            first['argv'] = [str(mutation)]
+            spec['boundaries'][0]['project_checks'].append(
+                first.copy()
+            )
+
+        self.rewrite_spec(update)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('changed the isolated tree', result.stderr)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(
+            (self.root / 'fixturepkg.py').read_text(),
+            'VALUE = "live"\n',
+        )
+
+    def test_later_boundary_completion_is_not_accepted(self):
+        '''
+        An external actor or hook may advance HEAD through another
+        planned tree before the current commit process returns. A
+        greater-than-or-equal comparison used to call boundary one
+        PASS even though it consumed boundary two as well. A fixture
+        post-commit hook creates the second planned tree and moves
+        HEAD to it; the invocation must report divergence instead.
+
+        '''
+        hook = self.root / '.git' / 'hooks' / 'post-commit'
+        hook.write_text(
+            '#!/bin/sh\n'
+            f'target=$(git commit-tree {self.tree_two} '
+            '-p HEAD -m unexpected) || exit 1\n'
+            'git update-ref HEAD "$target"\n'
+        )
+        hook.chmod(0o755)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('beyond this boundary', result.stderr)
+        self.assertNotIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.commit_count(), 3)
+
+    def test_early_pager_exit_does_not_abort_review(self):
+        '''
+        Git used to stream a staged diff directly into the pager.
+        Pressing q before the diff was fully written could send
+        SIGPIPE to Git and block an otherwise reviewed commit.
+        Supply a pager which reads only one byte and exits cleanly;
+        the spool ensures Git has already completed the diff, while
+        the editor and commit still run after pager dismissal.
+
+        '''
+        pager = 'head -c 1 >/dev/null'
+        result = self.invoke(
+            '--execute', '1',
+            extra_env={'GIT_PAGER': pager},
+        )
+        self.assertIn('[review] PASS', result.stdout)
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.line_count(self.editor_count), 1)
+
+    def test_failed_pager_still_blocks_commit(self):
+        '''
+        Spooling a successful Git diff must not turn a failing
+        viewer into a successful review. A pager exiting 17
+        represents a failed review gate, so execution stops before
+        the editor or commit despite Git's completed diff.
+
+        '''
+        result = self.invoke(
+            '--execute', '1', check=False,
+            extra_env={'GIT_PAGER': 'exit 17'},
+        )
+        self.assertEqual(result.returncode, 17)
+        self.assertIn('[review] FAIL exit=17', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_concurrent_staging_cannot_join_the_commit(self):
+        '''
+        A writer previously could stage an unrelated path after the
+        last review comparison while the editor was open. The real
+        index lock must reject that writer, and the private commit
+        index must contain only the authenticated boundary tree.
+        An editor stub tries to stage with `GIT_INDEX_FILE` removed,
+        then allows the commit; the exact commit tree, reconciled
+        real index and remaining untracked file prove isolation.
+
+        '''
+        marker = self.runtime / 'writer-refused'
+        editor = self.runtime / 'race-editor.sh'
+        editor.write_text(
+            '#!/bin/sh\n'
+            'printf "unrelated\\n" > unrelated.txt\n'
+            'env -u GIT_INDEX_FILE git add -- unrelated.txt '
+            '2>/dev/null && exit 41\n'
+            f'printf "refused\\n" > "{marker}"\n'
+        )
+        editor.chmod(0o755)
+        self.editor_script = editor
+        result = self.invoke('--execute', '1')
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(marker.read_text(), 'refused\n')
+        self.assertEqual(
+            self.git('rev-parse', 'HEAD^{tree}').stdout.strip(),
+            self.tree_one,
+        )
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(),
+            self.tree_one,
+        )
+        self.assertEqual(
+            (self.root / 'unrelated.txt').read_text(),
+            'unrelated\n',
+        )
+        self.assertFalse((self.root / '.git/index.lock').exists())
+
+    def test_index_changing_hook_retains_recovery_evidence(self):
+        '''
+        User hooks run against the private commit index. A hook that
+        deliberately stages another file can still change the tree
+        Git commits before post-commit verification. This fixture
+        stages an extra path from pre-commit; the executor must not
+        call it PASS or overwrite the real index and must retain
+        its private index for explicit recovery.
+
+        '''
+        hook = self.root / '.git' / 'hooks' / 'pre-commit'
+        hook.write_text(
+            '#!/bin/sh\n'
+            'printf "hook\\n" > unexpected.txt\n'
+            'git add -- unexpected.txt\n'
+        )
+        hook.chmod(0o755)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('diverged', result.stderr)
+        self.assertIn('retained for manual recovery', result.stderr)
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(),
+            self.tree_one,
+        )
+        self.assertFalse((self.root / '.git/index.lock').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

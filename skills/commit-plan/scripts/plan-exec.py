@@ -138,6 +138,18 @@ def trace_result(
 
     '''
     if not result.returncode:
+        if captured:
+            lines = []
+            if result.stdout:
+                append_output(
+                    lines, 'stdout', result.stdout, secrets,
+                )
+            if result.stderr:
+                append_output(
+                    lines, 'stderr', result.stderr, secrets,
+                )
+            if lines:
+                print('\n'.join(lines), flush=True)
         print(f'[{phase}] PASS', flush=True)
         return
     lines = [f'[{phase}] FAIL exit={result.returncode}']
@@ -300,6 +312,7 @@ def git_environment() -> dict[str, str]:
         )
     environment = os.environ.copy()
     environment['GIT_NO_REPLACE_OBJECTS'] = '1'
+    environment['GIT_OPTIONAL_LOCKS'] = '0'
     return environment
 
 
@@ -346,6 +359,7 @@ def visible_git(
     root: Path,
     phase: str,
     *arguments: str,
+    environment: dict[str, str] | None = None,
 ) -> int:
     '''
     Run one executor-owned Git command with visible output.
@@ -359,7 +373,7 @@ def visible_git(
             command_argv,
             cwd=root,
             check=False,
-            env=git_environment(),
+            env=environment or git_environment(),
         )
     except OSError as error:
         rendered = render_command(command_argv)
@@ -370,6 +384,51 @@ def visible_git(
         ) from error
     trace_result(phase, result)
     return result.returncode
+
+
+def review_diff(root: Path) -> int:
+    '''
+    Complete Git's diff before handing its output to a pager.
+
+    '''
+    arguments = git_command(*review_operation())
+    trace_start('review', arguments, root)
+    with tempfile.TemporaryFile() as output:
+        try:
+            diff = subprocess.run(
+                arguments,
+                cwd=root,
+                check=False,
+                stdout=output,
+                env=git_environment(),
+            )
+        except OSError as error:
+            raise PlanError('unable to start staged review') \
+                from error
+        if diff.returncode:
+            trace_result('review', diff)
+            return diff.returncode
+        output.seek(0)
+        if sys.stdout.isatty() or os.environ.get('GIT_PAGER'):
+            pager = git(root, 'var', 'GIT_PAGER').stdout.strip()
+            if pager:
+                try:
+                    viewed = subprocess.run(
+                        ['sh', '-c', pager],
+                        cwd=root,
+                        check=False,
+                        stdin=output,
+                        env=git_environment(),
+                    )
+                except OSError as error:
+                    raise PlanError('unable to start review pager') \
+                        from error
+                trace_result('review', viewed)
+                return viewed.returncode
+        shutil.copyfileobj(output, sys.stdout.buffer)
+        sys.stdout.flush()
+    trace_result('review', diff)
+    return 0
 
 
 def required_string(value: Any, field: str) -> str:
@@ -837,6 +896,7 @@ def index_matches(root: Path, tree: str) -> bool:
         'diff',
         '--cached',
         '--quiet',
+        '--ignore-submodules=none',
         tree,
         '--',
         check=False,
@@ -1020,6 +1080,32 @@ def isolated_tree(
         yield root, environment
 
 
+def ensure_isolated_tree(
+    root: Path,
+    environment: dict[str, str],
+) -> None:
+    '''
+    Refuse tracked changes made by a resolution probe or check.
+
+    '''
+    for arguments in (
+        ('diff', '--cached', '--quiet',
+         '--ignore-submodules=none', 'HEAD', '--'),
+        ('diff', '--quiet', '--ignore-submodules=none',
+         'HEAD', '--'),
+    ):
+        result = git(
+            root,
+            *arguments,
+            check=False,
+            environment=environment,
+        )
+        if result.returncode == 1:
+            raise PlanError('a check changed the isolated tree')
+        if result.returncode:
+            raise PlanError('unable to verify isolated tree')
+
+
 def run_project_checks(
     spec: dict[str, Any],
     boundary: dict[str, Any],
@@ -1105,6 +1191,7 @@ def run_project_checks(
                     secrets,
                 ) from error
             trace_result(resolve_phase, probe)
+            ensure_isolated_tree(root, environment)
             phase = f'project check {index}/{total}'
             arguments = description['argv']
             trace_start(phase, arguments, root)
@@ -1114,6 +1201,8 @@ def run_project_checks(
                     cwd=root,
                     check=False,
                     env=check_env,
+                    capture_output=True,
+                    text=True,
                 )
             except OSError as error:
                 name = visible_text(description['argv'][0])
@@ -1122,9 +1211,15 @@ def run_project_checks(
                     f'cwd: {cwd}\n'
                     f'command: {render_command(arguments)}'
                 ) from error
-            trace_result(phase, result)
+            trace_result(
+                phase,
+                result,
+                captured=True,
+                secrets=secrets,
+            )
             if result.returncode:
                 return result.returncode
+            ensure_isolated_tree(root, environment)
     return 0
 
 
@@ -1160,6 +1255,7 @@ def preflight(spec: dict[str, Any], root: Path) -> None:
 def commit_message(
     root: Path,
     payload: bytes,
+    index_path: Path,
 ) -> tuple[int, str]:
     '''
     Commit the exact index through an editor-backed message snapshot.
@@ -1177,14 +1273,101 @@ def commit_message(
             os.fsync(stream.fileno())
         head_before = git(root, 'rev-parse', 'HEAD').stdout.strip()
         operation = commit_operation(str(path))
+        environment = git_environment()
+        environment['GIT_INDEX_FILE'] = str(index_path)
         result = visible_git(
             root,
             'commit',
             *operation,
+            environment=environment,
         )
         return result, head_before
     finally:
         path.unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def protected_index(
+    root: Path,
+    tree: str,
+) -> Iterator[tuple[Path, dict[str, bool]]]:
+    '''
+    Lock the real index while Git commits a private copy of it.
+
+    '''
+    name = git(
+        root, 'rev-parse', '--git-path', 'index',
+    ).stdout.strip()
+    index = Path(name)
+    if not index.is_absolute():
+        index = root / index
+    if index.is_symlink() or not index.is_file():
+        raise PlanError('real Git index is missing or symlinked')
+    lock = Path(f'{index}.lock')
+    try:
+        descriptor = os.open(
+            lock,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except OSError as error:
+        raise PlanError('unable to lock the real Git index') \
+            from error
+    owned = True
+    alternate: Path | None = None
+    head_before: str | None = None
+    state = {'committed': False}
+    try:
+        head_before = git(root, 'rev-parse', 'HEAD').stdout.strip()
+        snapshot = index.read_bytes()
+        if not index_matches(root, tree):
+            raise PlanError('real index changed during review')
+        private_fd, name = tempfile.mkstemp(
+            prefix='commit-plan-index-',
+            dir=index.parent,
+        )
+        alternate = Path(name)
+        with os.fdopen(private_fd, 'wb') as stream:
+            stream.write(snapshot)
+            stream.flush()
+            os.fsync(stream.fileno())
+        yield alternate, state
+        if not state['committed']:
+            return
+        environment = git_environment()
+        environment['GIT_INDEX_FILE'] = str(alternate)
+        actual = git(
+            root, 'write-tree', environment=environment,
+        ).stdout.strip()
+        if actual != tree:
+            raise PlanError('commit changed the private index tree')
+        git(root, 'read-tree', 'HEAD', environment=environment)
+        if index.read_bytes() != snapshot:
+            raise PlanError('real index changed while locked')
+        with os.fdopen(descriptor, 'wb') as stream:
+            descriptor = -1
+            stream.write(alternate.read_bytes())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(lock, index)
+        owned = False
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if owned:
+            lock.unlink(missing_ok=True)
+        if alternate is not None and head_before is not None:
+            current = git(root, 'rev-parse', 'HEAD').stdout.strip()
+            if current == head_before or not owned:
+                alternate.unlink(missing_ok=True)
+            else:
+                location = visible_text(str(alternate))
+                print(
+                    'commit-plan: private index retained for '
+                    f'manual recovery: {location}',
+                    file=sys.stderr,
+                    flush=True,
+                )
 
 
 def execute(
@@ -1254,7 +1437,7 @@ def execute(
         raise PlanError('HEAD changed while checks were running')
     if not index_matches(root, target_tree):
         raise PlanError('a check changed the staged tree')
-    result = visible_git(root, 'review', *review_operation())
+    result = review_diff(root)
     if result:
         return result
     root = validate_identity(spec)
@@ -1262,17 +1445,27 @@ def execute(
         raise PlanError('HEAD changed during staged review')
     if not index_matches(root, target_tree):
         raise PlanError('review changed the staged tree')
-    result, head_before = commit_message(root, message)
-    completed_after = classify(spec, root)
-    if completed_after >= ordinal:
-        print(f'[boundary {ordinal}] PASS', flush=True)
-        return 0
-    head_after = git(root, 'rev-parse', 'HEAD').stdout.strip()
-    if head_after != head_before:
-        raise PlanError(
-            'commit changed HEAD outside the planned tree'
+    with protected_index(root, target_tree) as protected:
+        alternate, state = protected
+        result, head_before = commit_message(
+            root, message, alternate,
         )
-    return result or 1
+        completed_after = classify(spec, root)
+        if completed_after == ordinal:
+            state['committed'] = True
+        elif completed_after > ordinal:
+            raise PlanError('commit advanced beyond this boundary')
+        else:
+            head_after = git(
+                root, 'rev-parse', 'HEAD',
+            ).stdout.strip()
+            if head_after != head_before:
+                raise PlanError(
+                    'commit changed HEAD outside the planned tree'
+                )
+            return result or 1
+    print(f'[boundary {ordinal}] PASS', flush=True)
+    return 0
 
 
 def show(spec: dict[str, Any]) -> None:

@@ -261,10 +261,21 @@ repository/index redirection and ignores replacement refs. It then:
   the pinned patch only when needed and verifies the result tree;
 - runs structural and isolated project checks fail-fast, then staged review
   and its fixed editor-backed commit as one boundary operation;
+- after staged review, locks the real index, revalidates its planned tree,
+  commits from a private copy, and reconciles the real index only after an
+  exact boundary commit; other Git staging attempts fail while locked;
 - after the editor or hooks return, accepts completion only when the new commit
   has the exact expected parent/tree relationship;
 - leaves an editor-aborted boundary pending and safe to execute again;
 - refuses extra, merge, reordered or tree-mismatched commits as divergence.
+
+An editor abort leaves the staged boundary pending and removes the lock.
+If `HEAD` advances outside the planned tree, the private index is retained
+for manual recovery; do not rewrite the real index to hide that state.
+Arbitrary hooks that mutate the private index can still alter a commit
+before post-commit verification, and process death during reconciliation
+can leave a lock or stale real index. These require explicit human
+inspection, not automatic reset or a claim of transactional execution.
 
 Commit OIDs and message text may differ because the editor may change the
 message; parent and complete tree identity define completion. Once all exact
