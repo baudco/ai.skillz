@@ -972,6 +972,50 @@ def command_executable(
     return shutil.which(value, path=search_path) is not None
 
 
+def validate_index_file(
+    root: Path,
+    environment: dict[str, str] | None = None,
+    *,
+    snapshot: bool = False,
+) -> bytes | None:
+    '''
+    Open only a regular index without following links or blocking.
+
+    '''
+    alternate = (environment or {}).get('GIT_INDEX_FILE')
+    if alternate is None:
+        name = git(
+            root, 'rev-parse', '--git-path', 'index',
+        ).stdout.strip()
+    else:
+        name = alternate
+    path = Path(name)
+    if not path.is_absolute():
+        path = root / path
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError as error:
+        if alternate is not None:
+            raise PlanError('private Git index is missing') \
+                from error
+        return None
+    except OSError as error:
+        raise PlanError('Git index is not a regular file') \
+            from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise PlanError('Git index is not a regular file')
+        if snapshot:
+            with os.fdopen(descriptor, 'rb') as stream:
+                descriptor = -1
+                return stream.read()
+        return None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def index_matches(
     root: Path,
     tree: str,
@@ -981,6 +1025,7 @@ def index_matches(
     Compare the real index with one tree without changing it.
 
     '''
+    validate_index_file(root, environment)
     result = git(
         root,
         'diff',
@@ -1071,9 +1116,9 @@ def stage_under_lock(
     owned = True
     alternate: Path | None = None
     try:
+        snapshot = validate_index_file(root, snapshot=True)
         if not index_matches(root, before_tree):
             raise PlanError('real index changed before staging')
-        snapshot = index.read_bytes() if index.exists() else None
         private_fd, value = tempfile.mkstemp(
             prefix='commit-plan-stage-', dir=index.parent,
         )
@@ -1095,9 +1140,7 @@ def stage_under_lock(
             raise PlanError(
                 'staging did not produce the boundary tree'
             )
-        if (
-            index.read_bytes() if index.exists() else None
-        ) != snapshot:
+        if validate_index_file(root, snapshot=True) != snapshot:
             raise PlanError('real index changed while staging')
         with os.fdopen(descriptor, 'wb') as stream:
             descriptor = -1
@@ -1572,7 +1615,9 @@ def protected_index(
     }
     try:
         head_before = git(root, 'rev-parse', 'HEAD').stdout.strip()
-        snapshot = index.read_bytes()
+        snapshot = validate_index_file(root, snapshot=True)
+        if snapshot is None:
+            raise PlanError('real Git index is missing')
         if not index_matches(root, tree):
             raise PlanError('real index changed during review')
         private_fd, name = tempfile.mkstemp(
@@ -1601,7 +1646,7 @@ def protected_index(
             != expected_head
         ):
             raise PlanError('branch changed after publication')
-        if index.read_bytes() != snapshot:
+        if validate_index_file(root, snapshot=True) != snapshot:
             raise PlanError('real index changed while locked')
     finally:
         if descriptor >= 0:
@@ -1899,6 +1944,7 @@ def main(argv: list[str] | None = None) -> int:
         git_environment()
         spec = load_spec(args.spec, args.sha256)
         root = validate_identity(spec)
+        validate_index_file(root)
         if args.preflight:
             preflight(spec, root)
         elif args.show:

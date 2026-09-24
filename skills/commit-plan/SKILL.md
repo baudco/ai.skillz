@@ -274,6 +274,9 @@ to the recorded initial parent. Each intervening commit must have exactly one
 parent and the corresponding recorded boundary tree. It rejects ambient Git
 repository/index redirection and ignores replacement refs. It then:
 
+- validates a present Git index through a non-blocking regular-file
+  descriptor before reading it and repeats that check under the staging
+  and commit locks; an initially absent index stays allowed;
 - exits successfully before staging, checks, review, editor or hooks when that
   boundary is already complete;
 - executes only the first pending boundary and refuses a later one;

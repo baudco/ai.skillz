@@ -1516,6 +1516,53 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertEqual(self.line_count(self.editor_count), 0)
         self.assertEqual(self.commit_count(), 1)
 
+    def test_special_real_index_is_rejected_without_blocking(self):
+        '''
+        Git commands inspecting the real index can block on a FIFO
+        before the executor checks its index type. A symlink or
+        directory can likewise redirect or invalidate that input.
+        Replace the fixture index with each special type and invoke
+        both preflight and execution under a bounded subprocess
+        timeout. Each must refuse before Git opens it or stages a
+        boundary, and the fixture index is restored afterward.
+
+        '''
+        index = self.root / '.git' / 'index'
+        original = index.read_bytes()
+        external = self.runtime / 'external-index'
+        external.write_bytes(original)
+        for kind in ('fifo', 'symlink', 'directory'):
+            with self.subTest(kind=kind):
+                index.unlink()
+                if kind == 'fifo':
+                    os.mkfifo(index)
+                elif kind == 'symlink':
+                    index.symlink_to(external)
+                else:
+                    index.mkdir()
+                try:
+                    for arguments in (
+                        ('--preflight',),
+                        ('--execute', '1'),
+                    ):
+                        result = self.invoke(
+                            *arguments, check=False,
+                        )
+                        self.assertEqual(result.returncode, 2)
+                        self.assertIn(
+                            'Git index is not a regular file',
+                            result.stderr,
+                        )
+                finally:
+                    if kind == 'directory':
+                        index.rmdir()
+                    else:
+                        index.unlink()
+                    index.write_bytes(original)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
     def test_external_diff_and_textconv_never_run(self):
         '''
         Git can load `GIT_EXTERNAL_DIFF` and an attribute-selected
