@@ -344,7 +344,11 @@ class CommitPlanExecTests(unittest.TestCase):
         )
 
         first = self.invoke('--execute', '1')
-        self.assertIn('[review] $ git diff --staged', first.stdout)
+        self.assertIn(
+            '[review] $ git diff --no-ext-diff '
+            '--no-textconv --staged',
+            first.stdout,
+        )
         self.assertIn(
             '[commit] $ git commit --edit --file',
             first.stdout,
@@ -416,7 +420,10 @@ class CommitPlanExecTests(unittest.TestCase):
         )
         message = self.relative(self.messages[0])
         self.assertIn(f'run     $ {check}', shown)
-        self.assertIn('$ git diff --staged', shown)
+        self.assertIn(
+            '$ git diff --no-ext-diff --no-textconv --staged',
+            shown,
+        )
         self.assertIn(
             f'message: {message}',
             shown,
@@ -1479,6 +1486,58 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertEqual(self.line_count(self.check_count), 0)
         self.assertEqual(self.line_count(self.editor_count), 0)
         self.assertEqual(self.commit_count(), 1)
+
+    def test_external_diff_and_textconv_never_run(self):
+        '''
+        Git can load `GIT_EXTERNAL_DIFF` and an attribute-selected
+        textconv driver from local configuration. An executor-owned
+        diff must not run either program while comparing the index,
+        checking structure, or showing the human the planned patch.
+        First prove both fixture drivers run for ordinary Git diff,
+        then execute the same boundary and require no driver marker.
+
+        '''
+        external_marker = self.runtime / 'external-ran'
+        external = self.runtime / 'external.sh'
+        external.write_text(
+            '#!/bin/sh\n'
+            f'printf "ran\\n" > "{external_marker}"\n'
+        )
+        external.chmod(0o755)
+        textconv_marker = self.runtime / 'textconv-ran'
+        textconv = self.runtime / 'textconv.sh'
+        textconv.write_text(
+            '#!/bin/sh\n'
+            f'printf "ran\\n" > "{textconv_marker}"\n'
+        )
+        textconv.chmod(0o755)
+        (self.root / '.git/info/attributes').write_text(
+            'one.txt diff=external\n'
+        )
+        self.git('config', 'diff.external.textconv', str(textconv))
+        self.git('add', '--', 'one.txt')
+        environment = os.environ.copy()
+        environment['GIT_EXTERNAL_DIFF'] = str(external)
+        self.run_process(
+            ['git', 'diff', '--staged'], env=environment,
+        )
+        self.assertTrue(external_marker.exists())
+        external_marker.unlink()
+        self.run_process(
+            ['git', 'diff', '--staged', '--textconv'],
+        )
+        self.assertTrue(textconv_marker.exists())
+        textconv_marker.unlink()
+        self.git('read-tree', 'HEAD')
+
+        result = self.invoke(
+            '--execute', '1',
+            extra_env={'GIT_EXTERNAL_DIFF': str(external)},
+        )
+        self.assertFalse(external_marker.exists())
+        self.assertFalse(textconv_marker.exists())
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.commit_count(), 2)
 
     def test_staging_lock_excludes_a_concurrent_writer(self):
         '''

@@ -221,8 +221,13 @@ The command block must include, in execution order:
   specification and digest.
 
 The executor applies the authenticated patch, then runs staged whitespace,
-statistics and path checks before every commit. The specification includes
-required lint and targeted tests against each exact boundary tree and the
+statistics and path checks before every commit. Only Git's internal diff
+implementation is used for index comparisons,
+structural checks and staged review; external diff drivers and text
+conversion are disabled so they cannot run code during validation.
+
+The specification includes required lint and targeted tests against
+each exact boundary tree and the
 broadest documented safe regression sequence once against the final boundary
 tree when one exists. The executor runs `git diff --staged` immediately before
 constructing the only permitted commit form:

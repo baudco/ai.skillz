@@ -239,9 +239,12 @@ def structural_operations() -> tuple[tuple[str, ...], ...]:
 
     '''
     return (
-        ('diff', '--cached', '--check'),
-        ('diff', '--cached', '--stat'),
-        ('diff', '--cached', '--name-status'),
+        ('diff', '--no-ext-diff', '--no-textconv',
+         '--cached', '--check'),
+        ('diff', '--no-ext-diff', '--no-textconv',
+         '--cached', '--stat'),
+        ('diff', '--no-ext-diff', '--no-textconv',
+         '--cached', '--name-status'),
     )
 
 
@@ -250,7 +253,7 @@ def review_operation() -> tuple[str, ...]:
     Return the mandatory human staged-review operation.
 
     '''
-    return ('diff', '--staged')
+    return ('diff', '--no-ext-diff', '--no-textconv', '--staged')
 
 
 def commit_operation(message: str) -> tuple[str, ...]:
@@ -981,6 +984,8 @@ def index_matches(
     result = git(
         root,
         'diff',
+        '--no-ext-diff',
+        '--no-textconv',
         '--cached',
         '--quiet',
         '--ignore-submodules=none',
@@ -1275,9 +1280,11 @@ def ensure_isolated_tree(
     if current != commit_oid:
         raise PlanError('a check changed the isolated HEAD')
     for arguments in (
-        ('diff', '--cached', '--quiet',
+        ('diff', '--no-ext-diff', '--no-textconv',
+         '--cached', '--quiet',
          '--ignore-submodules=none', tree, '--'),
-        ('diff', '--quiet', '--ignore-submodules=none',
+        ('diff', '--no-ext-diff', '--no-textconv',
+         '--quiet', '--ignore-submodules=none',
          tree, '--'),
     ):
         result = git(
