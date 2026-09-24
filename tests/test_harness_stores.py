@@ -428,6 +428,10 @@ class HarnessStoresTests(unittest.TestCase):
         alias: Any = xsh.aliases['ai.dlogs']
         self.assertTrue(callable(alias))
         self.assertFalse(alias.__xonsh_threadable__)
+        self.assertEqual(
+            xsh.aliases['ai.resume'],
+            [sys.executable, '-m', 'pyskillz', 'resume'],
+        )
         out: StringIO = StringIO()
         err: StringIO = StringIO()
         original: TextIO = sys.stdout
@@ -485,11 +489,18 @@ class HarnessStoresTests(unittest.TestCase):
         from types import SimpleNamespace
 
         xsh: SimpleNamespace = SimpleNamespace(
-            aliases={'ai.dlogs': ['old']}, ctx={},
+            aliases={
+                'ai.dlogs': ['old'],
+                'ai.resume': ['old-resume'],
+            },
+            ctx={},
         )
         _load_xontrib_(xsh)
         _unload_xontrib_(xsh)
         self.assertEqual(xsh.aliases['ai.dlogs'], ['old'])
+        self.assertEqual(
+            xsh.aliases['ai.resume'], ['old-resume'],
+        )
         _load_xontrib_(xsh)
         xsh.aliases['ai.dlogs'] = ['new']
         _unload_xontrib_(xsh)

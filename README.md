@@ -46,7 +46,8 @@ generalized for cross-repo deployment.
 
 `pyskillz` provides fast local session discovery for Codex, OpenCode,
 and Claude Code, with an importable `name2id()` mapping and an
-`ai.dlogs` Xonsh alias. Install in your shell's Python environment:
+`ai.dlogs` and `ai.resume` Xonsh aliases. Install in your shell's
+Python environment:
 
 ```xsh
 import sys
@@ -56,6 +57,7 @@ ai.dlogs --harness oc
 ai.dlogs --harness claude
 ai.dlogs --all
 ai.dlogs index  # preview recoverable WKT relations
+ai.resume 'dialog name' --dry-run  # inspect harness and cwd
 ```
 
 The no-install `source /path/to/ai.skillz/aliases.xsh` entrypoint
