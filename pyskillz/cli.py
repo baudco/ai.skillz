@@ -28,6 +28,23 @@ from . import dialogs
 from .wkt import WktLookup
 
 
+def _display_text(value: object) -> str:
+    '''
+    Remove terminal controls and repeated whitespace from a cell.
+
+    `format_dialog_table()` uses this for both rows and context
+    lines. Python and JSON callers retain the original values.
+
+    '''
+    char: str
+    return ' '.join(
+        ''.join(
+            char if char.isprintable() else ' '
+            for char in str(value)
+        ).split()
+    )
+
+
 def format_dialog_table(
     sessions: list[dict],
     show_cwd: bool = True,
@@ -41,7 +58,8 @@ def format_dialog_table(
     invalid/missing times blank. Reuse one `WktLookup` instance
     for the WKT column, which can reflect confirmed `/open-wkt` or
     index relations even when saved cwd names the main checkout.
-    `show_cwd=False` hides only the CWD column.
+    Uniform CWD and harness values move above the column headers;
+    `show_cwd=False` hides CWD in both places.
 
     Keep full IDs, cap names at 36 characters with an ellipsis,
     abbreviate home paths and neutralize control characters. Return
@@ -50,16 +68,7 @@ def format_dialog_table(
     names nor WKT labels.
 
     '''
-    keys: list[str] = ['name', 'id', 'updated']
-    header: list[str] = ['NAME', 'DIALOG ID', 'UPDATED (UTC)']
-    if show_cwd:
-        keys.append('cwd')
-        header.append('CWD')
-    keys.append('wkt')
-    header.append('WKT')
-    keys.append('harness')
-    header.append('HARNESS')
-    rows: list[list[str]] = [header]
+    displays: list[dict[str, str]] = []
     home: str = str(Path.home())
     home_prefix: str = home.rstrip(os.sep) + os.sep
     worktrees: WktLookup = WktLookup()
@@ -91,21 +100,59 @@ def format_dialog_table(
             display['cwd'] = '~'
         elif cwd.startswith(home_prefix):
             display['cwd'] = '~' + os.sep + cwd[len(home_prefix):]
-        char: str
-        key: str
-        rows.append(
-            [
-                ' '.join(
-                    ''.join(
-                        char if char.isprintable() else ' '
-                        for char in str(display.get(key, ''))
-                    ).split()
-                )
-                for key in keys
-            ]
-        )
-        if len(rows[-1][0]) > 36:
-            rows[-1][0] = rows[-1][0][:35] + '…'
+        values: dict[str, str] = {
+            key: _display_text(value)
+            for key, value in display.items()
+        }
+        if len(values.get('name', '')) > 36:
+            values['name'] = values['name'][:35] + '…'
+        displays.append(values)
+
+    context: list[str] = []
+    cwd_values: set[str] = {
+        row.get('cwd', '') for row in displays
+    }
+    harness_values: set[str] = {
+        row.get('harness', '') for row in displays
+    }
+    uniform_cwd: bool = (
+        show_cwd
+        and
+        len(cwd_values) == 1
+        and
+        bool(next(iter(cwd_values)))
+    )
+    uniform_harness: bool = (
+        len(harness_values) == 1
+        and
+        bool(next(iter(harness_values)))
+    )
+    if uniform_cwd:
+        context.append('CWD=' + next(iter(cwd_values)))
+    if uniform_harness:
+        context.append('HARNESS=' + next(iter(harness_values)))
+
+    columns: list[tuple[str, str]] = [
+        ('name', 'NAME'),
+        ('id', 'DIALOG ID'),
+        ('wkt', 'WKT'),
+        ('updated', 'UPDATED (UTC)'),
+    ]
+    if (
+        show_cwd
+        and
+        not uniform_cwd
+    ):
+        columns.append(('cwd', 'CWD'))
+    if not uniform_harness:
+        columns.append(('harness', 'HARNESS'))
+    keys: list[str] = [key for key, _ in columns]
+    rows: list[list[str]] = [
+        [label for _, label in columns]
+    ]
+    row: dict[str, str]
+    for row in displays:
+        rows.append([row.get(key, '') for key in keys])
     row: list[str]
     index: int
     widths: list[int] = [
@@ -115,13 +162,16 @@ def format_dialog_table(
     row: list[str]
     index: int
     value: str
-    return '\n'.join(
+    table: str = '\n'.join(
         '  '.join(
             value.ljust(widths[index])
             for index, value in enumerate(row)
         ).rstrip()
         for row in rows
     )
+    if context:
+        return '\n'.join(context) + '\n\n' + table
+    return table
 
 
 def main(argv: list[str]|None = None) -> int:
@@ -148,9 +198,7 @@ def main(argv: list[str]|None = None) -> int:
         prog='ai.dlogs',
         description='List local dialogs and their worktrees.',
         epilog='See ai.dlogs index --help for WKT relations.',
-        add_help=False,
     )
-    parser.add_argument('--help', action='help')
     parser.add_argument(
         'repo',
         nargs='?',
@@ -158,7 +206,7 @@ def main(argv: list[str]|None = None) -> int:
         help='exact session cwd (default: current directory)',
     )
     parser.add_argument(
-        '-h', '--harness',
+        '-b', '--harness',
         choices=[
             'codex', 'cx', 'opencode', 'oc', 'claude', 'cld', 'all',
         ],
@@ -201,15 +249,36 @@ def main(argv: list[str]|None = None) -> int:
         and
         os.environ.get('TERM') != 'dumb'
     ):
+        context: str
+        context_separator: str
+        table: str
+        context, context_separator, table = output.partition(
+            '\n\n',
+        )
+        if not context_separator:
+            table = context
+            context = ''
         header: str
         separator: str
         body: str
-        (
-            header,
-            separator,
-            body,
-        ) = output.partition('\n')
-        output = f'\x1b[90m{header}\x1b[0m{separator}{body}'
+        header, separator, body = table.partition('\n')
+        table = f'\x1b[90m{header}\x1b[0m{separator}{body}'
+        if context_separator:
+            colored: list[str] = []
+            line: str
+            for line in context.splitlines():
+                label: str
+                equal: str
+                value: str
+                label, equal, value = line.partition('=')
+                colored.append(
+                    f'\x1b[90m{label}{equal}\x1b[0m{value}'
+                )
+            context = '\n'.join(colored)
+        output = (
+            context + context_separator + table
+            if context_separator else table
+        )
     print(output)
     return 0
 
