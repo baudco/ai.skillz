@@ -258,15 +258,17 @@ repository/index redirection and ignores replacement refs. It then:
   boundary is already complete;
 - executes only the first pending boundary and refuses a later one;
 - accepts either the recorded pre-staging index or exact result tree, applies
-  the pinned patch only when needed and verifies the result tree;
+  the pinned patch to a private index under the real index lock only when
+  needed, then publishes and verifies the result tree under that lock;
 - runs structural and isolated project checks fail-fast, then staged review
   and its fixed editor-backed commit as one boundary operation;
 - gives each pending project check and its resolution probe a fresh
   exact-tree clone, so generated files from one check cannot influence
   another check's result; tracked mutations within a check still refuse;
-- after staged review, locks the real index, revalidates its planned tree,
-  commits from a private copy, and reconciles the real index only after an
-  exact boundary commit; other Git staging attempts fail while locked;
+- after staged review, locks the real index and checks its planned tree;
+  the editor and hooks run in an owned detached checkout. Publish its
+  exact-parent/tree commit only by a compare-and-swap of the branch ref,
+  leaving the already-staged exact real-index tree untouched;
 - after the editor or hooks return, accepts completion only when the new commit
   has the exact expected parent/tree relationship;
 - leaves an editor-aborted boundary pending and safe to execute again;
@@ -275,10 +277,12 @@ repository/index redirection and ignores replacement refs. It then:
 An editor abort leaves the staged boundary pending and removes the lock.
 If `HEAD` advances outside the planned tree, the private index is retained
 for manual recovery; do not rewrite the real index to hide that state.
-Arbitrary hooks that mutate the private index can still alter a commit
-before post-commit verification, and process death during reconciliation
-can leave a lock or stale real index. These require explicit human
-inspection, not automatic reset or a claim of transactional execution.
+Hooks that change the detached commit's parent/tree prevent publication
+and retain its checkout for manual recovery. Process death between ref
+publication and lock release can leave a stale lock, but the real index
+already contains the exact committed tree. Inspect owned recovery
+artifacts before manually releasing a stale lock; never reset the
+real index automatically or claim crash-atomic execution.
 
 Commit OIDs and message text may differ because the editor may change the
 message; parent and complete tree identity define completion. Once all exact

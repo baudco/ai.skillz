@@ -926,8 +926,11 @@ def command_executable(
     if '/' in value:
         path = Path(value)
         if path.is_absolute():
-            is_executable = path.stat().st_mode & 0o111 != 0
-            return path.is_file() and is_executable
+            try:
+                is_executable = path.stat().st_mode & 0o111 != 0
+                return path.is_file() and is_executable
+            except OSError:
+                return False
         if '..' in path.parts:
             return False
         relative = str(path)
@@ -958,7 +961,11 @@ def command_executable(
     return shutil.which(value, path=search_path) is not None
 
 
-def index_matches(root: Path, tree: str) -> bool:
+def index_matches(
+    root: Path,
+    tree: str,
+    environment: dict[str, str] | None = None,
+) -> bool:
     '''
     Compare the real index with one tree without changing it.
 
@@ -972,13 +979,18 @@ def index_matches(root: Path, tree: str) -> bool:
         tree,
         '--',
         check=False,
+        environment=environment,
     )
     if result.returncode not in {0, 1}:
         raise PlanError('unable to compare the staged tree')
     return result.returncode == 0
 
 
-def apply_patch(root: Path, payload: bytes) -> int:
+def apply_patch(
+    root: Path,
+    payload: bytes,
+    environment: dict[str, str] | None = None,
+) -> int:
     '''
     Apply the authenticated boundary patch to the real index.
 
@@ -986,7 +998,7 @@ def apply_patch(root: Path, payload: bytes) -> int:
     arguments = git_command(*patch_operation())
     cwd = visible_text(str(root))
     trace_start('stage', arguments, root)
-    environment = git_environment()
+    active_env = environment or git_environment()
     try:
         result = subprocess.run(
             arguments,
@@ -994,7 +1006,7 @@ def apply_patch(root: Path, payload: bytes) -> int:
             check=False,
             input=payload,
             capture_output=True,
-            env=environment,
+            env=active_env,
         )
     except OSError as error:
         rendered = render_command(arguments)
@@ -1011,9 +1023,84 @@ def apply_patch(root: Path, payload: bytes) -> int:
     )
     trace_result(
         'stage', diagnostic, captured=True,
-        secrets=secret_values(environment),
+        secrets=secret_values(active_env),
     )
     return result.returncode
+
+
+def stage_under_lock(
+    root: Path,
+    payload: bytes,
+    before_tree: str,
+    target_tree: str,
+) -> int:
+    '''
+    Publish a validated cached patch from a locked private index.
+
+    '''
+    name = git(
+        root, 'rev-parse', '--git-path', 'index',
+    ).stdout.strip()
+    index = Path(name)
+    if not index.is_absolute():
+        index = root / index
+    if index.is_symlink():
+        raise PlanError('real Git index is symlinked')
+    lock = Path(f'{index}.lock')
+    try:
+        descriptor = os.open(
+            lock,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except OSError as error:
+        raise PlanError('unable to lock staging index') from error
+    owned = True
+    alternate: Path | None = None
+    try:
+        if not index_matches(root, before_tree):
+            raise PlanError('real index changed before staging')
+        snapshot = index.read_bytes() if index.exists() else None
+        private_fd, value = tempfile.mkstemp(
+            prefix='commit-plan-stage-', dir=index.parent,
+        )
+        alternate = Path(value)
+        os.close(private_fd)
+        environment = git_environment()
+        environment['GIT_INDEX_FILE'] = str(alternate)
+        if snapshot is None:
+            git(
+                root, 'read-tree', before_tree,
+                environment=environment,
+            )
+        else:
+            alternate.write_bytes(snapshot)
+        result = apply_patch(root, payload, environment)
+        if result:
+            return result
+        if not index_matches(root, target_tree, environment):
+            raise PlanError(
+                'staging did not produce the boundary tree'
+            )
+        if (
+            index.read_bytes() if index.exists() else None
+        ) != snapshot:
+            raise PlanError('real index changed while staging')
+        with os.fdopen(descriptor, 'wb') as stream:
+            descriptor = -1
+            stream.write(alternate.read_bytes())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(lock, index)
+        owned = False
+        return 0
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if owned:
+            lock.unlink(missing_ok=True)
+        if alternate is not None:
+            alternate.unlink(missing_ok=True)
 
 
 def isolated_git(
@@ -1058,7 +1145,7 @@ def isolated_tree(
     spec: dict[str, Any],
     tree: str,
     parent_oid: str,
-) -> Iterator[tuple[Path, dict[str, str]]]:
+) -> Iterator[tuple[Path, dict[str, str], str]]:
     '''
     Materialize one tree under independent temporary Git metadata.
 
@@ -1160,22 +1247,30 @@ def isolated_tree(
             raise PlanError('isolated check root did not resolve')
         if normalize_git_path(root, git_dir) != str(root / '.git'):
             raise PlanError('isolated Git metadata did not resolve')
-        yield root, environment
+        yield root, environment, commit_oid
 
 
 def ensure_isolated_tree(
     root: Path,
     environment: dict[str, str],
+    commit_oid: str,
+    tree: str,
 ) -> None:
     '''
     Refuse tracked changes made by a resolution probe or check.
 
     '''
+    current = git(
+        root, 'rev-parse', 'HEAD',
+        environment=environment,
+    ).stdout.strip()
+    if current != commit_oid:
+        raise PlanError('a check changed the isolated HEAD')
     for arguments in (
         ('diff', '--cached', '--quiet',
-         '--ignore-submodules=none', 'HEAD', '--'),
+         '--ignore-submodules=none', tree, '--'),
         ('diff', '--quiet', '--ignore-submodules=none',
-         'HEAD', '--'),
+         tree, '--'),
     ):
         result = git(
             root,
@@ -1187,6 +1282,12 @@ def ensure_isolated_tree(
             raise PlanError('a check changed the isolated tree')
         if result.returncode:
             raise PlanError('unable to verify isolated tree')
+    current = git(
+        root, 'rev-parse', 'HEAD',
+        environment=environment,
+    ).stdout.strip()
+    if current != commit_oid:
+        raise PlanError('a check changed the isolated HEAD')
 
 
 def run_project_checks(
@@ -1208,7 +1309,10 @@ def run_project_checks(
             boundary['tree'],
             parent_oid,
         ) as checked:
-            root, environment = checked
+            root, environment, commit_oid = checked
+            ensure_isolated_tree(
+                root, environment, commit_oid, boundary['tree'],
+            )
             check_env = environment.copy()
             check_env.update(description['env'])
             secrets = secret_values(
@@ -1275,7 +1379,9 @@ def run_project_checks(
                     secrets,
                 ) from error
             trace_result(resolve_phase, probe)
-            ensure_isolated_tree(root, environment)
+            ensure_isolated_tree(
+                root, environment, commit_oid, boundary['tree'],
+            )
             phase = f'project check {index}/{total}'
             arguments = description['argv']
             trace_start(phase, arguments, root)
@@ -1304,7 +1410,9 @@ def run_project_checks(
             )
             if result.returncode:
                 return result.returncode
-            ensure_isolated_tree(root, environment)
+            ensure_isolated_tree(
+                root, environment, commit_oid, boundary['tree'],
+            )
     return 0
 
 
@@ -1372,12 +1480,50 @@ def commit_message(
 
 
 @contextlib.contextmanager
-def protected_index(
+def commit_checkout(
     root: Path,
+    parent_oid: str,
     tree: str,
 ) -> Iterator[tuple[Path, dict[str, bool]]]:
     '''
-    Lock the real index while Git commits a private copy of it.
+    Commit against an owned detached Git worktree, not a live ref.
+
+    '''
+    directory = Path(tempfile.mkdtemp(prefix='commit-plan-write-'))
+    checkout = directory / 'project'
+    state = {'retain': False}
+    registered = False
+    try:
+        git(
+            root, 'worktree', 'add', '--detach',
+            '--no-checkout', str(checkout), parent_oid,
+        )
+        registered = True
+        git(checkout, 'read-tree', tree)
+        git(checkout, 'checkout-index', '--all', '--force')
+        yield checkout, state
+    finally:
+        if state['retain']:
+            location = visible_text(str(checkout))
+            print(
+                f'commit-plan: commit checkout retained: {location}',
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            if registered:
+                git(root, 'worktree', 'remove', '--force',
+                    str(checkout))
+            shutil.rmtree(directory)
+
+
+@contextlib.contextmanager
+def protected_index(
+    root: Path,
+    tree: str,
+) -> Iterator[tuple[Path, dict[str, Any]]]:
+    '''
+    Lock the staged real index while publishing an isolated commit.
 
     '''
     name = git(
@@ -1401,7 +1547,10 @@ def protected_index(
     owned = True
     alternate: Path | None = None
     head_before: str | None = None
-    state = {'committed': False}
+    state: dict[str, Any] = {
+        'committed': False,
+        'head': None,
+    }
     try:
         head_before = git(root, 'rev-parse', 'HEAD').stdout.strip()
         snapshot = index.read_bytes()
@@ -1426,16 +1575,15 @@ def protected_index(
         ).stdout.strip()
         if actual != tree:
             raise PlanError('commit changed the private index tree')
-        git(root, 'read-tree', 'HEAD', environment=environment)
+        expected_head = state['head']
+        if (
+            not isinstance(expected_head, str)
+            or git(root, 'rev-parse', 'HEAD').stdout.strip()
+            != expected_head
+        ):
+            raise PlanError('branch changed after publication')
         if index.read_bytes() != snapshot:
             raise PlanError('real index changed while locked')
-        with os.fdopen(descriptor, 'wb') as stream:
-            descriptor = -1
-            stream.write(alternate.read_bytes())
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(lock, index)
-        owned = False
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -1443,7 +1591,10 @@ def protected_index(
             lock.unlink(missing_ok=True)
         if alternate is not None and head_before is not None:
             current = git(root, 'rev-parse', 'HEAD').stdout.strip()
-            if current == head_before or not owned:
+            if (
+                current == head_before
+                or (state['committed'] and current == state['head'])
+            ):
                 alternate.unlink(missing_ok=True)
             else:
                 location = visible_text(str(alternate))
@@ -1500,7 +1651,9 @@ def execute(
             raise PlanError(
                 'the real index changed from its planned state'
             )
-        result = apply_patch(root, patch)
+        result = stage_under_lock(
+            root, patch, before_tree, target_tree,
+        )
         if result:
             return result
         if not index_matches(root, target_tree):
@@ -1532,25 +1685,49 @@ def execute(
         raise PlanError('review changed the staged tree')
     with protected_index(root, target_tree) as protected:
         alternate, state = protected
-        result, head_before = commit_message(
-            root, message, alternate,
-        )
-        if result:
-            return result
-        completed_after = classify(spec, root)
-        if completed_after == ordinal:
-            state['committed'] = True
-        elif completed_after > ordinal:
-            raise PlanError('commit advanced beyond this boundary')
-        else:
+        with commit_checkout(
+            root, parent_oid, target_tree,
+        ) as isolated:
+            checkout, checkout_state = isolated
+            result, head_before = commit_message(
+                checkout, message, alternate,
+            )
             head_after = git(
-                root, 'rev-parse', 'HEAD',
+                checkout, 'rev-parse', 'HEAD',
             ).stdout.strip()
-            if head_after != head_before:
+            if result:
+                checkout_state['retain'] = head_after != head_before
+                return result
+            actual_parent, actual_tree = raw_commit_parent_tree(
+                checkout, head_after, len(parent_oid),
+            )
+            if (
+                actual_parent != parent_oid
+                or actual_tree != target_tree
+            ):
+                checkout_state['retain'] = True
                 raise PlanError(
-                    'commit changed HEAD outside the planned tree'
+                    'private commit changed the planned parent/tree'
                 )
-            return result or 1
+            root = validate_identity(spec)
+            if classify(spec, root) != completed:
+                checkout_state['retain'] = True
+                raise PlanError('branch changed before publication')
+            branch = git(
+                root, 'symbolic-ref', 'HEAD',
+            ).stdout.strip()
+            try:
+                git(
+                    root, 'update-ref', branch,
+                    head_after, parent_oid,
+                )
+            except PlanError:
+                checkout_state['retain'] = True
+                raise PlanError('branch changed during publication')
+            state['head'] = head_after
+            state['committed'] = True
+        if classify(spec, root) != ordinal:
+            raise PlanError('branch changed after publication')
     print(f'[boundary {ordinal}] PASS', flush=True)
     return 0
 

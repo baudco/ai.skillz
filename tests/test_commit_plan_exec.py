@@ -993,12 +993,9 @@ class CommitPlanExecTests(unittest.TestCase):
 
     def test_later_boundary_completion_is_not_accepted(self):
         '''
-        An external actor or hook may advance HEAD through another
-        planned tree before the current commit process returns. A
-        greater-than-or-equal comparison used to call boundary one
-        PASS even though it consumed boundary two as well. A fixture
-        post-commit hook creates the second planned tree and moves
-        HEAD to it; the invocation must report divergence instead.
+        A hook may advance its isolated commit checkout through a
+        later planned tree. The executor must reject that checkout
+        before publishing any unexpected commit on the live branch.
 
         '''
         hook = self.root / '.git' / 'hooks' / 'post-commit'
@@ -1011,9 +1008,9 @@ class CommitPlanExecTests(unittest.TestCase):
         hook.chmod(0o755)
         result = self.invoke('--execute', '1', check=False)
         self.assertEqual(result.returncode, 2)
-        self.assertIn('beyond this boundary', result.stderr)
+        self.assertIn('private commit changed', result.stderr)
         self.assertNotIn('[boundary 1] PASS', result.stdout)
-        self.assertEqual(self.commit_count(), 3)
+        self.assertEqual(self.commit_count(), 1)
 
     def test_early_pager_exit_does_not_abort_review(self):
         '''
@@ -1066,8 +1063,10 @@ class CommitPlanExecTests(unittest.TestCase):
         editor = self.runtime / 'race-editor.sh'
         editor.write_text(
             '#!/bin/sh\n'
-            'printf "unrelated\\n" > unrelated.txt\n'
-            'env -u GIT_INDEX_FILE git add -- unrelated.txt '
+            f'printf "unrelated\\n" > "{self.root}/unrelated.txt"\n'
+            'env -u GIT_INDEX_FILE -u GIT_DIR '
+            '-u GIT_WORK_TREE -u GIT_COMMON_DIR '
+            f'git -C "{self.root}" add -- unrelated.txt '
             '2>/dev/null && exit 41\n'
             f'printf "refused\\n" > "{marker}"\n'
         )
@@ -1093,11 +1092,10 @@ class CommitPlanExecTests(unittest.TestCase):
     def test_index_changing_hook_retains_recovery_evidence(self):
         '''
         User hooks run against the private commit index. A hook that
-        deliberately stages another file can still change the tree
-        Git commits before post-commit verification. This fixture
-        stages an extra path from pre-commit; the executor must not
-        call it PASS or overwrite the real index and must retain
-        its private index for explicit recovery.
+        deliberately stages another file can change the tree Git
+        commits. This fixture stages an extra path from pre-commit;
+        the executor must not publish or call it PASS and must retain
+        the isolated checkout for explicit recovery.
 
         '''
         hook = self.root / '.git' / 'hooks' / 'pre-commit'
@@ -1109,8 +1107,8 @@ class CommitPlanExecTests(unittest.TestCase):
         hook.chmod(0o755)
         result = self.invoke('--execute', '1', check=False)
         self.assertEqual(result.returncode, 2)
-        self.assertIn('diverged', result.stderr)
-        self.assertIn('retained for manual recovery', result.stderr)
+        self.assertIn('private commit changed', result.stderr)
+        self.assertIn('commit checkout retained', result.stderr)
         self.assertEqual(
             self.git('write-tree').stdout.strip(),
             self.tree_one,
@@ -1315,9 +1313,9 @@ class CommitPlanExecTests(unittest.TestCase):
         result = self.invoke('--execute', '1', check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('[commit] FAIL', result.stderr)
-        self.assertIn('retained for manual recovery', result.stderr)
+        self.assertIn('commit checkout retained', result.stderr)
         self.assertNotIn('[boundary 1] PASS', result.stdout)
-        self.assertEqual(self.commit_count(), 2)
+        self.assertEqual(self.commit_count(), 1)
         self.assertEqual(
             self.git('write-tree').stdout.strip(), self.tree_one,
         )
@@ -1353,6 +1351,206 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('\\xfe', result.stderr)
         self.assertNotIn('invalid runtime input', result.stderr)
         self.assertEqual(self.commit_count(), 1)
+
+    def test_isolated_check_cannot_rewrite_its_head(self):
+        '''
+        A probe or check can move the isolated clone's HEAD and
+        worktree to another exact tree. Comparing the clone against
+        its mutable HEAD would then approve a check that no longer
+        ran against the authenticated boundary. Reset a fixture
+        clone to its parent and exit successfully; the executor must
+        reject the moved ref before staged review or commit.
+
+        '''
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [
+                'git', 'reset', '--hard', 'HEAD^',
+            ]
+            check['resolution_argv'] = ['pwd']
+
+        self.rewrite_spec(update)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('changed the isolated HEAD', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_missing_executable_name_is_escaped(self):
+        '''
+        An absolute executable with a newline or ESC can fail at
+        `Path.stat()` before the ordinary preflight error renders
+        its name. With a raw exception path, a hostile plan could
+        inject terminal controls. Point a pending check at a missing
+        file containing both controls, then require escaped output
+        and no project check, editor or commit execution.
+
+        '''
+        absent = self.runtime / 'missing\n\x1b[31m'
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [str(absent)]
+
+        self.rewrite_spec(update)
+        result = self.invoke('--preflight', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn('\x1b', result.stdout + result.stderr)
+        self.assertNotIn('\n\x1b', result.stdout + result.stderr)
+        self.assertIn('\\x1b', result.stderr)
+        self.assertIn(
+            'required executable unavailable', result.stderr,
+        )
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_staging_lock_excludes_a_concurrent_writer(self):
+        '''
+        Staging validation and patch application used separate real
+        index operations. An external Git writer between them could
+        alter the index before the patch applied. A Git shim attempts
+        to stage an unrelated file when the patch begins; the writer
+        must hit the real index lock, while the planned patch and
+        subsequent editor-backed commit finish without that file.
+
+        '''
+        tools = self.runtime / 'staging-bin'
+        tools.mkdir()
+        real_git = shutil.which('git')
+        self.assertIsNotNone(real_git)
+        marker = self.runtime / 'stage-writer-refused'
+        shim = tools / 'git'
+        shim.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = apply ]; then\n'
+            f'  printf "other\\n" > "{self.root}/other.txt"\n'
+            '  env -u GIT_INDEX_FILE -u GIT_DIR '
+            '-u GIT_WORK_TREE -u GIT_COMMON_DIR '
+            f'  {shlex.quote(real_git)} -C "{self.root}" '
+            'add -- other.txt 2>/dev/null && exit 41\n'
+            f'  printf "refused\\n" > "{marker}"\n'
+            'fi\n'
+            f'exec {shlex.quote(real_git)} "$@"\n'
+        )
+        shim.chmod(0o755)
+        path = f'{tools}{os.pathsep}{os.environ["PATH"]}'
+        result = self.invoke(
+            '--execute', '1', extra_env={'PATH': path},
+        )
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(marker.read_text(), 'refused\n')
+        self.assertEqual(
+            self.git('rev-parse', 'HEAD^{tree}').stdout.strip(),
+            self.tree_one,
+        )
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(), self.tree_one,
+        )
+        self.assertEqual(
+            (self.root / 'other.txt').read_text(), 'other\n',
+        )
+
+    def test_ref_cas_refuses_race_after_private_commit(self):
+        '''
+        The live branch can move after the detached editor-backed
+        commit succeeds. A Git shim moves the real branch to a
+        different valid commit just before publication. The expected
+        old-parent CAS must fail, keep that writer's commit, and
+        retain the detached checkout instead of publishing an
+        unexpected-parent plan commit or overwriting the real index.
+
+        '''
+        concurrent = self.git(
+            'commit-tree', self.initial_tree,
+            '-p', self.initial_parent, '-m', 'concurrent',
+        ).stdout.strip()
+        branch = self.git('symbolic-ref', 'HEAD').stdout.strip()
+        tools = self.runtime / 'ref-bin'
+        tools.mkdir()
+        real_git = shutil.which('git')
+        self.assertIsNotNone(real_git)
+        shim = tools / 'git'
+        shim.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = update-ref '
+            f'] && [ "$2" = "{branch}" ]; then\n'
+            f'  {shlex.quote(real_git)} -C "{self.root}" '
+            f'update-ref "{branch}" {concurrent} '
+            f'{self.initial_parent} || exit 23\n'
+            'fi\n'
+            f'exec {shlex.quote(real_git)} "$@"\n'
+        )
+        shim.chmod(0o755)
+        path = f'{tools}{os.pathsep}{os.environ["PATH"]}'
+        result = self.invoke(
+            '--execute', '1', check=False,
+            extra_env={'PATH': path},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            'branch changed during publication', result.stderr,
+        )
+        self.assertIn('commit checkout retained', result.stderr)
+        self.assertEqual(
+            self.git('rev-parse', 'HEAD').stdout.strip(), concurrent,
+        )
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(), self.tree_one,
+        )
+        self.assertNotIn('[boundary 1] PASS', result.stdout)
+
+    def test_late_ref_change_cannot_reconcile_another_tree(self):
+        '''
+        An old reconciliation read `HEAD` after classifying a
+        successful commit. A concurrent ref move in that gap could
+        replace the real index with another user's tree and still
+        print PASS. Move the real ref when the executor checks its
+        private index after CAS. It must fail with the live staged
+        tree intact, rather than reading or copying mutable HEAD.
+
+        '''
+        concurrent = self.git(
+            'commit-tree', self.initial_tree,
+            '-p', self.initial_parent, '-m', 'concurrent',
+        ).stdout.strip()
+        branch = self.git('symbolic-ref', 'HEAD').stdout.strip()
+        tools = self.runtime / 'late-ref-bin'
+        tools.mkdir()
+        real_git = shutil.which('git')
+        self.assertIsNotNone(real_git)
+        shim = tools / 'git'
+        shim.write_text(
+            '#!/bin/sh\n'
+            'case "$1:$GIT_INDEX_FILE" in\n'
+            '  write-tree:*commit-plan-index-*)\n'
+            f'    current=$({shlex.quote(real_git)} '
+            f'-C "{self.root}" rev-parse HEAD) || exit 23\n'
+            f'    {shlex.quote(real_git)} -C "{self.root}" '
+            f'update-ref "{branch}" {concurrent} '
+            '"$current" || exit 23\n'
+            '    ;;\n'
+            'esac\n'
+            f'exec {shlex.quote(real_git)} "$@"\n'
+        )
+        shim.chmod(0o755)
+        path = f'{tools}{os.pathsep}{os.environ["PATH"]}'
+        result = self.invoke(
+            '--execute', '1', check=False,
+            extra_env={'PATH': path},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            'branch changed after publication', result.stderr,
+        )
+        self.assertEqual(
+            self.git('rev-parse', 'HEAD').stdout.strip(), concurrent,
+        )
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(), self.tree_one,
+        )
+        self.assertNotIn('[boundary 1] PASS', result.stdout)
 
 
 if __name__ == '__main__':
