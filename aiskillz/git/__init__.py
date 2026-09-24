@@ -6,7 +6,7 @@
 Read-only repository discovery used by the worktree layer.
 
 Replace Git CLI discovery here when qualifying Dulwich; callers in
-`pyskillz.wkt` depend on these values rather than command output.
+`aiskillz.wkt` depend on these values rather than command output.
 
 '''
 

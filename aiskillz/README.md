@@ -1,10 +1,10 @@
-# `pyskillz` package layout
+# `aiskillz` package layout
 
 The public package lists saved Codex, OpenCode, and Claude dialogs.
 `ai.dlogs index` also helps relate those dialogs to Git worktrees.
 `ai.resume` resolves a name, then starts the chosen harness with its
 dialog ID and selected launch directory.
-See [the package guide](../docs/pyskillz.md#install-and-load) to
+See [the package guide](../docs/aiskillz.md#install-and-load) to
 install it into the Python interpreter running Xonsh or an app.
 
 For `ai.dlogs index`, the flow is:

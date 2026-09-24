@@ -3,7 +3,7 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Execute read-only Git commands for `pyskillz.git` discovery.
+Execute read-only Git commands for `aiskillz.git` discovery.
 
 Keep subprocess invocation and environment isolation here. A future
 Dulwich backend replaces this implementation behind the discovery

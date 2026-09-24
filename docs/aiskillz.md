@@ -1,7 +1,8 @@
-# pyskillz: preliminary harness utilities
+# aiskillz: preliminary harness utilities
 
-`pyskillz` provides offline discovery of saved Codex, OpenCode, and
-Claude Code dialogs. It does not start, resume, modify, or delete them.
+`aiskillz` provides offline discovery of saved Codex, OpenCode, and
+Claude Code dialogs. `ai.resume` launches the selected harness with
+a saved dialog; listing and indexing do not modify harness logs.
 The Python API needs only the standard library; the Xontrib requires
 Xonsh in the environment loading it.
 
@@ -18,7 +19,7 @@ uv pip install --python @(sys.executable) -e /path/to/ai.skillz
 Start a fresh Xonsh after installing, then load the extension:
 
 ```xsh
-xontrib load pyskillz
+xontrib load aiskillz
 ai.dlogs
 ai.dlogs --harness codex
 ai.dlogs --harness oc
@@ -32,7 +33,7 @@ Editable installs register import hooks at Python startup. A shell
 already running during installation may report the Xontrib missing.
 Activating a virtualenv can also change subprocess lookup without
 changing the Python interpreter hosting Xonsh. Check `sys.executable`
-and `importlib.util.find_spec('pyskillz')` inside the failing shell
+and `importlib.util.find_spec('aiskillz')` inside the failing shell
 before attributing a load failure to either cause.
 For immediate use in that shell, run
 `source /path/to/ai.skillz/aliases.xsh`; this registers the alias
@@ -43,10 +44,10 @@ that is the same virtualenv as Xonsh, one install covers both. No
 package symlink into the workspace configuration directory is needed.
 Use a permanent checkout for editable installs.
 
-Add `xontrib load pyskillz` to your Xonsh setup. Installation in one
+Add `xontrib load aiskillz` to your Xonsh setup. Installation in one
 virtualenv does not install the package in other Xonsh interpreters.
 The package also exports the `ai.dlogs` executable and
-`python -m pyskillz`. Without installation, the original
+`python -m aiskillz`. Without installation, the original
 `source /path/to/ai.skillz/aliases.xsh` entrypoint remains available.
 
 If a development-shell hook runs `uv sync`, it can remove manually
@@ -57,9 +58,24 @@ this checkout explicitly when launching:
 nix develop -c uv run --with-editable /path/to/ai.skillz xonsh
 ```
 
-For persistent application imports, declare `pyskillz` as an editable
+For persistent application imports, declare `aiskillz` as an editable
 local dependency in that application's project. Installing it with
 `uv pip install` alone does not update the project's dependency list.
+
+If this environment previously installed the `pyskillz` distribution,
+remove that old installation and install this checkout under its new
+name in the same interpreter:
+
+```xsh
+import sys
+uv pip uninstall --python @(sys.executable) pyskillz
+uv pip install --python @(sys.executable) -e /path/to/ai.skillz
+```
+
+Change imports to `from aiskillz import ...`, change Xonsh setup to
+`xontrib load aiskillz`, and restart Xonsh. A `uv sync`-managed app
+must also replace its dependency declaration. The `ai.dlogs` and
+`ai.resume` command names stay the same.
 
 ## Terminology
 
@@ -75,7 +91,7 @@ local dependency in that application's project. Installing it with
 ## Python API
 
 ```python
-from pyskillz import name2id, list_dialogs
+from aiskillz import name2id, list_dialogs
 
 dialogs: dict[str, str] = name2id(
     path='~/repos/example', harness='codex',
@@ -124,7 +140,7 @@ for dialog in dialogs:
 For an exact ID lookup across directories:
 
 ```python
-from pyskillz import get_dialog
+from aiskillz import get_dialog
 
 dialog = get_dialog(dialog_id)
 # Optional harness filter; aliases work here too:
@@ -183,7 +199,7 @@ means; it is an in-memory dictionary lasting for one listing.
 `relations.json`. You can call it from any checkout of the repo:
 
 ```python
-from pyskillz import list_dialogs, list_wkt_relations
+from aiskillz import list_dialogs, list_wkt_relations
 
 relations: list[dict] = list_wkt_relations(
     path='~/repos/demo',
@@ -298,7 +314,7 @@ interpret the dialog name as a shell command.
   The adapter checks required columns and supports title-only indexes.
 - OpenCode: read-only `opencode.db` and `opencode-stable.db` under
   `$XDG_DATA_HOME/opencode`, default `~/.local/share/opencode`.
-  `OPENCODE_DATA_DIR` is a pyskillz override. Without either DB, use
+  `OPENCODE_DATA_DIR` is an aiskillz override. Without either DB, use
   legacy `storage/session/*/*.json` metadata. SQLite is authoritative
   when present; old JSON copies are not merged back into it.
 - Claude: `$CLAUDE_CONFIG_DIR/projects`, default `~/.claude/projects`.
@@ -332,8 +348,8 @@ and explains that in its reply to you. The opened worktree remains
 usable. Supply the ID later with `--record`, or recover it with
 `ai.dlogs index` when the logs contain enough information.
 
-The skill calls `pyskillz.record_wkt_relation()` when Python can import
-this package. Otherwise, it runs the `pyskillz/cli.py` script from
+The skill calls `aiskillz.record_wkt_relation()` when Python can import
+this package. Otherwise, it runs the `aiskillz/cli.py` script from
 this repo's source files. Both paths use the same relation writer.
 
 To associate a worktree to a dialog explicitly, use:
@@ -345,7 +361,7 @@ ai.dlogs index --record oc ses_example --worktree /repos/demo/wkts/feature
 Or from Python:
 
 ```python
-from pyskillz import record_wkt_relation
+from aiskillz import record_wkt_relation
 
 changed: int = record_wkt_relation(
     repo='~/repos/demo',
@@ -495,7 +511,7 @@ until you have verified the new `relations.json` records.
 
 ## Python package layers
 
-See [the package layout](../pyskillz/README.md) for the entry points,
+See [the package layout](../aiskillz/README.md) for the entry points,
 dependency direction, and how the CLI, dialog readers, WKT indexer,
 and Git discovery work together.
 
@@ -507,7 +523,7 @@ new tests can use pytest fixtures as shared setup evolves. Xontrib
 integration tests also require Xonsh in that environment.
 
 ```xsh
-python -m pytest tests/test_dlogs.py tests/test_harness_stores.py tests/test_dialog_timestamps.py tests/test_worktree_dialogs.py tests/test_dialog_index.py tests/test_git_discovery.py tests/test_pyskillz_layers.py
+python -m pytest tests/test_dlogs.py tests/test_harness_stores.py tests/test_dialog_timestamps.py tests/test_worktree_dialogs.py tests/test_dialog_index.py tests/test_git_discovery.py tests/test_aiskillz_layers.py
 uv build
 ```
 
@@ -555,7 +571,7 @@ interface is part of this preliminary implementation.
 The sibling `ai.reply` project already has discovery in
 `python/ai_reply_codex.py`, `python/ai_reply_extract.py`, and
 `lua/ai/reply/providers/claude.lua`. The intended shared boundary is
-session discovery in `pyskillz`; reply extraction and picker behavior
+session discovery in `aiskillz`; reply extraction and picker behavior
 remain consumer responsibilities. Do not import sibling checkout
 files through ad hoc Python path modifications.
 
@@ -567,7 +583,7 @@ existing differences:
   Python consumers use milliseconds. Claude also needs a transcript
   path, which the current shared records do not expose.
 - Scope: the OpenCode consumer includes descendant directories and
-  legacy worktree-owner scopes. `pyskillz` currently matches exact cwd.
+  legacy worktree-owner scopes. `aiskillz` currently matches exact cwd.
 - Sources: the Codex consumer selects CLI roots, while this package
   also includes editor sessions. Preserve consumer filtering.
 - Titles: Claude now shares the latest custom/AI title and last-prompt

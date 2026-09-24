@@ -3,7 +3,7 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Run the session listing CLI with python -m pyskillz.
+Run the session listing CLI with python -m aiskillz.
 
 '''
 

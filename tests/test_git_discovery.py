@@ -15,8 +15,8 @@ import subprocess
 
 import pytest
 
-from pyskillz.git import repository, primary_worktree
-from pyskillz.wkt._relations import relation_dir
+from aiskillz.git import repository, primary_worktree
+from aiskillz.wkt._relations import relation_dir
 
 
 @pytest.mark.skipif(

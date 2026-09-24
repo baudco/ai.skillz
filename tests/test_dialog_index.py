@@ -20,21 +20,21 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from pyskillz import (
+from aiskillz import (
     list_wkt_relations,
     list_worktree_associations,
     record_wkt_relation,
     record_worktree,
 )
-from pyskillz.wkt._relations import identity
-from pyskillz.cli import main
-from pyskillz.dialogs import (
+from aiskillz.wkt._relations import identity
+from aiskillz.cli import main
+from aiskillz.dialogs import (
     preview_wkt_relations as preview,
     save_wkt_preview as save_preview,
     apply_wkt_preview as apply_preview,
     record_wkt_relation as record,
 )
-from pyskillz.wkt._lookup import WktLookup
+from aiskillz.wkt._lookup import WktLookup
 
 
 @unittest.skipUnless(shutil.which('git'), 'git unavailable')
@@ -195,7 +195,7 @@ class DialogIndexTests(unittest.TestCase):
         self.cx_id: str = '01980000-0000-7000-8000-000000000001'
         self.dialogs: list[dict] = []
         self.reader: Any = patch(
-            'pyskillz.dialogs._api.list_dialogs',
+            'aiskillz.dialogs._api.list_dialogs',
             side_effect=self.rows,
         )
         self.reader.start()

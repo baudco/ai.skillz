@@ -64,16 +64,16 @@ def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
 
     command: Any = unthreadable(dlogs_alias)
     previous: Any = xsh.aliases.get('ai.dlogs')
-    xsh.ctx['_pyskillz_alias_previous'] = previous
-    xsh.ctx['_pyskillz_alias_command'] = command
+    xsh.ctx['_aiskillz_alias_previous'] = previous
+    xsh.ctx['_aiskillz_alias_command'] = command
     xsh.aliases['ai.dlogs'] = command
     resume: list[str] = [
-        sys.executable, '-m', 'pyskillz', 'resume',
+        sys.executable, '-m', 'aiskillz', 'resume',
     ]
-    xsh.ctx['_pyskillz_resume_previous'] = (
+    xsh.ctx['_aiskillz_resume_previous'] = (
         xsh.aliases.get('ai.resume')
     )
-    xsh.ctx['_pyskillz_resume_command'] = resume
+    xsh.ctx['_aiskillz_resume_command'] = resume
     xsh.aliases['ai.resume'] = resume
     return {}
 
@@ -84,19 +84,19 @@ def _unload_xontrib_(xsh: Any, **kwargs: Any) -> None:
 
     '''
     command: Any = xsh.ctx.pop(
-        '_pyskillz_alias_command', None,
+        '_aiskillz_alias_command', None,
     )
-    previous: Any = xsh.ctx.pop('_pyskillz_alias_previous', None)
+    previous: Any = xsh.ctx.pop('_aiskillz_alias_previous', None)
     if xsh.aliases.get('ai.dlogs') == command:
         if previous is None:
             xsh.aliases.pop('ai.dlogs', None)
         else:
             xsh.aliases['ai.dlogs'] = previous
     resume: Any = xsh.ctx.pop(
-        '_pyskillz_resume_command', None,
+        '_aiskillz_resume_command', None,
     )
     prior_resume: Any = xsh.ctx.pop(
-        '_pyskillz_resume_previous', None,
+        '_aiskillz_resume_previous', None,
     )
     if xsh.aliases.get('ai.resume') == resume:
         if prior_resume is None:

@@ -185,14 +185,14 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    `ai.dlogs index --record`.
 
    After ownership is durable, record the verified association. When
-   `pyskillz` is installed in the active Python environment, call
-   `pyskillz.record_wkt_relation(repo=..., harness=..., dialog_id=...,
+   `aiskillz` is installed in the active Python environment, call
+   `aiskillz.record_wkt_relation(repo=..., harness=..., dialog_id=...,
    wkt=...)` directly. `ai.dlogs index --record` in the packaged
    Xontrib calls the same implementation in-process. Otherwise use
    the source CLI below:
 
    ```text
-   python3 <source>/pyskillz/cli.py index <worktree-root>
+   python3 <source>/aiskillz/cli.py index <worktree-root>
      --record <codex|opencode|claude> <verified-dialog-id>
      --worktree <worktree-root>
    ```
