@@ -1654,10 +1654,18 @@ test_deployment_validator_failures() {
 test_all_templates_invalid_args_and_idempotence() {
     new_repo all-and-validation
     bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
-    local output before after
+    local output before after kind skill_count=0 provider
+    while IFS='|' read -r kind _; do
+        [ "$kind" = skill ] || continue
+        skill_count=$((skill_count + 1))
+    done < "$ROOT/deploy-manifest.conf"
     output="$(bash "$DEPLOY" all "$REPO" --provider all)"
     assert_contains "$output" \
-        'Result: 42 deployed, 0 template skipped, 16 command deployment(s)'
+        "Result: $((skill_count * 2)) deployed, 0 template skipped, 16 command deployment(s)"
+    for provider in claude opencode; do
+        [ -L "$REPO/.$provider/skills/layered-design" ] \
+            || fail "all did not deploy $provider layered-design skill"
+    done
     [ -L "$REPO/.claude/skills/run-tests/SKILL.md" ] \
         || fail 'run-tests hybrid destination was not created'
     local command
@@ -2135,10 +2143,14 @@ test_opencode_debug_if_available() {
     bash "$DEPLOY" all "$REPO" --provider opencode >/dev/null
     local config_output="$TMP_ROOT/opencode-config.out"
     local skill_output="$TMP_ROOT/opencode-skill.out"
-    (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
+    local data_home="$TMP_ROOT/opencode-data"
+    mkdir -p "$data_home"
+    (cd "$REPO" && XDG_DATA_HOME="$data_home" \
+        OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
         opencode debug config > "$config_output")
-    (cd "$REPO" && OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
+    (cd "$REPO" && XDG_DATA_HOME="$data_home" \
+        OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
         opencode debug skill > "$skill_output")
     local workflow
