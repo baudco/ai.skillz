@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, TextIO
 
 
 GIT_REDIRECT_VARS = (
@@ -37,6 +37,7 @@ RUNTIME_PATHS = (
     ('.ai', 'state', 'commit-msg', 'msgs'),
     ('.claude', 'skills', 'commit-msg', 'msgs'),
 )
+SKILL_NAME = Path(__file__).resolve().parents[1].name
 
 
 class PlanError(RuntimeError):
@@ -73,6 +74,24 @@ def render_command(arguments: list[str]) -> str:
     '''
     safe_arguments = [visible_text(item) for item in arguments]
     return shlex.join(safe_arguments)
+
+
+def trace_prefix(phase: str, stream: TextIO) -> str:
+    '''
+    Color the executor phase label only on an interactive stream.
+
+    This keeps captured plan logs byte-stable and respects the same
+    terminal opt-out used by `ai.dlogs`.
+
+    '''
+    label = f'[{phase}]'
+    if (
+        stream.isatty()
+        and not os.environ.get('NO_COLOR')
+        and os.environ.get('TERM') != 'dumb'
+    ):
+        return f'\x1b[1;36m{label}\x1b[0m'
+    return label
 
 
 def secret_values(
@@ -123,9 +142,10 @@ def trace_start(
     '''
     rendered = render_command(arguments)
     cwd = visible_text(str(root))
+    label = trace_prefix(phase, sys.stdout)
     print(
-        f'[{phase}] cwd={cwd}\n'
-        f'[{phase}] $ {rendered}',
+        f'{label} cwd={cwd}\n'
+        f'{label} $ {rendered}',
         flush=True,
     )
 
@@ -154,9 +174,11 @@ def trace_result(
                 )
             if lines:
                 print('\n'.join(lines), flush=True)
-        print(f'[{phase}] PASS', flush=True)
+        label = trace_prefix(phase, sys.stdout)
+        print(f'{label} PASS', flush=True)
         return
-    lines = [f'[{phase}] FAIL exit={result.returncode}']
+    label = trace_prefix(phase, sys.stderr)
+    lines = [f'{label} FAIL exit={result.returncode}']
     if captured and result.stdout:
         append_output(lines, 'stdout', result.stdout, secrets)
     if captured and result.stderr:
@@ -1549,7 +1571,8 @@ def run_project_checks(
             if evidence:
                 reason = prior_pass_reason(evidence)
                 print(
-                    f'[micro CI {index}/{total}] SKIP {reason}',
+                    f'[{SKILL_NAME} check {index}/{total}] '
+                    f'SKIP {reason}',
                     flush=True,
                 )
                 continue
@@ -1578,7 +1601,7 @@ def run_project_checks(
                 check_env,
             )
             resolve_phase = (
-                f'project check {index}/{total} resolve'
+                f'{SKILL_NAME} check {index}/{total} resolve'
             )
             resolution = description['resolution_argv']
             cwd = visible_text(str(root))
@@ -1649,7 +1672,7 @@ def run_project_checks(
             ensure_isolated_tree(
                 root, environment, commit_oid, boundary['tree'],
             )
-            phase = f'project check {index}/{total}'
+            phase = f'{SKILL_NAME} check {index}/{total}'
             arguments = description['argv']
             trace_start(phase, arguments, root)
             try:
@@ -2337,11 +2360,15 @@ def overview(spec: dict[str, Any], completed: int = 0) -> str:
 
     def escape(value: str) -> str:
         '''
-        Escape Markdown syntax as well as terminal controls.
+        Escape Markdown structure and terminal controls in text.
+
+        Parentheses and underscores are ordinary inline text here.
+        Preserve backticks so subjects can retain intentional code
+        spans, as in ``Update `codex` to 0.156.1``.
 
         '''
         return re.sub(
-            r'([\\`*_{}\[\]()<>#!|])', r'\\\1', visible_text(value),
+            r'([\\*{}\[\]<>#!|])', r'\\\1', visible_text(value),
         )
 
     total = len(spec['boundaries'])
@@ -2369,6 +2396,8 @@ def overview(spec: dict[str, Any], completed: int = 0) -> str:
         'checks, shows the diff, and opens the message editor.',
         'Stops on failure; completed commits are skipped.',
         '',
+        'execution rules:',
+        '',
     ))
     policy = (
         'Branch policy: strict; require the recorded branch ref.'
@@ -2377,19 +2406,21 @@ def overview(spec: dict[str, Any], completed: int = 0) -> str:
         'at the pinned HEAD or an exact completed boundary prefix.'
     )
     lines.extend((
-        policy + ' Detached HEAD is refused.',
-        'Authenticate artifacts and identity/history/index; '
-        'check, review, commit, then verify the tree.',
-        'Refuse order/history/index divergence; stop on failures. '
-        'Skip completed boundaries and already-staged patches.',
-        'Prior PASS skips unchanged checks/probes; full evidence '
-        'and provenance remain in the pinned spec/artifacts.',
-        'Pending checks use temporary exact-tree clones with '
-        'independent Git metadata, sanitized Python paths '
+        '- ' + policy + ' Detached HEAD is refused.',
+        '- Validation: authenticate artifacts and '
+        'identity/history/index; check, review, commit, then '
+        'verify the tree. Stop on order/history/index divergence '
+        'or failures.',
+        '- Progress: skip completed boundaries and already-staged '
+        'patches. Prior PASS skips unchanged checks/probes; full '
+        'evidence and provenance stay in the pinned spec/artifacts.',
+        '- Checks: pending checks use temporary exact-tree clones '
+        'with independent Git metadata, sanitized Python paths '
         'and cleanup.',
-        '`AUTHENTICATED_PATCH` / `AUTHENTICATED_MESSAGE_SNAPSHOT` '
-        'are symbolic runtime paths.',
-        'Diagnostic argv uses the current checkout without hidden '
+        '- Paths: `AUTHENTICATED_PATCH` and '
+        '`AUTHENTICATED_MESSAGE_SNAPSHOT` are symbolic '
+        'runtime paths.',
+        '- Diagnostics: argv uses the current checkout without '
         'env values; probe-N references the catalog, not execution.',
     ))
     return '\n'.join(lines)

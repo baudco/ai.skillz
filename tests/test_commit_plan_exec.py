@@ -116,6 +116,69 @@ class CommitPlanExecTests(unittest.TestCase):
             )
         return result
 
+    def test_trace_labels_color_only_on_tty(self):
+        '''
+        Project checks used plain labels even in an interactive
+        terminal. Exercise the same trace helpers that print the
+        check command and outcome. A TTY gets a colored label;
+        captured output, `NO_COLOR`, and a dumb terminal keep the
+        original text so logs and existing parsers stay stable.
+
+        '''
+        result = subprocess.CompletedProcess(['git'], 0)
+        cases = (
+            (True, '', 'xterm', True),
+            (False, '', 'xterm', False),
+            (True, '1', 'xterm', False),
+            (True, '', 'dumb', False),
+        )
+        for tty, no_color, term, colored in cases:
+            with self.subTest(
+                tty=tty, no_color=no_color, term=term,
+            ):
+                output = io.StringIO()
+                environment = {
+                    'NO_COLOR': no_color,
+                    'TERM': term,
+                }
+                with (
+                    patch.object(output, 'isatty', return_value=tty),
+                    patch.dict(os.environ, environment),
+                    contextlib.redirect_stdout(output),
+                ):
+                    PLAN_EXEC.trace_start(
+                        'commit-plan check 3/4', ['git', 'status'],
+                        self.root,
+                    )
+                    PLAN_EXEC.trace_result(
+                        'commit-plan check 3/4', result,
+                    )
+                text = output.getvalue()
+                label = '[commit-plan check 3/4]'
+                if colored:
+                    label = f'\x1b[1;36m{label}\x1b[0m'
+                self.assertIn(f'{label} $ git status', text)
+                self.assertIn(f'{label} PASS', text)
+                self.assertEqual('\x1b[' in text, colored)
+
+        errors = io.StringIO()
+        failure = subprocess.CompletedProcess(['git'], 23)
+        with (
+            patch.object(errors, 'isatty', return_value=True),
+            patch.dict(
+                os.environ,
+                {'NO_COLOR': '', 'TERM': 'xterm'},
+            ),
+            contextlib.redirect_stderr(errors),
+        ):
+            PLAN_EXEC.trace_result(
+                'commit-plan check 3/4', failure,
+            )
+        self.assertIn(
+            '\x1b[1;36m[commit-plan check 3/4]\x1b[0m '
+            'FAIL exit=23', errors.getvalue(),
+        )
+
     def git(self, *arguments, check=True):
         return self.run_process(
             ['git', *arguments],
@@ -801,7 +864,7 @@ class CommitPlanExecTests(unittest.TestCase):
         before = index.read_bytes()
         overview = self.invoke('--overview').stdout
         self.assertIn(
-            r'1. **pending:** Title \`code\`\\x0a$\(touch forged\)',
+            r'1. **pending:** Title `code`\\x0a$(touch forged)',
             overview,
         )
         self.assertIn(r'\<script\>\\x1b\[2J', overview)
@@ -813,7 +876,15 @@ class CommitPlanExecTests(unittest.TestCase):
             '2 planned commits · 0 completed · 2 remaining',
             overview,
         )
-        self.assertIn(r'worktree: \(main checkout\)', overview)
+        self.assertIn('worktree: (main checkout)', overview)
+        self.assertIn(
+            'execution rules:\n\n- Branch policy:', overview,
+        )
+        self.assertIn('\n- Validation:', overview)
+        self.assertIn('\n- Progress:', overview)
+        self.assertIn('\n- Checks:', overview)
+        self.assertIn('\n- Paths:', overview)
+        self.assertIn('\n- Diagnostics:', overview)
         self.assertIn('mode: review', overview)
         for control in ('\x1b', '\r', '\t'):
             self.assertNotIn(control, overview)
@@ -874,6 +945,34 @@ class CommitPlanExecTests(unittest.TestCase):
             self.assertEqual(
                 self.git('rev-parse', 'HEAD').stdout, head,
             )
+
+    def test_overview_preserves_subject_code_and_branch(self):
+        '''
+        The overview previously escaped every Markdown punctuation
+        mark, adding visible backslashes to a normal branch name and
+        to intentional inline code in a commit subject. Rename the
+        fixture branch and rewrite one subject to match the reported
+        case. The overview must preserve both spellings while still
+        showing the matching execute number.
+
+        '''
+        self.git('branch', '-m', 'vibe_wkss_CONT')
+
+        def update(spec):
+            spec['strict_branch'] = False
+            spec['boundaries'][0]['subject'] = (
+                'Update `codex` to 0.156.1'
+            )
+
+        self.rewrite_spec(update)
+        overview = self.invoke('--overview').stdout
+        self.assertIn('branch: vibe_wkss_CONT', overview)
+        self.assertIn(
+            '1. **pending:** Update `codex` to 0.156.1 '
+            '(`--execute 1`)', overview,
+        )
+        self.assertNotIn(r'\_', overview)
+        self.assertNotIn(r'\`', overview)
 
     def test_overview_identifies_linked_checkout(self):
         '''
@@ -1554,9 +1653,10 @@ class CommitPlanExecTests(unittest.TestCase):
             )
         result = self.invoke('--execute', '1')
         self.assertIn(
-            '[micro CI 1/2] SKIP prior PASS', result.stdout,
+            '[commit-plan check 1/2] SKIP prior PASS',
+            result.stdout,
         )
-        self.assertIn('[project check 2/2] PASS', result.stdout)
+        self.assertIn('[commit-plan check 2/2] PASS', result.stdout)
         self.assertEqual(self.line_count(self.check_count), 1)
 
     def test_all_reused_checks_need_no_tools_or_isolation(self):
@@ -1962,15 +2062,15 @@ class CommitPlanExecTests(unittest.TestCase):
         result = self.invoke('--execute', '1', check=False)
         self.assertEqual(result.returncode, 23)
         self.assertIn(
-            '[project check 1/1] cwd=',
+            '[commit-plan check 1/1] cwd=',
             result.stdout,
         )
         self.assertIn(
-            f'[project check 1/1] $ {failure}',
+            f'[commit-plan check 1/1] $ {failure}',
             result.stdout,
         )
         self.assertIn(
-            '[project check 1/1] FAIL exit=23',
+            '[commit-plan check 1/1] FAIL exit=23',
             result.stderr,
         )
         self.assertIn('trace failure', result.stderr)
@@ -2068,7 +2168,7 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertNotIn(inherited_secret, output)
         self.assertIn('<redacted>', result.stderr)
         self.assertIn(
-            '[project check 1/1 resolve] FAIL exit=19',
+            '[commit-plan check 1/1 resolve] FAIL exit=19',
             result.stderr,
         )
         self.assertIn('stderr:', result.stderr)
@@ -2316,12 +2416,12 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn('escaped the boundary root', result.stderr)
         self.assertIn(
-            '[project check 1/1 resolve] FAIL validation',
+            '[commit-plan check 1/1 resolve] FAIL validation',
             result.stderr,
         )
         self.assertIn('process exit=0', result.stderr)
         self.assertNotIn(
-            '[project check 1/1 resolve] PASS',
+            '[commit-plan check 1/1 resolve] PASS',
             result.stdout,
         )
         self.assertEqual(self.commit_count(), 1)
@@ -2351,7 +2451,7 @@ class CommitPlanExecTests(unittest.TestCase):
         self.rewrite_spec(update)
         result = self.invoke('--execute', '1')
         self.assertIn(
-            '[project check 1/1 resolve] PASS', result.stdout,
+            '[commit-plan check 1/1 resolve] PASS', result.stdout,
         )
         self.assertIn('[boundary 1] PASS', result.stdout)
         self.assertEqual(self.line_count(self.check_count), 1)
@@ -2907,6 +3007,7 @@ class CommitPlanExecTests(unittest.TestCase):
             arguments.append('--no-pager')
         environment = os.environ.copy()
         environment['GIT_EDITOR'] = str(editor)
+        environment['NO_COLOR'] = '1'
         if pager is None:
             environment.pop('GIT_PAGER', None)
         else:
@@ -3282,7 +3383,7 @@ class CommitPlanExecTests(unittest.TestCase):
         result = self.invoke('--execute', '1', check=False)
         self.assertEqual(result.returncode, 23)
         self.assertIn(
-            '[project check 1/1] FAIL exit=23', result.stderr,
+            '[commit-plan check 1/1] FAIL exit=23', result.stderr,
         )
         self.assertIn('\\xff', result.stderr)
         self.assertIn('\\xfe', result.stderr)
