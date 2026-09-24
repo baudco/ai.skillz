@@ -3,21 +3,23 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-List saved dialogs without starting a harness or model turn.
+Public dialog discovery and worktree-relation orchestration.
+
+Workspace modules and the CLI call these functions. _readers supplies
+harness metadata; _inspect extracts recorded directories from logs.
+The wkt layer matches those directories to Git worktrees and persists
+relations. Shell parsing and table formatting belong to cli.py.
 
 '''
 
-import argparse
-from datetime import datetime, timezone
-import json
-import os
 from collections import Counter
+import os
 from pathlib import Path
 import sqlite3
-import subprocess
-import sys
 
-from ._stores import (
+from ..wkt import WktIndexer
+from ._inspect import observations
+from ._readers import (
     codex_sessions,
     opencode_sessions,
     claude_sessions,
@@ -124,6 +126,7 @@ def list_dialogs(
     )
 
 
+
 def get_dialog(
     dialog_id: str,
     harness: str|None = None,
@@ -164,7 +167,6 @@ def get_dialog(
     if len(matches) > 1:
         raise ValueError('Dialog ID is ambiguous; specify harness')
     return matches[0] if matches else None
-
 
 
 def name2id(
@@ -208,193 +210,33 @@ def name2id(
         result[name] = row['id']
     return result
 
-
-def _worktree_name(cwd: str) -> str:
+def preview_wkt_relations(
+    path: str = '.',
+    logs: bool = True,
+) -> dict:
     '''
-    Identify a linked worktree at the recorded cwd, if accessible.
+    Find possible worktrees for this repository's existing dialogs.
 
-    Git's common directory distinguishes linked worktrees from main
-    checkouts and submodules. This does not locate a running agent.
-
-    '''
-    if not Path(cwd).is_absolute():
-        return ''
-    key: str
-    value: str
-    env: dict[str, str] = {
-        key: value for key, value in os.environ.items()
-        if not key.startswith('GIT_')
-    }
-    try:
-        result: subprocess.CompletedProcess = subprocess.run(
-            [
-                'git', 'rev-parse', '--path-format=absolute',
-                '--show-toplevel', '--git-dir', '--git-common-dir',
-            ],
-            cwd=cwd, env=env, capture_output=True, text=True,
-            timeout=2, check=True,
-        )
-    except (
-        OSError,
-        subprocess.SubprocessError,
-    ):
-        return ''
-    paths: list[str] = result.stdout.splitlines()
-    if len(paths) != 3:
-        return ''
-    if paths[1] == paths[2]:
-        return ''
-    return Path(paths[0]).name
-
-
-def table(sessions: list[dict], show_cwd: bool = True) -> str:
-    '''
-    Render full IDs and cap displayed names at 36 characters.
+    Called by ai.dlogs index before saving its proposal JSON file.
+    Read each harness independently; report unreadable databases in
+    the proposal's warnings. WktIndexer limits history reads to
+    this repository, then matches those directories to Git worktrees.
+    With logs=False only saved cwd and old owner metadata are used.
 
     '''
-    keys: list[str] = ['name', 'id', 'updated']
-    header: list[str] = ['NAME', 'DIALOG ID', 'UPDATED (UTC)']
-    if show_cwd:
-        keys.append('cwd')
-        header.append('CWD')
-    keys.append('wkt')
-    header.append('WKT')
-    keys.append('harness')
-    header.append('HARNESS')
-    rows: list[list[str]] = [header]
-    home: str = str(Path.home())
-    home_prefix: str = home.rstrip(os.sep) + os.sep
-    worktrees: dict[str, str] = {}
-    session: dict
-    for session in sessions:
-        display: dict = dict(session)
-        cwd: str = str(display.get('cwd', ''))
-        if cwd not in worktrees:
-            worktrees[cwd] = _worktree_name(cwd)
-        display['wkt'] = worktrees[cwd]
-        updated: object = display.get('updated_at')
-        display['updated'] = ''
-        if isinstance(updated, (int, float)):
-            try:
-                display['updated'] = datetime.fromtimestamp(
-                    updated, timezone.utc,
-                ).strftime('%Y-%m-%d %H:%M')
-            except (
-                OverflowError,
-                OSError,
-                ValueError,
-            ):
-                pass
-        if cwd == home:
-            display['cwd'] = '~'
-        elif cwd.startswith(home_prefix):
-            display['cwd'] = '~' + os.sep + cwd[len(home_prefix):]
-        char: str
-        key: str
-        rows.append(
-            [
-                ' '.join(
-                    ''.join(
-                        char if char.isprintable() else ' '
-                        for char in str(display.get(key, ''))
-                    ).split()
-                )
-                for key in keys
-            ]
-        )
-        if len(rows[-1][0]) > 36:
-            rows[-1][0] = rows[-1][0][:35] + '…'
-    row: list[str]
-    index: int
-    widths: list[int] = [
-        max(len(row[index]) for row in rows)
-        for index in range(len(keys))
-    ]
-    row: list[str]
-    index: int
-    value: str
-    return '\n'.join(
-        '  '.join(
-            value.ljust(widths[index])
-            for index, value in enumerate(row)
-        ).rstrip()
-        for row in rows
+    dialogs: list[dict] = []
+    warnings: list[str] = []
+    harness: str
+    for harness in ('codex', 'opencode', 'claude'):
+        try:
+            dialogs.extend(list_dialogs(path=None, harness=harness))
+        except (
+            OSError,
+            ValueError,
+            sqlite3.Error,
+        ) as error:
+            warnings.append(harness + ': ' + str(error))
+    indexer: WktIndexer = WktIndexer(path)
+    return indexer.suggest(
+        dialogs, observations if logs else None, warnings,
     )
-
-
-def main(argv: list[str]|None = None) -> int:
-    '''
-    Print a table by default, with JSON for launcher integration.
-
-    '''
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        prog='ai.dlogs',
-        description=__doc__,
-        add_help=False,
-    )
-    parser.add_argument('--help', action='help')
-    parser.add_argument(
-        'repo',
-        nargs='?',
-        default='.',
-        help='exact session cwd (default: current directory)',
-    )
-    parser.add_argument(
-        '-h', '--harness',
-        choices=[
-            'codex', 'cx', 'opencode', 'oc', 'claude', 'cld', 'all',
-        ],
-        default='all',
-        help='harness to list (default: all, scoped to cwd)',
-    )
-    parser.add_argument(
-        '--all',
-        action='store_true',
-        help='every harness, cwd and source',
-    )
-    parser.add_argument('-a', '--all-repos', action='store_true')
-    parser.add_argument('--all-sources', action='store_true')
-    parser.add_argument('--json', action='store_true')
-    args: argparse.Namespace = parser.parse_args(argv)
-    try:
-        sessions: list[dict] = list_dialogs(
-            None if args.all_repos else args.repo,
-            None if args.harness == 'all' else args.harness,
-            all=args.all,
-            all_sources=args.all_sources,
-        )
-    except (
-        OSError,
-        ValueError,
-        sqlite3.Error,
-    ) as error:
-        parser.exit(1, f'ai.dlogs: {error}\n')
-    output: str = (
-        json.dumps(sessions, indent=2)
-        if args.json
-        else table(sessions)
-    )
-    if (
-        not args.json
-        and
-        sys.stdout.isatty()
-        and
-        not os.environ.get('NO_COLOR')
-        and
-        os.environ.get('TERM') != 'dumb'
-    ):
-        header: str
-        separator: str
-        body: str
-        (
-            header,
-            separator,
-            body,
-        ) = output.partition('\n')
-        output = f'\x1b[90m{header}\x1b[0m{separator}{body}'
-    print(output)
-    return 0
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
