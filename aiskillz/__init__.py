@@ -3,10 +3,10 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Convenient public imports for the pyskillz.dialogs API.
+Convenient public imports for the aiskillz.dialogs API.
 
-Existing `from pyskillz import ...` callers keep the same
-entrypoints. Implementation is layered as dialogs -> wkt -> git;
+Import from `aiskillz` for dialog discovery and WKT relations.
+Implementation is layered as dialogs -> wkt -> git;
 cli.py handles shell arguments and display, while _xontrib.py adapts
 Xonsh streams.
 

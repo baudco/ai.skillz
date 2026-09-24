@@ -3,13 +3,13 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 # The source entrypoint needs no installation; packaged users can run
-# `xontrib load pyskillz` instead.
+# `xontrib load aiskillz` instead.
 import pathlib as _skillz_pathlib
 import sys as _skillz_sys
 
 _skillz_cli = str(
     _skillz_pathlib.Path(__file__).resolve().parent
-    / 'pyskillz' / 'cli.py'
+    / 'aiskillz' / 'cli.py'
 )
 aliases['ai.dlogs'] = [_skillz_sys.executable, _skillz_cli]
 aliases['ai.resume'] = [

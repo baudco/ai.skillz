@@ -5,8 +5,8 @@
 '''
 Shell commands and terminal formatting for ai.dlogs.
 
-The installed command, python -m pyskillz, source script and Xontrib
-all call main(). Dialog operations live in pyskillz.dialogs; this
+The installed command, python -m aiskillz, source script and Xontrib
+all call main(). Dialog operations live in aiskillz.dialogs; this
 module parses arguments and formats their results for people or JSON.
 
 '''
@@ -24,7 +24,7 @@ import sys
 # Direct source execution supports skill deployments without pip.
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    __package__ = 'pyskillz'
+    __package__ = 'aiskillz'
 
 from . import dialogs
 from ._resume import resume_target
@@ -188,7 +188,7 @@ def main(argv: list[str]|None = None) -> int:
     `index_main()` for metadata preview/apply or explicit recording;
     spell a directory literally named index as `./index`.
 
-    The alias and `pyskillz/cli.py` share this dispatcher, so
+    The alias and `aiskillz/cli.py` share this dispatcher, so
     `/open-wkt` can record through the canonical source without a
     package install. Return zero on success; argument/store failures
     exit nonzero.

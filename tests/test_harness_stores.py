@@ -19,12 +19,12 @@ from typing import Any, TextIO
 import unittest
 from unittest.mock import patch
 
-from pyskillz import name2id, list_dialogs, get_dialog
-from pyskillz.cli import main
-from pyskillz.dialogs._readers import (
+from aiskillz import name2id, list_dialogs, get_dialog
+from aiskillz.cli import main
+from aiskillz.dialogs._readers import (
     claude_sessions, opencode_sessions,
 )
-from pyskillz._xontrib import _load_xontrib_, _unload_xontrib_
+from aiskillz._xontrib import _load_xontrib_, _unload_xontrib_
 
 
 class HarnessStoresTests(unittest.TestCase):
@@ -353,7 +353,7 @@ class HarnessStoresTests(unittest.TestCase):
         self.assertIsNone(get_dialog('missing'))
         self.assertIsNone(get_dialog('ses_a', harness='cld'))
         with patch(
-            'pyskillz.dialogs._api.list_dialogs',
+            'aiskillz.dialogs._api.list_dialogs',
             return_value=[
                 {'harness': 'codex', 'id': 'shared'},
                 {'harness': 'claude', 'id': 'shared'},
@@ -430,7 +430,7 @@ class HarnessStoresTests(unittest.TestCase):
         self.assertFalse(alias.__xonsh_threadable__)
         self.assertEqual(
             xsh.aliases['ai.resume'],
-            [sys.executable, '-m', 'pyskillz', 'resume'],
+            [sys.executable, '-m', 'aiskillz', 'resume'],
         )
         out: StringIO = StringIO()
         err: StringIO = StringIO()
@@ -445,7 +445,7 @@ class HarnessStoresTests(unittest.TestCase):
         self.assertIn('error:', err.getvalue())
         out = StringIO()
         with patch(
-            'pyskillz.cli.dialogs.list_dialogs', return_value=[],
+            'aiskillz.cli.dialogs.list_dialogs', return_value=[],
         ):
             self.assertEqual(alias(
                 ['--json'], stdout=out, stderr=err,
@@ -471,7 +471,7 @@ class HarnessStoresTests(unittest.TestCase):
 
         with (
             patch.object(XSH, 'env', shell_env),
-            patch('pyskillz.cli.main', check_environment),
+            patch('aiskillz.cli.main', check_environment),
         ):
             self.assertEqual(alias([], stdout=out, stderr=err), 0)
         self.assertEqual(dict(os.environ), previous_env)

@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from pyskillz.wkt._lookup import WktLookup
+from aiskillz.wkt._lookup import WktLookup
 
 
 @unittest.skipUnless(shutil.which('git'), 'git unavailable')
@@ -80,7 +80,7 @@ class DialogWorktreeTests(unittest.TestCase):
             {str(root)},
         )
         with patch(
-            'pyskillz.wkt._lookup.checkout_location',
+            'aiskillz.wkt._lookup.checkout_location',
         ) as query:
             self.assertEqual(
                 labels.roots(str(self.root), 'codex', 'dialog-one'),
