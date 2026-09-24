@@ -360,6 +360,7 @@ def visible_git(
     phase: str,
     *arguments: str,
     environment: dict[str, str] | None = None,
+    interactive: bool = False,
 ) -> int:
     '''
     Run one executor-owned Git command with visible output.
@@ -370,15 +371,23 @@ def visible_git(
     active_env = environment or git_environment()
     trace_start(phase, command_argv, root)
     try:
-        result = subprocess.run(
-            command_argv,
-            cwd=root,
-            check=False,
-            env=active_env,
-            capture_output=True,
-            text=True,
-            errors='backslashreplace',
-        )
+        if interactive:
+            result = subprocess.run(
+                command_argv,
+                cwd=root,
+                check=False,
+                env=active_env,
+            )
+        else:
+            result = subprocess.run(
+                command_argv,
+                cwd=root,
+                check=False,
+                env=active_env,
+                capture_output=True,
+                text=True,
+                errors='backslashreplace',
+            )
     except OSError as error:
         rendered = render_command(command_argv)
         raise PlanError(
@@ -387,7 +396,7 @@ def visible_git(
             f'command: {rendered}'
         ) from error
     trace_result(
-        phase, result, captured=True,
+        phase, result, captured=not interactive,
         secrets=secret_values(active_env),
     )
     return result.returncode
@@ -408,7 +417,7 @@ def safe_review_line(payload: bytes) -> bytes:
 
 def review_diff(root: Path) -> int:
     '''
-    Complete Git's diff before handing its output to a pager.
+    Display sanitized staged diff and pause an interactive review.
 
     '''
     arguments = git_command(*review_operation())
@@ -450,25 +459,24 @@ def review_diff(root: Path) -> int:
             for line in output:
                 safe.write(safe_review_line(line))
             safe.seek(0)
-            if sys.stdout.isatty() or os.environ.get('GIT_PAGER'):
-                pager = git(root, 'var', 'GIT_PAGER').stdout.strip()
-                if pager:
-                    try:
-                        viewed = subprocess.run(
-                            ['sh', '-c', pager],
-                            cwd=root,
-                            check=False,
-                            stdin=safe,
-                            env=git_environment(),
-                        )
-                    except OSError as error:
-                        raise PlanError(
-                            'unable to start review pager'
-                        ) from error
-                    trace_result('review', viewed)
-                    return viewed.returncode
             shutil.copyfileobj(safe, sys.stdout.buffer)
             sys.stdout.flush()
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        print(
+            'Review the staged diff above. Press Enter to '
+            'continue or Ctrl-C to abort: ',
+            end='',
+            file=sys.stderr,
+            flush=True,
+        )
+        try:
+            response = sys.stdin.readline()
+        except KeyboardInterrupt:
+            response = ''
+        if not response or response.strip():
+            rejected = subprocess.CompletedProcess(arguments, 1)
+            trace_result('review', rejected)
+            return 1
     trace_result('review', diff)
     return 0
 
@@ -1473,6 +1481,7 @@ def commit_message(
             'commit',
             *operation,
             environment=environment,
+            interactive=True,
         )
         return result, head_before
     finally:

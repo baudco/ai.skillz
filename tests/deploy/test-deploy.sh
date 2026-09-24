@@ -1879,7 +1879,9 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'startup files disabled where supported, parse every fence line'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'executables, but must not stage, run project checks'
+        'required executables without running resolution or import probes'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'The configured external pager is not run'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'shared, no-checkout clone in a temporary project'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \

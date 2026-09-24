@@ -63,10 +63,16 @@ resumes the first pending boundary; unexpected history stops as divergence.
 `--show` plainly renders each project check, `git diff --staged` review and
 `git commit --edit --file` command from the same descriptions execution uses.
 At runtime the executor prints each phase, cwd and command before it runs,
-reports its outcome and preserves captured stdout and stderr on failure.
+reports its outcome and preserves captured automated-command diagnostics.
 Environment variable names may be shown, but their authenticated values and
 the inherited environment remain hidden. Captured output escapes terminal
-controls and redacts authenticated and inherited environment values.
+controls and redacts environment values. For `--execute`, the staged diff is
+sanitized and displayed directly, with an Enter-to-continue review pause on
+interactive terminals. The configured external pager is not run. The editor
+and user-configured hooks retain their terminal; their output is trusted,
+not captured or redacted by the executor.
 
-Nothing is staged unless `--stage` is explicitly supplied. Quit and restart
-OpenCode after deployment or update.
+`--preflight` and `--show` do not stage or commit. `--execute <ordinal>`
+applies the authenticated staging transition and opens the editor-backed
+commit after checks and review. Quit and restart OpenCode after deployment
+or update.

@@ -1,11 +1,15 @@
 import hashlib
 import json
 import os
+import pty
+import select
 import shutil
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -1017,9 +1021,9 @@ class CommitPlanExecTests(unittest.TestCase):
         Git used to stream a staged diff directly into the pager.
         Pressing q before the diff was fully written could send
         SIGPIPE to Git and block an otherwise reviewed commit.
-        Supply a pager which reads only one byte and exits cleanly;
-        the spool ensures Git has already completed the diff, while
-        the editor and commit still run after pager dismissal.
+        Configure an early-exiting pager. The executor must ignore
+        it, show the sanitized diff directly, and still reach the
+        editor without handing its output to an external command.
 
         '''
         pager = 'head -c 1 >/dev/null'
@@ -1027,26 +1031,31 @@ class CommitPlanExecTests(unittest.TestCase):
             '--execute', '1',
             extra_env={'GIT_PAGER': pager},
         )
+        self.assertIn('diff --git a/one.txt', result.stdout)
         self.assertIn('[review] PASS', result.stdout)
         self.assertIn('[boundary 1] PASS', result.stdout)
         self.assertEqual(self.line_count(self.editor_count), 1)
 
-    def test_failed_pager_still_blocks_commit(self):
+    def test_configured_pager_is_not_executed(self):
         '''
-        Spooling a successful Git diff must not turn a failing
-        viewer into a successful review. A pager exiting 17
-        represents a failed review gate, so execution stops before
-        the editor or commit despite Git's completed diff.
+        A configured external pager could print credentials or
+        terminal controls, bypassing diff sanitization. Supply a
+        pager command that writes a marker and fails if launched.
+        The executor must not run it, while the sanitized review
+        and editor-backed commit still complete normally.
 
         '''
+        marker = self.runtime / 'pager-ran'
+        marker_arg = shlex.quote(str(marker))
+        pager = f'printf marker > {marker_arg}; exit 17'
         result = self.invoke(
-            '--execute', '1', check=False,
-            extra_env={'GIT_PAGER': 'exit 17'},
+            '--execute', '1',
+            extra_env={'GIT_PAGER': pager},
         )
-        self.assertEqual(result.returncode, 17)
-        self.assertIn('[review] FAIL exit=17', result.stderr)
-        self.assertEqual(self.commit_count(), 1)
-        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertFalse(marker.exists())
+        self.assertIn('[review] PASS', result.stdout)
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.commit_count(), 2)
 
     def test_concurrent_staging_cannot_join_the_commit(self):
         '''
@@ -1115,13 +1124,14 @@ class CommitPlanExecTests(unittest.TestCase):
         )
         self.assertFalse((self.root / '.git/index.lock').exists())
 
-    def test_hook_output_cannot_inject_terminal_controls(self):
+    def test_configured_hook_output_is_trusted(self):
         '''
-        Git previously inherited terminal streams while running
-        commit hooks. A hook printing ESC could inject terminal
-        controls even when command traces were escaped. Install a
-        fixture hook that prints controls on both streams and verify
-        the boundary still commits but only visible escapes appear.
+        Capturing Git output escaped hook controls but also denied
+        interactive editors their terminal. The commit boundary
+        explicitly trusts locally configured hooks. A fixture hook
+        emits ESC to both inherited streams: its raw output must be
+        distinguished from sanitized automated Git diagnostics,
+        and the boundary must still finish successfully.
 
         '''
         hook = self.root / '.git' / 'hooks' / 'pre-commit'
@@ -1132,9 +1142,73 @@ class CommitPlanExecTests(unittest.TestCase):
         )
         hook.chmod(0o755)
         result = self.invoke('--execute', '1')
-        self.assertNotIn('\x1b', result.stdout + result.stderr)
-        self.assertIn('\\x1b', result.stdout)
+        self.assertIn('\x1b', result.stdout + result.stderr)
         self.assertIn('[boundary 1] PASS', result.stdout)
+
+    def test_review_and_editor_use_a_real_terminal(self):
+        '''
+        Capturing commit output fed pipes to Vim or nano and broke
+        their required terminal interaction. The direct review gate
+        also needs an actual human pause before Git starts the
+        editor. Run the fixture executor inside an owned PTY, supply
+        Enter to the review prompt, and use an editor which refuses
+        nonterminal stdio or an inaccessible controlling terminal.
+        The marker and completed boundary prove the gate and editor
+        both received a usable terminal without skipping --edit.
+
+        '''
+        marker = self.runtime / 'editor-had-tty'
+        editor = self.runtime / 'tty-editor.sh'
+        editor.write_text(
+            '#!/bin/sh\n'
+            '[ -t 0 ] && [ -t 1 ] && [ -t 2 ] || exit 47\n'
+            ': </dev/tty || exit 48\n'
+            f'printf "yes\\n" > "{marker}"\n'
+        )
+        editor.chmod(0o755)
+        arguments = [
+            sys.executable, str(SCRIPT), '--spec',
+            str(self.spec_path), '--sha256',
+            self.spec_digest, '--execute', '1',
+        ]
+        environment = os.environ.copy()
+        environment['GIT_EDITOR'] = str(editor)
+        environment['PYTHONPATH'] = str(self.root)
+        pid, master = pty.fork()
+        if pid == 0:
+            os.chdir(self.root)
+            os.execve(sys.executable, arguments, environment)
+        chunks = []
+        finished = 0
+        status = 0
+        os.write(master, b'\n')
+        try:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                ready, _, _ = select.select(
+                    [master], [], [], 0.1,
+                )
+                if ready:
+                    try:
+                        output = os.read(master, 65536)
+                    except OSError:
+                        output = b''
+                    if output:
+                        chunks.append(output)
+                finished, status = os.waitpid(pid, os.WNOHANG)
+                if finished:
+                    break
+            if not finished:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+                self.fail('interactive fixture never finished')
+        finally:
+            os.close(master)
+        text = b''.join(chunks).decode(errors='backslashreplace')
+        self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+        self.assertIn('Review the staged diff above', text)
+        self.assertEqual(marker.read_text(), 'yes\n')
+        self.assertEqual(self.commit_count(), 2)
 
     def test_direct_review_escapes_staged_controls(self):
         '''
@@ -1162,13 +1236,13 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('\\x1b[31m', result.stdout)
         self.assertIn('[boundary 1] PASS', result.stdout)
 
-    def test_pager_receives_only_escaped_staged_controls(self):
+    def test_configured_pager_cannot_bypass_diff_escaping(self):
         '''
-        Sanitizing only direct review output would leave the pager
-        input vulnerable. Materialize a planned file containing ESC
-        and display the staged diff through `cat` as a fixture pager.
-        The successful commit and visible escape prove both the gate
-        and its pager path consume sanitized rather than raw bytes.
+        Git once passed staged diff text to a configured pager that
+        could output its own unsanitized controls. Materialize a
+        planned file containing ESC and configure an external pager;
+        the executor must ignore the pager and emit the escaped diff
+        directly before an otherwise successful editor-backed commit.
 
         '''
         (self.root / 'one.txt').write_text('one\x1b[31m\n')

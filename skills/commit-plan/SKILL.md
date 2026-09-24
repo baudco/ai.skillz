@@ -192,9 +192,11 @@ Use one explicitly labelled fence and valid syntax for the selected parser.
 Never emit an unlabelled fence or hardcode syntax for another parser. With
 startup files disabled where supported, parse every fence line and validate
 the specification without executing it. Then run only
-`plan-exec.py --preflight`. Preflight may resolve imports and required
-executables, but must not stage, run project checks, invoke an editor or
-commit, access the network or enter normal execution.
+`plan-exec.py --preflight`. Preflight authenticates artifacts and inspects
+required executables without running resolution or import probes. Those
+probes run during `--execute` in the isolated boundary tree. Preflight must
+not stage, run project checks, invoke an editor or commit, access the
+network or enter normal execution.
 
 Never assume the user's shell is already in the repository or worktree being
 planned. The first command in the fence must change directory to the exact
@@ -231,9 +233,11 @@ renders the exact argv and an isolated-tree cwd placeholder before anything
 executes. It may show authenticated environment variable names, but must hide
 their values and the inherited environment. `--execute` announces each
 boundary phase, cwd and command immediately before running it, then reports
-`PASS`, `SKIP` or `FAIL exit=<status>`. Preserve captured stdout and stderr on
-failure, but escape terminal controls and redact authenticated and inherited
-environment values. The human must be able to identify the failing
+`PASS`, `SKIP` or `FAIL exit=<status>`. For captured automated operations,
+preserve stdout and stderr on failure, but
+escape terminal controls and redact authenticated and inherited
+environment values. Editor and hook output are trusted, not captured.
+The human must be able to identify the failing
 check without reconstructing hidden subprocess state.
 
 The executor verifies the staged tree, then materializes every pending project
@@ -301,9 +305,13 @@ executor call normally terminates the fence, so do not require or add a
 trailing blank line after it.
 
 Keep `git diff --staged` as an intentional human review gate even when the
-earlier summary and path checks passed. It may open Git's pager; the human can
-press `q` immediately to continue when they do not need to inspect the patch.
-The executor skips this pager when the boundary is already complete.
+earlier summary and path checks passed. The executor displays its sanitized
+diff directly and does not run a configured external pager. In an interactive
+terminal, pressing Enter after reviewing continues; Ctrl-C or another answer
+aborts before commit. The editor-backed `git commit --edit --file` and local
+hooks inherit the user's terminal. Their output is trusted and not redacted,
+unlike captured automated-check and Git diagnostic output. A completed
+boundary skips the review and editor entirely.
 
 ## 7. Completion Gate
 
