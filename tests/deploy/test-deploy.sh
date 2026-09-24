@@ -1880,6 +1880,12 @@ test_commit_plan_contract() {
         'startup files disabled where supported, parse every fence line'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'required executables without running resolution or import probes'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'The executor asset is a non-executable Python source file'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Never render a bare `plan-exec.py --<mode>`'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'selects a Python interpreter before the script path'
     assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
         'The configured external pager is not run'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \

@@ -192,7 +192,8 @@ Use one explicitly labelled fence and valid syntax for the selected parser.
 Never emit an unlabelled fence or hardcode syntax for another parser. With
 startup files disabled where supported, parse every fence line and validate
 the specification without executing it. Then run only
-`plan-exec.py --preflight`. Preflight authenticates artifacts and inspects
+the selected Python interpreter with `plan-exec.py --preflight`.
+Preflight authenticates artifacts and inspects
 required executables without running resolution or import probes. Those
 probes run during `--execute` in the isolated boundary tree. Preflight must
 not stage, run project checks, invoke an editor or commit, access the
@@ -211,14 +212,25 @@ root and checked-out branch where the sequence applies. This is especially
 important for linked worktrees whose branch and path differ from the caller's
 original working directory.
 
+The executor asset is a non-executable Python source file. Every mode must
+invoke it through an explicit interpreter, for example:
+
+```xsh
+python3 <skill-dir>/scripts/plan-exec.py --spec <plan.json> \
+    --sha256 <digest> --preflight
+```
+
+Use the selected interpreter and quote paths for the user's shell.
+Never render a bare `plan-exec.py --<mode>` as a runnable command.
 The command block must include, in execution order:
 
-- one `plan-exec.py --preflight` command naming the specification and digest;
-- one `plan-exec.py --show` command which renders every project check,
-  `git diff --staged` review and `git commit --edit --file` operation as a
-  plain command alongside the pinned patch;
-- one `plan-exec.py --execute <ordinal>` command per boundary, naming the same
-  specification and digest.
+- one interpreter-backed `--preflight` invocation naming the specification
+  and digest;
+- one interpreter-backed `--show` invocation rendering every project
+  check, `git diff --staged` review and `git commit --edit --file`
+  operation as a plain command alongside the pinned patch;
+- one interpreter-backed `--execute <ordinal>` invocation per
+  boundary, naming the same specification and digest.
 
 The executor applies the authenticated patch, then runs staged whitespace,
 statistics and path checks before every commit. Only Git's internal diff

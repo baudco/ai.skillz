@@ -53,9 +53,12 @@ regression sequence runs once against the final boundary when one exists. A
 check successfully pre-executed against unchanged evidence is not rendered
 twice.
 
-The rendered command block pins one generated JSON specification by SHA-256,
-runs the executor's read-only `--preflight` and `--show` modes, then invokes
-`--execute <ordinal>` for each boundary. The executor recognizes an exact
+The executor file is non-executable Python source. Every rendered invocation
+selects a Python interpreter before the script path; do not run a bare
+`plan-exec.py --<mode>` command. The rendered command block pins one
+generated JSON specification by SHA-256, runs the executor's read-only
+`--preflight` and `--show` modes, then invokes `--execute <ordinal>` for each
+boundary. The executor recognizes an exact
 completed parent/tree prefix before touching the index, checks, editor or
 hooks. Repeating the complete block therefore skips committed boundaries and
 resumes the first pending boundary; unexpected history stops as divergence.
