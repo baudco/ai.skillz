@@ -8,6 +8,8 @@ Exercise offline session discovery and the sourceable Xonsh alias.
 '''
 
 from contextlib import closing
+from contextlib import redirect_stdout
+import io
 import json
 from importlib.metadata import entry_points
 import os
@@ -17,9 +19,11 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from pyskillz.dialogs._readers import codex_sessions
 from pyskillz.cli import format_dialog_table as table
+from pyskillz.cli import main as dlogs_main
 from pyskillz.wkt import WktLookup
 
 
@@ -173,7 +177,8 @@ class DlogsTests(unittest.TestCase):
         )
         self.assertIn(uuid, output)
         self.assertNotIn('\x1b', output)
-        self.assertEqual(len(output.splitlines()), 2)
+        self.assertEqual(output.splitlines()[0], 'HARNESS=codex')
+        self.assertEqual(len(output.splitlines()), 4)
         self.assertIn('DIALOG ID', table([]))
 
     @unittest.skipUnless(shutil.which('git'), 'git unavailable')
@@ -220,8 +225,9 @@ class DlogsTests(unittest.TestCase):
         Long session names previously pushed cwd far off screen.
 
         Render a long name alongside an exact-boundary name. Check
-        ellipsis truncation, stable ID alignment, and name/ID/cwd/
-        harness order, while preserving the caller's original name.
+        ellipsis truncation, stable ID alignment, and name/ID/WKT/
+        time order, while preserving the caller's original name.
+        The shared cwd moves above the header instead of repeating.
 
         '''
         name: str = 'long' * 40
@@ -236,18 +242,110 @@ class DlogsTests(unittest.TestCase):
             },
         ]
         lines: list[str] = table(sessions).splitlines()
+        self.assertEqual(lines[0], 'CWD=/repo')
+        self.assertEqual(lines[1], '')
         self.assertEqual(
-            lines[0].split(),
+            lines[2].split(),
             [
-                'NAME', 'DIALOG', 'ID', 'UPDATED', '(UTC)',
-                'CWD', 'WKT', 'HARNESS',
+                'NAME', 'DIALOG', 'ID', 'WKT',
+                'UPDATED', '(UTC)', 'HARNESS',
             ],
         )
-        self.assertTrue(lines[1].startswith(name[:35] + '…'))
-        self.assertTrue(lines[2].startswith('x' * 36))
-        self.assertEqual(lines[1].index('dialog-one'), 38)
-        self.assertEqual(lines[2].index('dialog-two'), 38)
+        self.assertTrue(lines[3].startswith(name[:35] + '…'))
+        self.assertTrue(lines[4].startswith('x' * 36))
+        self.assertEqual(lines[3].index('dialog-one'), 38)
+        self.assertEqual(lines[4].index('dialog-two'), 38)
         self.assertEqual(sessions[0]['name'], name)
+
+    def test_uniform_harness_moves_above_table(self) -> None:
+        '''
+        A single-harness filter used to repeat its value per row.
+
+        Render two dialogs from the same harness and cwd, then a
+        mixed-cwd pair. Only uniform values move into context lines;
+        the remaining CWD column still distinguishes mixed paths.
+
+        '''
+        rows: list[dict] = [
+            {
+                'name': 'One', 'id': 'one', 'cwd': '/repo',
+                'harness': 'codex',
+            },
+            {
+                'name': 'Two', 'id': 'two', 'cwd': '/repo',
+                'harness': 'codex',
+            },
+        ]
+        output: str = table(rows)
+        self.assertTrue(output.startswith(
+            'CWD=/repo\nHARNESS=codex\n\nNAME',
+        ))
+        self.assertNotIn('HARNESS', output.splitlines()[3])
+        rows[1]['cwd'] = '/other'
+        mixed: str = table(rows)
+        self.assertTrue(mixed.startswith('HARNESS=codex\n\nNAME'))
+        self.assertIn('CWD', mixed.splitlines()[2])
+
+    def test_short_harness_flag_leaves_help_at_h(self) -> None:
+        '''
+        `-h` previously selected a harness instead of showing help.
+
+        Check the default argparse help and ensure `-b cx` still
+        selects Codex before dialog discovery runs.
+
+        '''
+        output: io.StringIO = io.StringIO()
+        with redirect_stdout(output):
+            with self.assertRaises(SystemExit) as exit_info:
+                dlogs_main(['-h'])
+        self.assertEqual(exit_info.exception.code, 0)
+        self.assertIn('-b', output.getvalue())
+        with patch('pyskillz.cli.dialogs.list_dialogs') as listing:
+            listing.return_value = []
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(dlogs_main(['-b', 'cx']), 0)
+        self.assertEqual(listing.call_args.args[1], 'cx')
+
+    def test_terminal_color_stays_on_table_header(self) -> None:
+        '''
+        Context lines precede the terminal table header.
+
+        Simulate a TTY with one filtered dialog. The context must
+        remain plain text and the grey escape must wrap the actual
+        column header, not the first context line.
+
+        '''
+        class Terminal(io.StringIO):
+            '''
+            Capture output while reporting TTY capability.
+
+            '''
+
+            def isatty(self) -> bool:
+                '''
+                Enable the CLI's terminal color branch.
+
+                '''
+                return True
+
+        output: Terminal = Terminal()
+        rows: list[dict] = [{
+            'name': 'One', 'id': 'one', 'cwd': '/repo',
+            'harness': 'codex',
+        }]
+        with (
+            patch('pyskillz.cli.dialogs.list_dialogs',
+                  return_value=rows),
+            patch('pyskillz.cli.sys.stdout', output),
+            patch.dict(os.environ, {'TERM': 'xterm'}),
+        ):
+            os.environ.pop('NO_COLOR', None)
+            self.assertEqual(dlogs_main([]), 0)
+        self.assertTrue(output.getvalue().startswith(
+            '\x1b[90mCWD=\x1b[0m/repo\n'
+            '\x1b[90mHARNESS=\x1b[0mcodex\n\n'
+            '\x1b[90mNAME',
+        ))
 
     @unittest.skipUnless(shutil.which('xonsh'), 'xonsh unavailable')
     def test_installed_xontrib_from_other_directory(self) -> None:

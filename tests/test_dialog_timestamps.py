@@ -73,9 +73,11 @@ class DialogTimestampTests(unittest.TestCase):
             rows: list[dict] = list_dialogs(harness='claude')
         self.assertEqual(rows[0]['id'], 'two')
         lines: list[str] = table(rows).splitlines()
-        self.assertIn('UPDATED (UTC)', lines[0])
-        self.assertIn('1970-01-01 00:01', lines[1])
-        self.assertIn('1970-01-01 00:00', lines[2])
+        self.assertEqual(lines[0], 'CWD=' + str(self.root))
+        self.assertEqual(lines[1], 'HARNESS=claude')
+        self.assertIn('UPDATED (UTC)', lines[3])
+        self.assertIn('1970-01-01 00:01', lines[4])
+        self.assertIn('1970-01-01 00:00', lines[5])
         self.assertEqual(records[1]['updated_at'], 60.5)
         self.assertNotIn('1970', table([{
             'name': 'missing', 'id': 'three', 'harness': 'claude',

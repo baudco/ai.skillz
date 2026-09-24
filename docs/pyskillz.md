@@ -138,8 +138,13 @@ Store errors propagate rather than masquerading as a missing ID.
 
 OpenCode IDs are not UUIDs.
 
-The CLI orders columns as name, dialog ID, updated time, cwd,
-worktree, then harness. `UPDATED (UTC)` shows the harness metadata
+The CLI orders columns as name, dialog ID, WKT, updated time,
+CWD, then harness. When every displayed dialog has the same CWD
+or harness, it shows that value once above the table and drops
+the repeated column. `CWD` uses `~` for your home directory;
+`HARNESS` uses the canonical name even when filtered with `cx`,
+`oc`, or `cld`. JSON and Python records keep all fields.
+`UPDATED (UTC)` shows the harness metadata
 update time to the minute. Results already sort newest first using
 the full `updated_at` value; displaying it does not change sorting.
 Codex/OpenCode timestamps come from their stores; Claude uses log
@@ -240,10 +245,11 @@ Displayed names are capped at 36 characters, with an ellipsis for
 truncation. Python and JSON retain full names.
 The table abbreviates the current user's home directory as `~`;
 Python and JSON retain full directory paths.
-Terminal output uses grey headers. Pipes, JSON, `TERM=dumb`, and
+Terminal output uses grey column headers and context keys; values
+keep the terminal's normal color. Pipes, JSON, `TERM=dumb`, and
 a nonempty `NO_COLOR` environment variable disable coloring.
 `--json` emits these records;
-`-h` selects `--harness`; help is available through `--help`.
+`-b` selects `--harness`; `-h` and `--help` show help.
 `-a` / `--all-repos` disables cwd filtering for the selected harness,
 while `--all` corresponds to Python's `all=True`. Table output neutralizes
 terminal control characters; JSON and Python retain the original names.
