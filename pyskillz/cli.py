@@ -16,7 +16,9 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
+import subprocess
 import sys
 
 # Direct source execution supports skill deployments without pip.
@@ -25,6 +27,7 @@ if __package__ in (None, ''):
     __package__ = 'pyskillz'
 
 from . import dialogs
+from ._resume import resume_target
 from .wkt import WktLookup
 
 
@@ -194,6 +197,8 @@ def main(argv: list[str]|None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ['index']:
         return index_main(argv[1:])
+    if argv[:1] == ['resume']:
+        return resume_main(argv[1:])
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         prog='ai.dlogs',
         description='List local dialogs and their worktrees.',
@@ -281,6 +286,70 @@ def main(argv: list[str]|None = None) -> int:
         )
     print(output)
     return 0
+
+
+def resume_main(argv: list[str]|None = None) -> int:
+    '''
+    Resolve a name, then run its harness with an exact dialog ID.
+
+    `ai.resume`, the Xontrib alias and the source alias all reach
+    this entrypoint. `resume_target()` performs selection and WKT
+    lookup without spawning. Dry-run prints the exact argv and cwd;
+    normal mode inherits the terminal and returns the harness status.
+
+    '''
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        prog='ai.resume',
+        description='Resume a named dialog in its harness.',
+    )
+    parser.add_argument('name', metavar='NAME')
+    parser.add_argument(
+        '--repo', default='.',
+        help='saved cwd to search (default: current directory)',
+    )
+    parser.add_argument(
+        '-b', '--harness',
+        choices=[
+            'codex', 'cx', 'opencode', 'oc', 'claude', 'cld',
+        ],
+        help='narrow duplicate names to one harness',
+    )
+    parser.add_argument('-a', '--all-repos', action='store_true')
+    parser.add_argument('--id', help='narrow duplicate names by ID')
+    parser.add_argument(
+        '--cwd', help='override the harness launch directory',
+    )
+    parser.add_argument('--dry-run', action='store_true')
+    args: argparse.Namespace = parser.parse_args(argv)
+    try:
+        target: dict = resume_target(
+            args.name,
+            repo=args.repo,
+            harness=args.harness,
+            all_repos=args.all_repos,
+            dialog_id=args.id,
+            cwd=args.cwd,
+        )
+        if args.dry_run:
+            print(json.dumps(target, indent=2))
+            return 0
+        command: list[str] = target['argv']
+        if shutil.which(command[0]) is None:
+            raise ValueError(
+                'Harness command is unavailable: ' + command[0]
+            )
+        result: subprocess.CompletedProcess = subprocess.run(
+            command,
+            cwd=target['cwd'],
+            check=False,
+        )
+        return result.returncode
+    except (
+        OSError,
+        ValueError,
+        sqlite3.Error,
+    ) as error:
+        parser.exit(1, 'ai.resume: ' + str(error) + '\n')
 
 
 def index_main(argv: list[str]) -> int:

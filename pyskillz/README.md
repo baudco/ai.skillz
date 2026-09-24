@@ -2,6 +2,8 @@
 
 The public package lists saved Codex, OpenCode, and Claude dialogs.
 `ai.dlogs index` also helps relate those dialogs to Git worktrees.
+`ai.resume` resolves a name, then starts the chosen harness with its
+dialog ID and selected launch directory.
 See [the package guide](../docs/pyskillz.md#install-and-load) to
 install it into the Python interpreter running Xonsh or an app.
 
@@ -23,6 +25,8 @@ The dependency direction is `dialogs -> wkt -> git`. The CLI calls
 the dialog API and WKT lookup; neither package layer imports the
 CLI. Git subprocess calls are isolated in `git._commands`, making
 their replacement with a library a separate change.
+`_resume.resume_target()` joins dialog metadata and WKT lookup;
+`cli.resume_main()` alone starts the harness child process.
 
 A WKT relation records a dialog's use of a worktree. The
 `owner.json` token controls `/open-wkt` lifecycle management and
