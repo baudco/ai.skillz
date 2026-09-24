@@ -3,11 +3,11 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Expose pyskillz to Xonsh's namespace-based extension discovery.
+Expose aiskillz to Xonsh's namespace-based extension discovery.
 
 '''
 
-from pyskillz._xontrib import (
+from aiskillz._xontrib import (
     _load_xontrib_ as _load_xontrib_,
     _unload_xontrib_ as _unload_xontrib_,
 )

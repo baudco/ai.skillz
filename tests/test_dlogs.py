@@ -21,10 +21,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from pyskillz.dialogs._readers import codex_sessions
-from pyskillz.cli import format_dialog_table as table
-from pyskillz.cli import main as dlogs_main
-from pyskillz.wkt import WktLookup
+from aiskillz.dialogs._readers import codex_sessions
+from aiskillz.cli import format_dialog_table as table
+from aiskillz.cli import main as dlogs_main
+from aiskillz.wkt import WktLookup
 
 
 ROOT: Path = Path(__file__).resolve().parents[1]
@@ -300,7 +300,7 @@ class DlogsTests(unittest.TestCase):
                 dlogs_main(['-h'])
         self.assertEqual(exit_info.exception.code, 0)
         self.assertIn('-b', output.getvalue())
-        with patch('pyskillz.cli.dialogs.list_dialogs') as listing:
+        with patch('aiskillz.cli.dialogs.list_dialogs') as listing:
             listing.return_value = []
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(dlogs_main(['-b', 'cx']), 0)
@@ -334,9 +334,9 @@ class DlogsTests(unittest.TestCase):
             'harness': 'codex',
         }]
         with (
-            patch('pyskillz.cli.dialogs.list_dialogs',
+            patch('aiskillz.cli.dialogs.list_dialogs',
                   return_value=rows),
-            patch('pyskillz.cli.sys.stdout', output),
+            patch('aiskillz.cli.sys.stdout', output),
             patch.dict(os.environ, {'TERM': 'xterm'}),
         ):
             os.environ.pop('NO_COLOR', None)
@@ -356,14 +356,14 @@ class DlogsTests(unittest.TestCase):
         hide broken packaging. Start a fresh Xonsh in the disposable
         repository with no PYTHONPATH or rc files, load the installed
         extension, and invoke its CLI against the fixture. Skip only
-        when this interpreter has no installed pyskillz entry point.
+        when this interpreter has no installed aiskillz entry point.
 
         '''
         installed: bool = bool(entry_points(
-            group='xonsh.xontribs', name='pyskillz',
+            group='xonsh.xontribs', name='aiskillz',
         ))
         if not installed:
-            self.skipTest('pyskillz distribution not installed')
+            self.skipTest('aiskillz distribution not installed')
         import sys
 
         env: dict[str, str] = dict(os.environ)
@@ -377,7 +377,7 @@ class DlogsTests(unittest.TestCase):
         result: subprocess.CompletedProcess = subprocess.run(
             [
                 sys.executable, '-m', 'xonsh', '--no-rc', '-c',
-                'xontrib load pyskillz; '
+                'xontrib load aiskillz; '
                 'ai.dlogs --harness codex --json',
             ],
             cwd=self.repo, env=env, capture_output=True,
