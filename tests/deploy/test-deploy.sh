@@ -1884,6 +1884,8 @@ test_commit_plan_contract() {
         'The executor asset is a non-executable Python source file'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'Never render a bare `plan-exec.py --<mode>`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'python3 <skill-dir>/scripts/plan-exec.py --spec <plan.json> --sha256 <digest> --preflight'
     assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
         'selects a Python interpreter before the script path'
     assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \

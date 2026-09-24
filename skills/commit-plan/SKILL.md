@@ -216,8 +216,7 @@ The executor asset is a non-executable Python source file. Every mode must
 invoke it through an explicit interpreter, for example:
 
 ```xsh
-python3 <skill-dir>/scripts/plan-exec.py --spec <plan.json> \
-    --sha256 <digest> --preflight
+python3 <skill-dir>/scripts/plan-exec.py --spec <plan.json> --sha256 <digest> --preflight
 ```
 
 Use the selected interpreter and quote paths for the user's shell.
