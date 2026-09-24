@@ -168,6 +168,52 @@ harness-named aliases such as `claude_wkts` or store worktrees beneath
    record partial state, then either cleanly release an unchanged guard or
    preserve it with the recovery token and phase.
 
+   **Record the dialog association separately from ownership.**
+   Resolve the ID from authoritative context for this exact instance:
+   Codex exposes `CODEX_THREAD_ID`; Claude Code hook payloads expose
+   `session_id`; OpenCode may expose its current session ID through
+   the active harness/tool context. A hook field is usable only when
+   that hook belongs to the current invocation. Do not assume hook
+   payloads or an ID are available in every skill execution.
+   Never infer the current ID from the newest log, title/cwd matches,
+   process ID, or generic lifecycle owner token. A user-supplied exact
+   current dialog ID is valid. If no verified ID is available, skip
+   association recording. Keep the opened worktree usable and tell
+   the user in your reply that its dialog/worktree association was
+   skipped because no verified dialog ID was available. Include the
+   worktree path so they can record it later with
+   `ai.dlogs index --record`.
+
+   After ownership is durable, record the verified association. When
+   `pyskillz` is installed in the active Python environment, call
+   `pyskillz.record_wkt_relation(repo=..., harness=..., dialog_id=...,
+   wkt=...)` directly. `ai.dlogs index --record` in the packaged
+   Xontrib calls the same implementation in-process. Otherwise use
+   the source CLI below:
+
+   ```text
+   python3 <source>/pyskillz/cli.py index <worktree-root>
+     --record <codex|opencode|claude> <verified-dialog-id>
+     --worktree <worktree-root>
+   ```
+
+   The wrapped command above is one invocation. Resolve `<source>`
+   from this canonical skill's checkout; no package install is needed.
+   The shared writer uses the main checkout's
+   `.ai/state/dialogs/relations.json` under its own short-lived
+   guard. It changes only the specified dialog's association. It does
+   not claim worktree ownership or touch another dialog's assignment.
+   If recording fails, preserve the created worktree and owner record;
+   retry after resolving the reported error, without creating again.
+
+   Same-owner re-entry and authorized takeover record the current
+   verified dialog after their normal ownership checks. Prior dialog
+   assignments remain historical metadata; ownership is independent.
+   No new `dialog` field should be added to `owner.json`. Existing
+   fields are preserved for compatibility and can be imported with
+   `ai.dlogs index`; confirmed assignments take precedence over them.
+   The reader ignores assignments to removed or unregistered trees.
+
    Takeover requires `--takeover` in an explicit current-prompt request. Show
    the prior owner and age first. Acquire the common-dir guard, re-read the
    owner, and stop if it differs from the owner the human authorized replacing.

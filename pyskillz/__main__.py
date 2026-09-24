@@ -7,6 +7,6 @@ Run the session listing CLI with python -m pyskillz.
 
 '''
 
-from ._dlogs import main
+from .cli import main
 
 raise SystemExit(main())

@@ -55,6 +55,7 @@ xontrib load pyskillz
 ai.dlogs --harness oc
 ai.dlogs --harness claude
 ai.dlogs --all
+ai.dlogs index  # preview recoverable WKT relations
 ```
 
 The no-install `source /path/to/ai.skillz/aliases.xsh` entrypoint

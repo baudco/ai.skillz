@@ -18,8 +18,9 @@ import subprocess
 import tempfile
 import unittest
 
-from pyskillz._stores import codex_sessions
-from pyskillz._dlogs import table, _worktree_name
+from pyskillz.dialogs._readers import codex_sessions
+from pyskillz.cli import format_dialog_table as table
+from pyskillz.wkt import WktLookup
 
 
 ROOT: Path = Path(__file__).resolve().parents[1]
@@ -200,11 +201,19 @@ class DlogsTests(unittest.TestCase):
         gitfile: Path = linked / '.git'
         (metadata / 'gitdir').write_text(str(gitfile) + '\n')
         gitfile.write_text(f'gitdir: {metadata}\n')
-        self.assertEqual(_worktree_name(str(nested)), 'feature')
-        self.assertEqual(_worktree_name(str(self.repo)), '')
-        self.assertEqual(_worktree_name(str(self.home)), '')
-        self.assertEqual(_worktree_name(str(linked / 'gone')), '')
-        self.assertEqual(_worktree_name(''), '')
+        self.assertEqual(
+            WktLookup().roots(str(nested)), {str(linked)},
+        )
+        self.assertEqual(
+            WktLookup().roots(str(self.repo)), set(),
+        )
+        self.assertEqual(
+            WktLookup().roots(str(self.home)), set(),
+        )
+        self.assertEqual(
+            WktLookup().roots(str(linked / 'gone')), set(),
+        )
+        self.assertEqual(WktLookup().roots(''), set())
 
     def test_table_caps_names_and_orders_columns(self) -> None:
         '''

@@ -7,16 +7,62 @@ Xonsh integration; loading never scans harness session stores.
 
 '''
 
+from contextlib import redirect_stderr, redirect_stdout
+import os
 import sys
-from typing import Any
+from typing import Any, TextIO
+
+
+def dlogs_alias(
+    args: list[str],
+    stdin: TextIO|None = None,
+    stdout: TextIO|None = None,
+    stderr: TextIO|None = None,
+) -> int:
+    '''
+    Run `ai.dlogs` inside Xonsh without spawning another Python.
+
+    `_load_xontrib_()` registers this callable. Forward Xonsh's
+    output streams for redirects and capture. Convert argparse exits
+    to shell statuses so help or invalid arguments cannot exit Xonsh.
+    `stdin` is accepted for the alias protocol; discovery does not
+    consume it. The loader marks this alias unthreadable because
+    redirecting Python's global streams must run on the shell thread.
+    Temporarily mirror Xonsh environment overrides into os.environ so
+    harness store paths behave as they did with the subprocess alias.
+
+    '''
+    from xonsh.built_ins import XSH
+
+    from .cli import main
+
+    output: TextIO = stdout if stdout is not None else sys.stdout
+    errors: TextIO = stderr if stderr is not None else sys.stderr
+    previous: dict[str, str] = dict(os.environ)
+    environment: dict[str, str] = (
+        XSH.env.detype() if XSH.env is not None else previous
+    )
+    try:
+        os.environ.clear()
+        os.environ.update(environment)
+        with redirect_stdout(output), redirect_stderr(errors):
+            try:
+                return main(args)
+            except SystemExit as error:
+                return int(error.code or 0)
+    finally:
+        os.environ.clear()
+        os.environ.update(previous)
 
 
 def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
     '''
-    Register the CLI using the interpreter that loaded this package.
+    Register the in-process alias and remember its prior binding.
 
     '''
-    command: list[str] = [sys.executable, '-m', 'pyskillz']
+    from xonsh.tools import unthreadable
+
+    command: Any = unthreadable(dlogs_alias)
     previous: Any = xsh.aliases.get('ai.dlogs')
     xsh.ctx['_pyskillz_alias_previous'] = previous
     xsh.ctx['_pyskillz_alias_command'] = command
@@ -29,7 +75,7 @@ def _unload_xontrib_(xsh: Any, **kwargs: Any) -> None:
     Restore the prior alias only if this extension still owns it.
 
     '''
-    command: list[str]|None = xsh.ctx.pop(
+    command: Any = xsh.ctx.pop(
         '_pyskillz_alias_command', None,
     )
     previous: Any = xsh.ctx.pop('_pyskillz_alias_previous', None)

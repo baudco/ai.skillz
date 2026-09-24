@@ -144,13 +144,98 @@ update time to the minute. Results already sort newest first using
 the full `updated_at` value; displaying it does not change sorting.
 Codex/OpenCode timestamps come from their stores; Claude uses log
 modification time, which is a proxy for activity.
-`WKT` shows the linked worktree directory name identified by Git at
-the recorded cwd, including cwd values below the worktree root.
-Main checkouts and unknown or deleted locations leave it blank.
-This describes the saved location, not where an agent is currently
-working. Table rendering queries Git once per distinct cwd; Python
-and JSON discovery do not run Git. Explicit session associations in
-`open-wkt` remain a follow-up.
+`WKT` shows a linked worktree associated with the dialog. For example,
+a harness may remember that a dialog started in `/repos/demo`, while
+the agent later used `/open-wkt feature` to work in
+`/repos/demo/wkts/feature`. The table can show `feature` even though
+the harness's saved `cwd` still says `/repos/demo`.
+
+The column checks these sources in order:
+
+1. A relation written to `relations.json` by `/open-wkt`,
+   `ai.dlogs index --record`, or a user-reviewed `index --apply`.
+2. A dialog ID recorded in an older worktree `owner.json`, when that
+   dialog has no relation in `relations.json`. Several matching old
+   owner files produce `(multiple)`.
+3. The linked Git worktree containing the dialog's saved `cwd`.
+
+These are records of worktree use (for example, from a prior
+`/open-wkt` invocation by the agent). Only worktrees that still exist
+and remain registered with Git appear in the table. A removed/deleted
+saved `cwd` can prevent finding the repository at all; that row's
+worktree column stays blank. The main checkout also has a blank WKT
+column when no linked WKT relation is known.
+
+During one `ai.dlogs` invocation, Git discovery and relation-file
+reads are reused across rows in the same repository. The next
+invocation reads them again. This is what the code's lookup cache
+means; it is an in-memory dictionary lasting for one listing.
+
+## Read WKT relations from Python
+
+`list_wkt_relations()` reads the dialog-to-WKT relations saved in
+`relations.json`. You can call it from any checkout of the repo:
+
+```python
+from pyskillz import list_dialogs, list_wkt_relations
+
+relations: list[dict] = list_wkt_relations(
+    path='~/repos/demo',
+    harness='oc',  # omit to include every harness
+    dialog_id='ses_example',  # omit to include every dialog
+)
+```
+
+An example returned record is:
+
+```python
+relation: dict = {
+    'harness': 'opencode',
+    'id': 'ses_example',
+    'worktree': '/repos/demo/wkts/feature',
+    'git_dir': '/repos/demo/.git/worktrees/feature',
+    'source': 'explicit-record',
+    'git_active': True,
+}
+```
+
+`git_active=True` means Git still registers this worktree and its
+directory exists. It says nothing about whether an agent is running.
+Removed worktrees remain in the result with `git_active=False`.
+Missing `relations.json` returns `[]`; invalid JSON or an invalid
+repository raises an error.
+The earlier `list_worktree_associations()` import remains an alias
+while callers move to `list_wkt_relations()`.
+
+To attach a relation to a dialog record, match both `harness` and
+`id`: different harnesses may use the same dialog ID string.
+The `**dialog` syntax merges the original dialog dictionary into
+each new dictionary:
+
+```python
+relations: list[dict] = list_wkt_relations('~/repos/demo')
+relation: dict
+by_dialog: dict[tuple[str, str], dict] = {
+    (relation['harness'], relation['id']): relation
+    for relation in relations
+}
+dialog: dict
+dialogs: list[dict] = [
+    {
+        # Python's ** unpacking merges the dialog dictionary here.
+        **dialog,
+        'wkt_relation': by_dialog.get(
+            (dialog['harness'], dialog['id']),
+        ),
+    }
+    for dialog in list_dialogs('~/repos/demo')
+]
+```
+
+Each `wkt_relation` is the matching dictionary or `None`.
+`list_dialogs()` itself reads harness metadata only. The separate
+relation call makes the extra Git and file reads explicit.
+
 Displayed names are capped at 36 characters, with an ellipsis for
 truncation. Python and JSON retain full names.
 The table abbreviates the current user's home directory as `~`;
@@ -187,16 +272,219 @@ formats; future versions may require reader updates. No new persistent
 cache, transcript export, server, SDK, or model credentials are needed.
 Keep real session inventories outside tracked repository files.
 
-## Verification
+## Record WKT relations with /open-wkt
+
+Deploy the `open-wkt` skill from this repo (the `ai.skillz`
+native way). After creating or entering a worktree and checking its
+owner, the agent records its dialog ID and WKT path in
+`relations.json`. If the Python package or Xonsh alias is not
+available yet, see [Install and load](#install-and-load) near the
+top of this guide.
+
+ID here means the harness's session ID (what `ai.skillz` calls a
+**dialog ID**). Some harnesses use UUIDs; OpenCode uses `ses_...` IDs.
+If no session ID can be found, the agent skips relation recording
+and explains that in its reply to you. The opened worktree remains
+usable. Supply the ID later with `--record`, or recover it with
+`ai.dlogs index` when the logs contain enough information.
+
+The skill calls `pyskillz.record_wkt_relation()` when Python can import
+this package. Otherwise, it runs the `pyskillz/cli.py` script from
+this repo's source files. Both paths use the same relation writer.
+
+To associate a worktree to a dialog explicitly, use:
 
 ```xsh
-python3 -B -m unittest discover -s tests -p test_dlogs.py
-python3 -B -m unittest discover -s tests -p test_harness_stores.py
-python3 -B -m unittest discover -s tests -p test_dialog_timestamps.py
+ai.dlogs index --record oc ses_example --worktree /repos/demo/wkts/feature
+```
+
+Or from Python:
+
+```python
+from pyskillz import record_wkt_relation
+
+changed: int = record_wkt_relation(
+    repo='~/repos/demo',
+    harness='oc',
+    dialog_id='ses_example',
+    wkt='/repos/demo/wkts/feature',
+)  # 0 = unchanged, 1 = relation written
+```
+
+`--record` can replace this dialog's previously recorded WKT.
+`--apply` only fills missing relations. Other dialogs' relations
+remain intact. The separate `owner.json` token controls who may
+manage or remove a worktree under `/open-wkt`; recording a dialog's
+WKT relation does not transfer that lifecycle ownership.
+The earlier `record_worktree()` import remains an alias.
+
+## Recover WKT relations for existing dialogs
+
+An existing dialog may have no WKT relation because its worktree
+was opened before relation recording existed, or without this repo's
+`/open-wkt` skill. Recovery has two steps: inspect possible
+dialog/WKT pairs, then save the pairs you accept.
+
+### 1. Inspect possible dialog/WKT pairs
+
+From any checkout of the repository, run:
+
+```xsh
+ai.dlogs index
+```
+
+`ai.dlogs index` compares directories recorded in existing dialogs
+with Git's registered worktrees. It prints possible pairs and writes
+a **preview file** under `.ai/state/dialogs/previews/`. That JSON
+file records the dialog IDs, matching WKT paths, the evidence for
+each match, and the checksum of `relations.json` at this point.
+The file pins what you review for the later `--apply` command.
+For example, one printed pair might be:
+
+```text
+STATUS     HARNESS:DIALOG ID / NAME
+READY      "opencode:ses_example implement_feature"
+  "/repos/demo/wkts/feature" [saved-cwd]
+```
+
+`READY` means the command found one WKT for this dialog.
+`AMBIGUOUS` means it found several; choose one before saving a
+relation. In the preview JSON, the `candidates` field lists those
+WKT paths and the evidence next to each path.
+
+The command then prints the preview path, its SHA-256 checksum, and
+an `Apply:` line. Copy that line only after reviewing the pairs. The
+first command creates the preview file; the `Apply:` command saves
+the selected relations in `relations.json`, which `ai.dlogs` and
+`list_wkt_relations()` read.
+
+### 2. Save the reviewed relations
+
+For example, a printed `Apply:` line could be:
+
+```xsh
+ai.dlogs index @('/repos/demo') --apply @('/repos/demo/.ai/state/dialogs/previews/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json') --sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+```
+
+That digest is illustrative; use the exact `Apply:` line printed by
+your own preview. Python callers can use JSON output to keep the
+actual path and digest together:
+
+```xsh
+import json
+proposal = json.loads($(ai.dlogs index --json))
+print(json.dumps(proposal['data'], indent=2))
+# Review the printed dialog/WKT pairs before running this line.
+ai.dlogs index --apply @(proposal['path']) --sha256 @(proposal['sha256'])
+```
+
+For a dialog with several proposed worktrees, add the exact path you
+want to save. For example, if `ses_example` matched both `feature`
+and `experiment`, choose `feature` with:
+
+```xsh
+ai.dlogs index --apply @(proposal['path']) --sha256 @(proposal['sha256']) --choose 'oc:ses_example=/repos/demo/wkts/feature'
+```
+
+The chosen WKT must be one of that dialog's paths in the preview
+JSON. `--apply` checks the preview checksum and current Git WKT
+registrations before saving relations. If `relations.json` changed
+since the preview was generated, create and review a new preview.
+Reapplying an already-saved pair changes nothing. Later `index`
+runs skip dialogs already recorded in `relations.json`.
+
+The current file format saves one worktree per dialog. Supporting
+`dialog -> set[WKT]` is a planned extension, including supervisor
+dialogs coordinating several worktrees. Multiple historical matches
+can be valid; today's `--choose` requirement reflects the current
+one-WKT-per-dialog file format.
+
+### How the command finds possible WKT paths
+
+- The dialog's saved `cwd` (the directory remembered by its harness).
+- Older `owner.json` files (the worktree lifecycle record written by
+  `/open-wkt`). A `dialog` field explicitly records harness and ID;
+  an older `session` value is accepted only if it exactly matches a
+  known dialog ID from the same harness.
+- Codex JSONL logs (`cwd` metadata and `cwd`/`workdir` arguments sent
+  to shell tools, which identify the requested command directory).
+- Claude JSONL logs (`cwd` fields recorded on dialog events).
+- OpenCode message rows (`path.cwd` inside the message's JSON data,
+  recording the directory associated with that message).
+
+`--no-logs` uses only saved `cwd` and old owner files. Unreadable
+harness data is listed under `Warning:`. Missing logs or removed
+worktrees can leave dialogs under `Unresolved`; those have no
+recoverable WKT relation in this run. Existing archive/source filters
+from dialog listing still apply.
+
+## Relation files
+
+The relation files live beneath the **main checkout's**
+`.ai/state/dialogs`, even when invoked from a linked worktree:
+
+```text
+.ai/state/dialogs/
+  relations.json       saved dialog/worktree pairs
+  previews/<sha256>.json   proposed pairs from ai.dlogs index
+  write.guard/            exists only while a writer holds the lock
+    writer.json           PID of that Python writer
+```
+
+Git identifies the main checkout. A separate Git directory needs
+`core.worktree` configured to identify that checkout; without it,
+creating a new relation file reports an error. For a bare
+repository, `.ai/state/dialogs` is beneath the bare repository
+directory. All linked checkouts use the same location.
+
+`write.guard` is acquired with an exclusive directory creation. A
+crashed writer can leave it behind and block later writes. Inspect
+`writer.json` and the process before removing a stale guard; PID
+reuse means the number alone is insufficient to identify the writer.
+
+An earlier local prototype wrote
+`.git/ai-skillz-dialogs/associations.json`. This version does not
+import that file or its saved previews. If you used that prototype,
+inspect its dialog/WKT pairs and record each one with `--record`, or
+review a fresh `ai.dlogs index` preview. Leave the old file intact
+until you have verified the new `relations.json` records.
+
+## Python package layers
+
+See [the package layout](../pyskillz/README.md) for the entry points,
+dependency direction, and how the CLI, dialog readers, WKT indexer,
+and Git discovery work together.
+
+## Verification
+
+Install the `test` extra in your development environment for pytest.
+The existing unittest suites run under pytest without a rewrite;
+new tests can use pytest fixtures as shared setup evolves. Xontrib
+integration tests also require Xonsh in that environment.
+
+```xsh
+python -m pytest tests/test_dlogs.py tests/test_harness_stores.py tests/test_dialog_timestamps.py tests/test_worktree_dialogs.py tests/test_dialog_index.py tests/test_git_discovery.py tests/test_pyskillz_layers.py
 uv build
 ```
 
 ## Handoff for the next package session
+
+TODO: evaluate KDL 2 for association metadata and previews. Start
+with [kdl-py](https://github.com/tabatkins/kdlpy): its Python parser
+and serializer support KDL 2 without requiring a native build.
+Before switching formats, define the schema, deterministic encoding
+for preview hashes, and regenerate previews when their format
+changes. JSON remains the current on-disk format.
+
+TODO: qualify [dulwich worktree discovery](https://dulwich.io/api/dulwich.worktree.WorkTreeContainer.html)
+([source](https://github.com/dulwich/dulwich)) as the shared backend
+for repository and linked-worktree queries.
+Measure it against the cached Git CLI path using many dialogs in one
+repo and dialogs across repos. Cover bare repositories, relocated
+checkouts, stale registrations, symlinks and conflicting `GIT_*`
+environment variables before replacing the current queries. `dulwich`
+can remove discovery subprocesses; it cannot interpret our owner
+files or decide which dialog association takes precedence.
 
 Keep the initial API small until it has been exercised in a workspace
 module. Confirm duplicate-name labels and directory filtering with the

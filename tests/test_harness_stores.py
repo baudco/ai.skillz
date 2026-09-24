@@ -20,8 +20,10 @@ import unittest
 from unittest.mock import patch
 
 from pyskillz import name2id, list_dialogs, get_dialog
-from pyskillz._dlogs import main
-from pyskillz._stores import claude_sessions, opencode_sessions
+from pyskillz.cli import main
+from pyskillz.dialogs._readers import (
+    claude_sessions, opencode_sessions,
+)
 from pyskillz._xontrib import _load_xontrib_, _unload_xontrib_
 
 
@@ -350,10 +352,13 @@ class HarnessStoresTests(unittest.TestCase):
                          'ses_a')
         self.assertIsNone(get_dialog('missing'))
         self.assertIsNone(get_dialog('ses_a', harness='cld'))
-        with patch('pyskillz._dlogs.list_dialogs', return_value=[
-            {'harness': 'codex', 'id': 'shared'},
-            {'harness': 'claude', 'id': 'shared'},
-        ]):
+        with patch(
+            'pyskillz.dialogs._api.list_dialogs',
+            return_value=[
+                {'harness': 'codex', 'id': 'shared'},
+                {'harness': 'claude', 'id': 'shared'},
+            ],
+        ):
             with self.assertRaisesRegex(ValueError, 'ambiguous'):
                 get_dialog('shared')
         with self.assertRaisesRegex(ValueError, 'nonempty'):
@@ -401,6 +406,72 @@ class HarnessStoresTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, 'Unknown harness'):
             name2id(harness='invalid')
+
+    def test_callable_alias_streams_and_status(self) -> None:
+        '''
+        The packaged alias previously launched a Python subprocess.
+
+        Invoke the actual callable with help and invalid arguments
+        using separate capture streams. Both argparse exits must
+        become shell statuses, leaving the host process and global
+        streams intact. Mocked discovery proves normal JSON output
+        uses the supplied stream without accessing real stores.
+        A shell-only store override must reach Python readers and
+        leave the process environment unchanged after the call.
+
+        '''
+        from types import SimpleNamespace
+        import sys
+
+        xsh: Any = SimpleNamespace(aliases={}, ctx={})
+        _load_xontrib_(xsh)
+        alias: Any = xsh.aliases['ai.dlogs']
+        self.assertTrue(callable(alias))
+        self.assertFalse(alias.__xonsh_threadable__)
+        out: StringIO = StringIO()
+        err: StringIO = StringIO()
+        original: TextIO = sys.stdout
+        self.assertEqual(alias(
+            ['--help'], stdout=out, stderr=err,
+        ), 0)
+        self.assertIn('usage:', out.getvalue())
+        self.assertEqual(alias(
+            ['--unknown-option'], stdout=out, stderr=err,
+        ), 2)
+        self.assertIn('error:', err.getvalue())
+        out = StringIO()
+        with patch(
+            'pyskillz.cli.dialogs.list_dialogs', return_value=[],
+        ):
+            self.assertEqual(alias(
+                ['--json'], stdout=out, stderr=err,
+            ), 0)
+        self.assertEqual(json.loads(out.getvalue()), [])
+        self.assertIs(sys.stdout, original)
+        from xonsh.built_ins import XSH
+
+        previous_env: dict[str, str] = dict(os.environ)
+        shell_env: Any = SimpleNamespace(detype=lambda: {
+            'CODEX_HOME': '/synthetic/xonsh/store',
+        })
+
+        def check_environment(args: list[str]) -> int:
+            '''
+            Inspect the environment seen by the CLI dispatcher.
+
+            '''
+            self.assertEqual(
+                os.environ['CODEX_HOME'], '/synthetic/xonsh/store',
+            )
+            return 0
+
+        with (
+            patch.object(XSH, 'env', shell_env),
+            patch('pyskillz.cli.main', check_environment),
+        ):
+            self.assertEqual(alias([], stdout=out, stderr=err), 0)
+        self.assertEqual(dict(os.environ), previous_env)
+        _unload_xontrib_(xsh)
 
     def test_xontrib_unload_restores_alias(self) -> None:
         '''
