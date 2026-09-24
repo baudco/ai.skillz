@@ -120,6 +120,14 @@ claude_wkts
 /.claude/commands/branch-in-new-terminal.md
 # END ai.skillz: direct:symlink:claude:command:branch-in-new-terminal
 
+# BEGIN ai.skillz: direct:symlink:claude:layered-design
+/.claude/skills/layered-design
+# END ai.skillz: direct:symlink:claude:layered-design
+
+# BEGIN ai.skillz: direct:symlink:opencode:layered-design
+/.opencode/skills/layered-design
+# END ai.skillz: direct:symlink:opencode:layered-design
+
 # BEGIN ai.skillz: runtime:branch-in-new-terminal
 .claude/.current_session
 # END ai.skillz: runtime:branch-in-new-terminal
