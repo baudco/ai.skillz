@@ -986,13 +986,15 @@ def apply_patch(root: Path, payload: bytes) -> int:
     arguments = git_command(*patch_operation())
     cwd = visible_text(str(root))
     trace_start('stage', arguments, root)
+    environment = git_environment()
     try:
         result = subprocess.run(
             arguments,
             cwd=root,
             check=False,
             input=payload,
-            env=git_environment(),
+            capture_output=True,
+            env=environment,
         )
     except OSError as error:
         rendered = render_command(arguments)
@@ -1001,7 +1003,16 @@ def apply_patch(root: Path, payload: bytes) -> int:
             f'cwd: {cwd}\n'
             f'command: {rendered}'
         ) from error
-    trace_result('stage', result)
+    diagnostic = subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        stdout=os.fsdecode(result.stdout),
+        stderr=os.fsdecode(result.stderr),
+    )
+    trace_result(
+        'stage', diagnostic, captured=True,
+        secrets=secret_values(environment),
+    )
     return result.returncode
 
 
@@ -1216,6 +1227,7 @@ def run_project_checks(
                     check=False,
                     capture_output=True,
                     text=True,
+                    errors='backslashreplace',
                     env=check_env,
                 )
             except OSError as error:
@@ -1275,6 +1287,7 @@ def run_project_checks(
                     env=check_env,
                     capture_output=True,
                     text=True,
+                    errors='backslashreplace',
                 )
             except OSError as error:
                 name = visible_text(description['argv'][0])
@@ -1522,6 +1535,8 @@ def execute(
         result, head_before = commit_message(
             root, message, alternate,
         )
+        if result:
+            return result
         completed_after = classify(spec, root)
         if completed_after == ordinal:
             state['committed'] = True

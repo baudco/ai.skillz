@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import shlex
 import subprocess
 import sys
@@ -1252,6 +1253,106 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertEqual(result.stdout.count('[isolate] PASS'), 2)
         self.assertIn('[boundary 1] PASS', result.stdout)
         self.assertEqual(self.commit_count(), 2)
+
+    def test_stage_diagnostics_escape_terminal_controls(self):
+        '''
+        Patch application previously inherited stdout and stderr.
+        A failing Git command could print control bytes from patch
+        context directly to the terminal while the executor claimed
+        to escape diagnostics. A fixture Git shim delegates all
+        other queries but emits ESC and fails for `git apply`.
+        Execution must report its staged phase and exit status with
+        escaped text, without running checks, editor or commit.
+
+        '''
+        tools = self.runtime / 'bin'
+        tools.mkdir()
+        real_git = shutil.which('git')
+        self.assertIsNotNone(real_git)
+        shim = tools / 'git'
+        shim.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = apply ]; then\n'
+            "  printf '\\033[31mstage failed\\033[0m\\n' >&2\n"
+            '  exit 23\n'
+            'fi\n'
+            f'exec {shlex.quote(real_git)} "$@"\n'
+        )
+        shim.chmod(0o755)
+        path = f'{tools}{os.pathsep}{os.environ["PATH"]}'
+        result = self.invoke(
+            '--execute', '1', check=False,
+            extra_env={'PATH': path},
+        )
+        self.assertEqual(result.returncode, 23)
+        self.assertNotIn('\x1b', result.stdout + result.stderr)
+        self.assertIn('\\x1b', result.stderr)
+        self.assertIn('[stage] FAIL exit=23', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+
+    def test_failed_commit_cannot_claim_hook_advanced_head(self):
+        '''
+        A pre-commit hook can create the expected boundary commit
+        and update HEAD, then exit nonzero. An equality check on
+        history alone previously called this failed `git commit`
+        successful and reconciled the private index. The hook here
+        creates exactly the expected tree before exiting 17. The
+        executor must report failure, preserve recovery evidence,
+        and leave the staged real index and lock state intact.
+
+        '''
+        hook = self.root / '.git' / 'hooks' / 'pre-commit'
+        hook.write_text(
+            '#!/bin/sh\n'
+            f'target=$(git commit-tree {self.tree_one} '
+            f'-p {self.initial_parent} -m hook) || exit 1\n'
+            'git update-ref HEAD "$target" || exit 1\n'
+            'exit 17\n'
+        )
+        hook.chmod(0o755)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('[commit] FAIL', result.stderr)
+        self.assertIn('retained for manual recovery', result.stderr)
+        self.assertNotIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.commit_count(), 2)
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(), self.tree_one,
+        )
+        self.assertFalse((self.root / '.git/index.lock').exists())
+
+    def test_non_utf8_check_failure_keeps_phase_and_output(self):
+        '''
+        Capturing project-check output with strict text decoding
+        previously raised UnicodeDecodeError for arbitrary bytes.
+        The executor then lost the check's phase, status and error
+        output behind a generic runtime-input failure. A fixture
+        check emits invalid UTF-8 to both streams and exits 23;
+        escaped diagnostics must remain visible before commit.
+
+        '''
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [
+                'sh', '-c',
+                "printf '\\377\\n'; "
+                "printf '\\376\\n' >&2; exit 23",
+            ]
+            check['resolution_argv'] = ['pwd']
+
+        self.rewrite_spec(update)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 23)
+        self.assertIn(
+            '[project check 1/1] FAIL exit=23', result.stderr,
+        )
+        self.assertIn('\\xff', result.stderr)
+        self.assertIn('\\xfe', result.stderr)
+        self.assertNotIn('invalid runtime input', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
 
 
 if __name__ == '__main__':
