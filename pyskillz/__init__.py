@@ -3,18 +3,29 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Public offline dialog discovery for workspace and picker callers.
+Convenient public imports for the pyskillz.dialogs API.
 
-Use `list_dialogs(path=..., harness=...)` to select metadata records,
-`name2id()` for name-based picker choices, or `get_dialog(id)` when
-only an opaque dialog ID is known. All three read local harness
-stores; none starts or resumes a harness instance. `docs/pyskillz.md`
-describes record fields, eligibility and installation for callers.
+Existing `from pyskillz import ...` callers keep the same
+entrypoints. Implementation is layered as dialogs -> wkt -> git;
+cli.py handles shell arguments and display, while _xontrib.py adapts
+Xonsh streams.
 
 '''
 
-from ._dlogs import (
+from .dialogs import (
+    list_dialogs as list_dialogs,
     get_dialog as get_dialog,
     name2id as name2id,
-    list_dialogs as list_dialogs,
+    list_wkt_relations as list_wkt_relations,
+    record_wkt_relation as record_wkt_relation,
+    preview_wkt_relations as preview_wkt_relations,
+    save_wkt_preview as save_wkt_preview,
+    apply_wkt_preview as apply_wkt_preview,
 )
+
+# Preserve imports from the first local WKT indexing prototype.
+list_worktree_associations = list_wkt_relations
+record_worktree = record_wkt_relation
+preview_worktree_associations = preview_wkt_relations
+save_worktree_preview = save_wkt_preview
+apply_worktree_preview = apply_wkt_preview
