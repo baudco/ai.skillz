@@ -1622,6 +1622,59 @@ def protected_index(
                 )
 
 
+@contextlib.contextmanager
+def protected_branch(
+    root: Path,
+    expected_ref: str,
+) -> Iterator[None]:
+    '''
+    Keep this worktree's symbolic HEAD fixed while publishing.
+
+    '''
+    name = git(
+        root, 'rev-parse', '--git-path', 'HEAD',
+    ).stdout.strip()
+    head = Path(name)
+    if not head.is_absolute():
+        head = root / head
+    if head.is_symlink() or not head.is_file():
+        raise PlanError('worktree HEAD is missing or symlinked')
+    lock = Path(f'{head}.lock')
+    try:
+        descriptor = os.open(
+            lock,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except OSError as error:
+        raise PlanError('unable to lock worktree HEAD') from error
+    try:
+        branch = git(
+            root, 'symbolic-ref', '-q', 'HEAD',
+            check=False,
+        )
+        changed = (
+            branch.returncode
+            or branch.stdout.strip() != expected_ref
+        )
+        if changed:
+            raise PlanError('checked-out branch changed')
+        yield
+        branch = git(
+            root, 'symbolic-ref', '-q', 'HEAD',
+            check=False,
+        )
+        changed = (
+            branch.returncode
+            or branch.stdout.strip() != expected_ref
+        )
+        if changed:
+            raise PlanError('checked-out branch changed')
+    finally:
+        os.close(descriptor)
+        lock.unlink(missing_ok=True)
+
+
 def execute(
     spec: dict[str, Any],
     root: Path,
@@ -1729,17 +1782,17 @@ def execute(
             if classify(spec, root) != completed:
                 checkout_state['retain'] = True
                 raise PlanError('branch changed before publication')
-            branch = git(
-                root, 'symbolic-ref', 'HEAD',
-            ).stdout.strip()
             try:
-                git(
-                    root, 'update-ref', branch,
-                    head_after, parent_oid,
-                )
-            except PlanError:
+                with protected_branch(root, spec['branch_ref']):
+                    git(
+                        checkout, 'update-ref', spec['branch_ref'],
+                        head_after, parent_oid,
+                    )
+            except PlanError as error:
                 checkout_state['retain'] = True
-                raise PlanError('branch changed during publication')
+                raise PlanError(
+                    f'branch changed during publication: {error}'
+                ) from error
             state['head'] = head_after
             state['committed'] = True
         if classify(spec, root) != ordinal:

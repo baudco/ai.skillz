@@ -1593,6 +1593,8 @@ class CommitPlanExecTests(unittest.TestCase):
         old-parent CAS must fail, keep that writer's commit, and
         retain the detached checkout instead of publishing an
         unexpected-parent plan commit or overwriting the real index.
+        The shim publishes from the detached checkout to model a
+        second worktree, independent of this one's HEAD lock.
 
         '''
         concurrent = self.git(
@@ -1609,7 +1611,7 @@ class CommitPlanExecTests(unittest.TestCase):
             '#!/bin/sh\n'
             'if [ "$1" = update-ref '
             f'] && [ "$2" = "{branch}" ]; then\n'
-            f'  {shlex.quote(real_git)} -C "{self.root}" '
+            f'  {shlex.quote(real_git)} '
             f'update-ref "{branch}" {concurrent} '
             f'{self.initial_parent} || exit 23\n'
             'fi\n'
@@ -1684,6 +1686,59 @@ class CommitPlanExecTests(unittest.TestCase):
             self.git('write-tree').stdout.strip(), self.tree_one,
         )
         self.assertNotIn('[boundary 1] PASS', result.stdout)
+
+    def test_branch_switch_during_publication_is_refused(self):
+        '''
+        A concurrent `git symbolic-ref HEAD` could switch this
+        worktree to a different branch at the same parent between
+        identity checks and publication. Publishing through a
+        mutable branch name would then commit the plan on the wrong
+        branch. Create a second branch and inject that switch from
+        the Git command just before CAS. The source HEAD lock must
+        refuse it while publication reaches only the pinned branch.
+
+        '''
+        branch = self.git('symbolic-ref', 'HEAD').stdout.strip()
+        other = 'refs/heads/other'
+        self.git('branch', 'other', self.initial_parent)
+        tools = self.runtime / 'branch-switch-bin'
+        tools.mkdir()
+        real_git = shutil.which('git')
+        self.assertIsNotNone(real_git)
+        marker = self.runtime / 'switch-refused'
+        shim = tools / 'git'
+        shim.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = update-ref '
+            f'] && [ "$2" = "{branch}" ]; then\n'
+            '  env -u GIT_INDEX_FILE -u GIT_DIR '
+            '-u GIT_WORK_TREE -u GIT_COMMON_DIR '
+            f'{shlex.quote(real_git)} -C "{self.root}" '
+            f'symbolic-ref HEAD "{other}" '
+            '2>/dev/null && exit 41\n'
+            f'  printf "refused\\n" > "{marker}"\n'
+            'fi\n'
+            f'exec {shlex.quote(real_git)} "$@"\n'
+        )
+        shim.chmod(0o755)
+        path = f'{tools}{os.pathsep}{os.environ["PATH"]}'
+        result = self.invoke(
+            '--execute', '1', extra_env={'PATH': path},
+        )
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(marker.read_text(), 'refused\n')
+        self.assertEqual(
+            self.git('symbolic-ref', 'HEAD').stdout.strip(), branch,
+        )
+        self.assertEqual(
+            self.git('rev-parse', other).stdout.strip(),
+            self.initial_parent,
+        )
+        self.assertEqual(
+            self.git('rev-parse', 'HEAD^{tree}').stdout.strip(),
+            self.tree_one,
+        )
+        self.assertFalse((self.root / '.git/HEAD.lock').exists())
 
 
 if __name__ == '__main__':

@@ -276,7 +276,9 @@ repository/index redirection and ignores replacement refs. It then:
   another check's result; tracked mutations within a check still refuse;
 - after staged review, locks the real index and checks its planned tree;
   the editor and hooks run in an owned detached checkout. Publish its
-  exact-parent/tree commit only by a compare-and-swap of the branch ref,
+  exact-parent/tree commit only by a compare-and-swap of the recorded
+  branch ref while its worktree's symbolic `HEAD` is locked. Run the
+  update from the detached checkout to keep its `HEAD` separate,
   leaving the already-staged exact real-index tree untouched;
 - after the editor or hooks return, accepts completion only when the new commit
   has the exact expected parent/tree relationship;
@@ -288,10 +290,10 @@ If `HEAD` advances outside the planned tree, the private index is retained
 for manual recovery; do not rewrite the real index to hide that state.
 Hooks that change the detached commit's parent/tree prevent publication
 and retain its checkout for manual recovery. Process death between ref
-publication and lock release can leave a stale lock, but the real index
-already contains the exact committed tree. Inspect owned recovery
-artifacts before manually releasing a stale lock; never reset the
-real index automatically or claim crash-atomic execution.
+publication and lock release can leave a stale index or `HEAD` lock,
+but the real index already contains the exact committed tree.
+Inspect owned recovery artifacts before releasing a stale lock;
+never reset the real index or claim crash-atomic execution.
 
 Commit OIDs and message text may differ because the editor may change the
 message; parent and complete tree identity define completion. Once all exact
