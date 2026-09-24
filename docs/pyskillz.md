@@ -25,6 +25,7 @@ ai.dlogs --harness oc
 ai.dlogs --harness claude
 ai.dlogs --harness all /path/to/repo
 ai.dlogs --all
+ai.resume 'dialog name' --dry-run
 ```
 
 Editable installs register import hooks at Python startup. A shell
@@ -249,10 +250,47 @@ Terminal output uses grey column headers and context keys; values
 keep the terminal's normal color. Pipes, JSON, `TERM=dumb`, and
 a nonempty `NO_COLOR` environment variable disable coloring.
 `--json` emits these records;
-`-b` selects `--harness`; `-h` and `--help` show help.
+`-b` (backend) selects `--harness`; `-h` and `--help` show help.
 `-a` / `--all-repos` disables cwd filtering for the selected harness,
 while `--all` corresponds to Python's `all=True`. Table output neutralizes
 terminal control characters; JSON and Python retain the original names.
+
+## Resume a named dialog
+
+`ai.resume NAME` finds a dialog name in the current directory
+and launches the matching harness with its dialog ID. Full names
+match exactly. A copied 36-character NAME ending in `…` also works
+when it identifies one dialog. The lookup reads the same saved
+dialog records as `ai.dlogs`. Inspect the choice first:
+
+```xsh
+ai.resume 'xharness_w_codex' --dry-run
+ai.resume 'xharness_w_codex'
+```
+
+`--dry-run` prints JSON with the selected harness, ID, launch cwd,
+and exact argv without starting an instance. The installed package
+provides an `ai.resume` executable and Xontrib alias; sourcing
+`aliases.xsh` provides a no-install Xonsh alias too.
+
+The default search uses the current directory, just like `ai.dlogs`.
+Use `--repo PATH` for another saved cwd or `-a` / `--all-repos` to
+search all saved directories. Exact duplicate names fail with a
+list of harnesses, IDs, and saved directories; narrow them with
+`-b` / `--harness`, `--repo`, or `--id`:
+
+```xsh
+ai.resume 'Quick availability check' -b oc
+ai.resume 'shared name' -a --id ses_example
+```
+
+When one active WKT is recorded for that dialog, the harness starts
+there. Otherwise it starts in the dialog's saved cwd. If several
+WKTs match, or the selected directory no longer exists, use
+`--cwd PATH` to choose a launch directory explicitly. The wrapper
+passes an argv list directly to `codex resume ID`,
+`opencode --session ID`, or `claude --resume ID`; it does not
+interpret the dialog name as a shell command.
 
 ## Storage and limits
 

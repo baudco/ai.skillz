@@ -7,9 +7,12 @@
 import pathlib as _skillz_pathlib
 import sys as _skillz_sys
 
-aliases['ai.dlogs'] = [
-    _skillz_sys.executable,
-    str(_skillz_pathlib.Path(__file__).resolve().parent
-        / 'pyskillz' / 'cli.py'),
+_skillz_cli = str(
+    _skillz_pathlib.Path(__file__).resolve().parent
+    / 'pyskillz' / 'cli.py'
+)
+aliases['ai.dlogs'] = [_skillz_sys.executable, _skillz_cli]
+aliases['ai.resume'] = [
+    _skillz_sys.executable, _skillz_cli, 'resume',
 ]
-del _skillz_pathlib, _skillz_sys
+del _skillz_cli, _skillz_pathlib, _skillz_sys

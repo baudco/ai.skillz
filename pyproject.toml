@@ -16,6 +16,7 @@ test = ["pytest>=8", "xonsh"]
 
 [project.scripts]
 "ai.dlogs" = "pyskillz.cli:main"
+"ai.resume" = "pyskillz.cli:resume_main"
 
 [project.entry-points."xonsh.xontribs"]
 pyskillz = "xontrib.pyskillz"
