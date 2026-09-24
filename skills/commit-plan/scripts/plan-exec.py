@@ -1381,7 +1381,10 @@ def run_project_checks(
                     secrets,
                 )
             try:
-                Path(paths[-1]).resolve(
+                source = Path(paths[-1])
+                if not source.is_absolute():
+                    source = root / source
+                source.resolve(
                     strict=True
                 ).relative_to(root)
             except (OSError, ValueError) as error:

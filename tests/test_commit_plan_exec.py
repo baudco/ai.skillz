@@ -837,6 +837,35 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertEqual(self.line_count(self.check_count), 0)
         self.assertEqual(self.line_count(self.editor_count), 0)
 
+    def test_relative_resolution_path_uses_isolated_root(self):
+        '''
+        A valid resolution probe may print a relative module path
+        from its isolated checkout. Resolving that output against
+        the executor's live cwd used to reject the source as outside
+        the boundary, even though the imported module was correct.
+        Have the fixture probe import its package and print only the
+        module basename. The check, editor and exact-tree commit
+        must complete using the isolated root for containment.
+
+        '''
+
+        def update(spec):
+            code = (
+                'import fixturepkg; from pathlib import Path; '
+                'print(Path(fixturepkg.__file__).name)'
+            )
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['resolution_argv'] = [sys.executable, '-c', code]
+
+        self.rewrite_spec(update)
+        result = self.invoke('--execute', '1')
+        self.assertIn(
+            '[project check 1/1 resolve] PASS', result.stdout,
+        )
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.line_count(self.check_count), 1)
+        self.assertEqual(self.commit_count(), 2)
+
     def test_symlinked_runtime_directory_is_rejected(self):
         '''
         Resolving the canonical runtime before checking containment
