@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyskillz"
+name = "aiskillz"
 version = "0.1.0"
 description = "Local session discovery for coding harnesses"
 requires-python = ">=3.10"
@@ -15,15 +15,15 @@ dependencies = []
 test = ["pytest>=8", "xonsh"]
 
 [project.scripts]
-"ai.dlogs" = "pyskillz.cli:main"
-"ai.resume" = "pyskillz.cli:resume_main"
+"ai.dlogs" = "aiskillz.cli:main"
+"ai.resume" = "aiskillz.cli:resume_main"
 
 [project.entry-points."xonsh.xontribs"]
-pyskillz = "xontrib.pyskillz"
+aiskillz = "xontrib.aiskillz"
 
 [tool.setuptools]
 license-files = ["LICENSE", "LICENSING.md"]
 
 [tool.setuptools.packages.find]
-include = ["pyskillz*", "xontrib*"]
+include = ["aiskillz*", "xontrib*"]
 namespaces = true

@@ -18,7 +18,7 @@ CLI lookup.
 
 `write.guard` is an exclusive mkdir lock. writer.json holds the
 Python writer PID; update() checks the file digest under that lock,
-then atomically replaces relations.json. See docs/pyskillz.md for
+then atomically replaces relations.json. See docs/aiskillz.md for
 crash recovery and the deferred KDL format migration.
 
 '''
@@ -262,7 +262,7 @@ def update(
 
     Normal exits remove this writer's guard; an existing guard raises
     `ValueError` and is left intact. A crash can leave a guard
-    requiring operator inspection as described in `docs/pyskillz.md`.
+    requiring operator inspection as described in `docs/aiskillz.md`.
     This helper never acquires, transfers or rewrites worktree
     lifecycle ownership.
 

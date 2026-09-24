@@ -14,8 +14,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from pyskillz import _resume
-from pyskillz.cli import resume_main
+from aiskillz import _resume
+from aiskillz.cli import resume_main
 
 
 @pytest.mark.parametrize(
@@ -182,9 +182,9 @@ def test_dry_run_previews_without_starting_process(
         'argv': ['codex', 'resume', 'id'],
     }
     resolver: Mock = Mock(return_value=target)
-    monkeypatch.setattr('pyskillz.cli.resume_target', resolver)
+    monkeypatch.setattr('aiskillz.cli.resume_target', resolver)
     launch: Mock = Mock()
-    monkeypatch.setattr('pyskillz.cli.subprocess.run', launch)
+    monkeypatch.setattr('aiskillz.cli.subprocess.run', launch)
     assert resume_main(['Feature', '--dry-run']) == 0
     assert json.loads(capsys.readouterr().out) == target
     assert resolver.call_args.kwargs['repo'] == '.'
@@ -213,14 +213,14 @@ def test_resume_launches_exact_argv_and_cwd(
         'argv': ['claude', '--resume', 'id'],
     }
     monkeypatch.setattr(
-        'pyskillz.cli.resume_target',
+        'aiskillz.cli.resume_target',
         lambda *args, **kwargs: target,
     )
     monkeypatch.setattr(
-        'pyskillz.cli.shutil.which', lambda name: '/bin/claude',
+        'aiskillz.cli.shutil.which', lambda name: '/bin/claude',
     )
     launch: Mock = Mock(return_value=SimpleNamespace(returncode=7))
-    monkeypatch.setattr('pyskillz.cli.subprocess.run', launch)
+    monkeypatch.setattr('aiskillz.cli.subprocess.run', launch)
     assert resume_main(['Feature']) == 7
     launch.assert_called_once_with(
         ['claude', '--resume', 'id'],

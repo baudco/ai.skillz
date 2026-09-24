@@ -16,7 +16,7 @@ import sys
 
 import pytest
 
-import pyskillz
+import aiskillz
 
 
 @pytest.mark.parametrize('layer', ['git', 'wkt', 'dialogs'])
@@ -30,7 +30,7 @@ def test_imports_follow_layer_direction(layer: str) -> None:
     prevents shell presentation from becoming a library dependency.
 
     '''
-    root: Path = Path(pyskillz.__file__).parent
+    root: Path = Path(aiskillz.__file__).parent
     allowed: set[str] = {
         'git': {'git'},
         'wkt': {'git', 'wkt'},
@@ -45,10 +45,10 @@ def test_imports_follow_layer_direction(layer: str) -> None:
             if isinstance(node, ast.ImportFrom):
                 name: str = '.' * node.level + (node.module or '')
                 resolved: str = importlib.util.resolve_name(
-                    name, 'pyskillz.' + layer,
+                    name, 'aiskillz.' + layer,
                 )
                 imports.append(resolved)
-                if resolved == 'pyskillz':
+                if resolved == 'aiskillz':
                     alias: ast.alias
                     imports.extend(
                         resolved + '.' + alias.name
@@ -58,7 +58,7 @@ def test_imports_follow_layer_direction(layer: str) -> None:
                 imports.extend(alias.name for alias in node.names)
             imported: str
             for imported in imports:
-                if imported.startswith('pyskillz.'):
+                if imported.startswith('aiskillz.'):
                     assert imported.split('.')[1] in allowed, (
                         source, imported,
                     )
@@ -71,24 +71,24 @@ def test_source_and_module_cli_outside_checkout(
     Moving main() into cli.py must preserve skill source execution.
 
     Launch the source script from an unrelated directory with no
-    PYTHONPATH, then invoke python -m pyskillz from the checkout.
+    PYTHONPATH, then invoke python -m aiskillz from the checkout.
     Both must expose the same index options without reading user logs
     or needing an editable installation of these new subpackages.
 
     '''
-    root: Path = Path(pyskillz.__file__).parent.parent
+    root: Path = Path(aiskillz.__file__).parent.parent
     import os
 
     env: dict[str, str] = dict(os.environ)
     env.pop('PYTHONPATH', None)
     source: subprocess.CompletedProcess = subprocess.run(
-        [sys.executable, str(root / 'pyskillz/cli.py'),
+        [sys.executable, str(root / 'aiskillz/cli.py'),
          'index', '--help'],
         cwd=tmp_path, env=env, capture_output=True, text=True,
         check=True,
     )
     package: subprocess.CompletedProcess = subprocess.run(
-        [sys.executable, '-m', 'pyskillz', 'index', '--help'],
+        [sys.executable, '-m', 'aiskillz', 'index', '--help'],
         cwd=root, env=env,
         capture_output=True, text=True, check=True,
     )

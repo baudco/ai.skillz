@@ -19,8 +19,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from pyskillz.cli import format_dialog_table as table
-from pyskillz import list_dialogs
+from aiskillz.cli import format_dialog_table as table
+from aiskillz import list_dialogs
 
 
 @unittest.skipUnless(shutil.which('git'), 'git unavailable')
@@ -67,7 +67,7 @@ class DialogTimestampTests(unittest.TestCase):
             },
         ]
         with patch(
-            'pyskillz.dialogs._api.claude_sessions',
+            'aiskillz.dialogs._api.claude_sessions',
             return_value=records,
         ):
             rows: list[dict] = list_dialogs(harness='claude')
