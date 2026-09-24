@@ -2,6 +2,11 @@ prune tests
 include tests/test_dlogs.py
 include tests/test_harness_stores.py
 include tests/test_dialog_timestamps.py
+include tests/test_worktree_dialogs.py
+include tests/test_dialog_index.py
+include tests/test_git_discovery.py
+include tests/test_pyskillz_layers.py
 include aliases.xsh
 include docs/pyskillz.md
+include pyskillz/README.md
 include LICENSING.md
