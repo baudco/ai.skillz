@@ -70,10 +70,13 @@ reports its outcome and preserves captured automated-command diagnostics.
 Environment variable names may be shown, but their authenticated values and
 the inherited environment remain hidden. Captured output escapes terminal
 controls and redacts environment values. For `--execute`, the staged diff is
-sanitized and displayed directly, with an Enter-to-continue review pause on
-interactive terminals. The configured external pager is not run. The editor
-and user-configured hooks retain their terminal; their output is trusted,
-not captured or redacted by the executor.
+sanitized before display. On an interactive terminal, the configured Git
+pager opens by default; `q` returns to an Enter-to-continue review prompt.
+Selection honors `GIT_PAGER`, `pager.diff`, then Git's generic pager.
+`--no-pager` prints the sanitized diff directly instead. No pager runs in
+noninteractive mode. The configured pager, editor and user-configured hooks
+retain their terminal; their own output is trusted, not redacted by the
+executor.
 
 `--preflight` and `--show` do not stage or commit. `--execute <ordinal>`
 applies the authenticated staging transition and opens the editor-backed

@@ -1057,9 +1057,10 @@ class CommitPlanExecTests(unittest.TestCase):
         Git used to stream a staged diff directly into the pager.
         Pressing q before the diff was fully written could send
         SIGPIPE to Git and block an otherwise reviewed commit.
-        Configure an early-exiting pager. The executor must ignore
-        it, show the sanitized diff directly, and still reach the
-        editor without handing its output to an external command.
+        Configure an early-exiting pager during a noninteractive
+        invocation. The executor must not start a pager without a
+        terminal, show the sanitized diff directly, and reach the
+        editor without handing Git output to the external command.
 
         '''
         pager = 'head -c 1 >/dev/null'
@@ -1072,13 +1073,14 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('[boundary 1] PASS', result.stdout)
         self.assertEqual(self.line_count(self.editor_count), 1)
 
-    def test_configured_pager_is_not_executed(self):
+    def test_noninteractive_pager_is_not_executed(self):
         '''
         A configured external pager could print credentials or
         terminal controls, bypassing diff sanitization. Supply a
         pager command that writes a marker and fails if launched.
-        The executor must not run it, while the sanitized review
-        and editor-backed commit still complete normally.
+        Without an interactive terminal, the executor must not
+        run it. The sanitized review and fixture editor-backed
+        commit still complete normally.
 
         '''
         marker = self.runtime / 'pager-ran'
@@ -1181,34 +1183,30 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('\x1b', result.stdout + result.stderr)
         self.assertIn('[boundary 1] PASS', result.stdout)
 
-    def test_review_and_editor_use_a_real_terminal(self):
+    def run_pty_review(
+        self,
+        editor: Path,
+        pager: str | None,
+        *,
+        no_pager: bool = False,
+    ) -> tuple[str, int, bool, bool]:
         '''
-        Capturing commit output fed pipes to Vim or nano and broke
-        their required terminal interaction. The direct review gate
-        also needs an actual human pause before Git starts the
-        editor. Run the fixture executor inside an owned PTY, supply
-        Enter to the review prompt, and use an editor which refuses
-        nonterminal stdio or an inaccessible controlling terminal.
-        The marker and completed boundary prove the gate and editor
-        both received a usable terminal without skipping --edit.
+        Drive the fixture's pager and review gate in a real PTY.
 
         '''
-        marker = self.runtime / 'editor-had-tty'
-        editor = self.runtime / 'tty-editor.sh'
-        editor.write_text(
-            '#!/bin/sh\n'
-            '[ -t 0 ] && [ -t 1 ] && [ -t 2 ] || exit 47\n'
-            ': </dev/tty || exit 48\n'
-            f'printf "yes\\n" > "{marker}"\n'
-        )
-        editor.chmod(0o755)
         arguments = [
             sys.executable, str(SCRIPT), '--spec',
             str(self.spec_path), '--sha256',
             self.spec_digest, '--execute', '1',
         ]
+        if no_pager:
+            arguments.append('--no-pager')
         environment = os.environ.copy()
         environment['GIT_EDITOR'] = str(editor)
+        if pager is None:
+            environment.pop('GIT_PAGER', None)
+        else:
+            environment['GIT_PAGER'] = pager
         environment['PYTHONPATH'] = str(self.root)
         pid, master = pty.fork()
         if pid == 0:
@@ -1217,7 +1215,8 @@ class CommitPlanExecTests(unittest.TestCase):
         chunks = []
         finished = 0
         status = 0
-        os.write(master, b'\n')
+        pager_closed = False
+        confirmed = False
         try:
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
@@ -1231,6 +1230,21 @@ class CommitPlanExecTests(unittest.TestCase):
                         output = b''
                     if output:
                         chunks.append(output)
+                    transcript = b''.join(chunks)
+                    if (
+                        not no_pager
+                        and not pager_closed
+                        and b'diff --git a/one.txt' in transcript
+                    ):
+                        os.write(master, b'q')
+                        pager_closed = True
+                    if (
+                        not confirmed
+                        and b'Review the staged diff above'
+                        in transcript
+                    ):
+                        os.write(master, b'\n')
+                        confirmed = True
                 finished, status = os.waitpid(pid, os.WNOHANG)
                 if finished:
                     break
@@ -1241,10 +1255,119 @@ class CommitPlanExecTests(unittest.TestCase):
         finally:
             os.close(master)
         text = b''.join(chunks).decode(errors='backslashreplace')
-        self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+        return (
+            text,
+            os.waitstatus_to_exitcode(status),
+            pager_closed,
+            confirmed,
+        )
+
+    def test_review_and_editor_use_a_real_terminal(self):
+        '''
+        Capturing commit output fed pipes to Vim or nano and broke
+        their required terminal interaction. Restored paging must
+        not erase the explicit human review gate. Run the fixture
+        executor in a PTY with a repo-configured pager wrapping
+        real `less`. Send q after the diff, then Enter. An editor
+        requiring terminal stdio and `/dev/tty` proves the pager
+        exit did not replace the editor-backed commit review.
+
+        '''
+        pager = shutil.which('less')
+        if pager is None:
+            self.skipTest('less is unavailable')
+        selected = self.runtime / 'selected-pager'
+        configured = self.runtime / 'configured-pager.sh'
+        configured.write_text(
+            '#!/bin/sh\n'
+            f'printf "selected\\n" > "{selected}"\n'
+            f'exec {shlex.quote(pager)} -RX "$@"\n'
+        )
+        configured.chmod(0o755)
+        self.git('config', 'pager.diff', str(configured))
+        marker = self.runtime / 'editor-had-tty'
+        editor = self.runtime / 'tty-editor.sh'
+        editor.write_text(
+            '#!/bin/sh\n'
+            '[ -t 0 ] && [ -t 1 ] && [ -t 2 ] || exit 47\n'
+            ': </dev/tty || exit 48\n'
+            f'printf "yes\\n" > "{marker}"\n'
+        )
+        editor.chmod(0o755)
+        text, status, pager_closed, confirmed = self.run_pty_review(
+            editor, None,
+        )
+        self.assertEqual(status, 0)
+        self.assertEqual(selected.read_text(), 'selected\n')
+        self.assertTrue(pager_closed)
+        self.assertTrue(confirmed)
         self.assertIn('Review the staged diff above', text)
         self.assertEqual(marker.read_text(), 'yes\n')
         self.assertEqual(self.commit_count(), 2)
+
+    def test_no_pager_opt_out_keeps_review_gate(self):
+        '''
+        A user can opt out of a configured pager without losing the
+        sanitized direct diff or Enter-before-editor gate. Supply a
+        malicious-looking pager which writes a fixture marker if
+        launched. Run `--no-pager` in a real PTY and confirm it never
+        executes that command, yet the user review and editor finish.
+
+        '''
+        marker = self.runtime / 'pager-ran'
+        editor = self.editor_script
+        marker_arg = shlex.quote(str(marker))
+        pager = f'printf yes > {marker_arg}; exit 17'
+        text, status, pager_closed, confirmed = self.run_pty_review(
+            editor, pager, no_pager=True,
+        )
+        self.assertEqual(status, 0)
+        self.assertFalse(marker.exists())
+        self.assertFalse(pager_closed)
+        self.assertTrue(confirmed)
+        self.assertIn('diff --git a/one.txt', text)
+        self.assertEqual(self.commit_count(), 2)
+
+    def test_interactive_pager_failure_blocks_commit(self):
+        '''
+        Trusting a human-configured pager must not mistake its own
+        failed exit for a reviewed diff. A fixture pager returns 17
+        without displaying the sanitized input in a real PTY. The
+        review gate must stop before confirmation, editor or commit
+        and leave the planned boundary staged for another attempt.
+
+        '''
+        text, status, pager_closed, confirmed = self.run_pty_review(
+            self.editor_script, 'exit 17',
+        )
+        self.assertEqual(status, 17)
+        self.assertFalse(pager_closed)
+        self.assertFalse(confirmed)
+        self.assertIn('[review] FAIL exit=17', text)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(), self.tree_one,
+        )
+
+    def test_no_pager_flag_requires_execution(self):
+        '''
+        A review-pager opt-out has meaning only when executing a
+        pending boundary. Applying it to display-only preflight or
+        show could make users assume those modes reviewed a patch.
+        Both invalid invocations must refuse without staging,
+        checks, editor interaction or a commit.
+
+        '''
+        for mode in ('--preflight', '--show'):
+            result = self.invoke(mode, '--no-pager', check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(
+                '--no-pager requires --execute', result.stderr,
+            )
+        self.assertEqual(self.commit_count(), 1)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
 
     def test_direct_review_escapes_staged_controls(self):
         '''
@@ -1272,13 +1395,13 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('\\x1b[31m', result.stdout)
         self.assertIn('[boundary 1] PASS', result.stdout)
 
-    def test_configured_pager_cannot_bypass_diff_escaping(self):
+    def test_noninteractive_pager_cannot_bypass_diff_escaping(self):
         '''
         Git once passed staged diff text to a configured pager that
         could output its own unsanitized controls. Materialize a
         planned file containing ESC and configure an external pager;
-        the executor must ignore the pager and emit the escaped diff
-        directly before an otherwise successful editor-backed commit.
+        without a terminal the executor must emit the escaped diff
+        directly before an otherwise successful fixture commit.
 
         '''
         (self.root / 'one.txt').write_text('one\x1b[31m\n')

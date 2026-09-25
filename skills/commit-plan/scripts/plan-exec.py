@@ -418,9 +418,31 @@ def safe_review_line(payload: bytes) -> bytes:
     return (visible_text(text) + suffix).encode()
 
 
-def review_diff(root: Path) -> int:
+def configured_diff_pager(root: Path) -> str | None:
     '''
-    Display sanitized staged diff and pause an interactive review.
+    Resolve the user's Git diff pager rather than its generic pager.
+
+    '''
+    environment = git_environment()
+    if 'GIT_PAGER' in environment:
+        return environment['GIT_PAGER'] or None
+    configured = git(
+        root, 'config', '--get', 'pager.diff', check=False,
+    )
+    if configured.returncode not in {0, 1}:
+        raise PlanError('unable to resolve Git diff pager')
+    if configured.returncode == 0:
+        value = configured.stdout.strip()
+        if value.lower() in {'false', 'no', 'off', '0'}:
+            return None
+        if value.lower() not in {'true', 'yes', 'on', '1'}:
+            return value or None
+    return git(root, 'var', 'GIT_PAGER').stdout.strip() or None
+
+
+def review_diff(root: Path, *, no_pager: bool = False) -> int:
+    '''
+    Page or display sanitized staged diff before confirmation.
 
     '''
     arguments = git_command(*review_operation())
@@ -462,8 +484,37 @@ def review_diff(root: Path) -> int:
             for line in output:
                 safe.write(safe_review_line(line))
             safe.seek(0)
-            shutil.copyfileobj(safe, sys.stdout.buffer)
-            sys.stdout.flush()
+            interactive = (
+                sys.stdin.isatty() and sys.stdout.isatty()
+            )
+            if interactive and not no_pager:
+                pager = configured_diff_pager(root)
+                if pager:
+                    try:
+                        viewed = subprocess.run(
+                            ['sh', '-c', pager],
+                            cwd=root,
+                            check=False,
+                            stdin=safe,
+                            env=git_environment(),
+                        )
+                    except OSError as error:
+                        raise PlanError(
+                            'review pager failed to start'
+                        ) from error
+                    except KeyboardInterrupt:
+                        viewed = subprocess.CompletedProcess(
+                            ['sh', '-c', pager], 130,
+                        )
+                    if viewed.returncode:
+                        trace_result('review', viewed)
+                        return viewed.returncode
+                else:
+                    shutil.copyfileobj(safe, sys.stdout.buffer)
+                    sys.stdout.flush()
+            else:
+                shutil.copyfileobj(safe, sys.stdout.buffer)
+                sys.stdout.flush()
     if sys.stdin.isatty() and sys.stdout.isatty():
         print(
             'Review the staged diff above. Press Enter to '
@@ -1727,6 +1778,8 @@ def execute(
     spec: dict[str, Any],
     root: Path,
     ordinal: int,
+    *,
+    no_pager: bool = False,
 ) -> int:
     '''
     Execute or safely skip one exact commit boundary.
@@ -1792,7 +1845,7 @@ def execute(
         raise PlanError('HEAD changed while checks were running')
     if not index_matches(root, target_tree):
         raise PlanError('a check changed the staged tree')
-    result = review_diff(root)
+    result = review_diff(root, no_pager=no_pager)
     if result:
         return result
     root = validate_identity(spec)
@@ -1931,6 +1984,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     mode.add_argument('--preflight', action='store_true')
     mode.add_argument('--show', action='store_true')
     mode.add_argument('--execute', type=int, metavar='ORDINAL')
+    parser.add_argument('--no-pager', action='store_true')
     return parser.parse_args(argv)
 
 
@@ -1945,6 +1999,8 @@ def main(argv: list[str] | None = None) -> int:
         spec = load_spec(args.spec, args.sha256)
         root = validate_identity(spec)
         validate_index_file(root)
+        if args.no_pager and args.execute is None:
+            raise PlanError('--no-pager requires --execute')
         if args.preflight:
             preflight(spec, root)
         elif args.show:
@@ -1956,7 +2012,10 @@ def main(argv: list[str] | None = None) -> int:
                 raise PlanError(
                     'boundary ordinal is outside the plan'
                 )
-            return execute(spec, root, args.execute)
+            return execute(
+                spec, root, args.execute,
+                no_pager=args.no_pager,
+            )
     except PlanError as error:
         print(f'commit-plan: {error}', file=sys.stderr)
         return 2

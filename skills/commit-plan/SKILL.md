@@ -327,12 +327,16 @@ trailing blank line after it.
 
 Keep `git diff --staged` as an intentional human review gate even when the
 earlier summary and path checks passed. The executor displays its sanitized
-diff directly and does not run a configured external pager. In an interactive
-terminal, pressing Enter after reviewing continues; Ctrl-C or another answer
-aborts before commit. The editor-backed `git commit --edit --file` and local
-hooks inherit the user's terminal. Their output is trusted and not redacted,
-unlike captured automated-check and Git diagnostic output. A completed
-boundary skips the review and editor entirely.
+diff through the configured Git pager on an interactive terminal. Quit the
+pager with `q`, then press Enter to confirm before the editor; Ctrl-C or
+another answer aborts. `--execute <ordinal> --no-pager` instead prints the
+sanitized diff directly and keeps the Enter confirmation. No pager runs when
+there is no interactive terminal. Pager selection honors `GIT_PAGER` and
+Git's `pager.diff` setting before its generic fallback. The configured
+pager, editor-backed
+`git commit --edit --file`, and local hooks are user-trusted programs:
+their own output is not captured or redacted. Automated-check and Git
+diagnostics remain escaped/redacted. A completed boundary skips review.
 
 ## 7. Completion Gate
 

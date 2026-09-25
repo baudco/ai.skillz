@@ -1889,7 +1889,11 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
         'selects a Python interpreter before the script path'
     assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
-        'The configured external pager is not run'
+        'pager opens by default'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'Selection honors `GIT_PAGER`, `pager.diff`'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        '`--no-pager` prints the sanitized diff directly'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'shared, no-checkout clone in a temporary project'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
