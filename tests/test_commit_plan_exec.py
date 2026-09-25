@@ -35,7 +35,8 @@ class CommitPlanExecTests(unittest.TestCase):
         self.git('config', 'user.email', 'plan@example.invalid')
         (self.root / 'base.txt').write_text('base\n')
         (self.root / 'fixturepkg.py').write_text('VALUE = "tree"\n')
-        self.git('add', 'base.txt', 'fixturepkg.py')
+        (self.root / '.gitignore').write_text('/.claude/\n')
+        self.git('add', 'base.txt', 'fixturepkg.py', '.gitignore')
         self.git('commit', '-q', '-m', 'base')
         self.initial_parent = self.git(
             'rev-parse',
@@ -865,6 +866,152 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('[boundary 1] PASS', result.stdout)
         self.assertEqual(self.line_count(self.check_count), 1)
         self.assertEqual(self.commit_count(), 2)
+
+    def test_probe_rejects_multiple_source_paths(self):
+        '''
+        Accepting only the final nonempty probe line lets a check
+        report an external import followed by a believable in-root
+        path. The fixture probe prints both the live worktree copy
+        and the actual isolated import path, then exits successfully.
+        Execution must refuse that ambiguous evidence before any
+        project check, editor or commit despite the valid last line.
+
+        '''
+        external = self.root / 'fixturepkg.py'
+
+        def update(spec):
+            code = (
+                'import pathlib, fixturepkg; '
+                f'print({str(external)!r}); '
+                'print(pathlib.Path(fixturepkg.__file__).resolve())'
+            )
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['resolution_argv'] = [sys.executable, '-c', code]
+
+        self.rewrite_spec(update)
+        result = self.invoke('--execute', '1', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('exactly one path', result.stderr)
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_absolute_tracked_live_helper_is_refused(self):
+        '''
+        An absolute executable inside the live repository could run
+        edited tracked code absent from the authenticated boundary.
+        Make the tracked fixture package executable and replace its
+        live bytes with a shell script that would write a marker.
+        Both preflight and direct execution must reject that path
+        before the helper runs or affects a commit.
+
+        '''
+        helper = self.root / 'fixturepkg.py'
+        marker = self.runtime / 'tracked-helper-ran'
+        helper.write_text(
+            '#!/bin/sh\n'
+            f'printf "ran\\n" > "{marker}"\n'
+        )
+        helper.chmod(0o755)
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [str(helper)]
+
+        self.rewrite_spec(update)
+        for arguments in (('--preflight',), ('--execute', '1')):
+            result = self.invoke(*arguments, check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('required executable unavailable',
+                          result.stderr)
+        self.assertFalse(marker.exists())
+        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_bare_tracked_helper_on_live_path_is_refused(self):
+        '''
+        Refusing only explicit absolute argv would leave the same
+        live tracked helper reachable by a bare executable name
+        through the check's PATH overlay. Mark the tracked fixture
+        package executable and add the live root to the selected
+        PATH. Preflight and direct execution must reject that
+        resolved helper before it runs outside the clone.
+
+        '''
+        helper = self.root / 'fixturepkg.py'
+        helper.chmod(0o755)
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [helper.name]
+            check['env']['PATH'] = (
+                f'{self.root}{os.pathsep}{os.environ["PATH"]}'
+            )
+
+        self.rewrite_spec(update)
+        for arguments in (('--preflight',), ('--execute', '1')):
+            result = self.invoke(*arguments, check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('required executable unavailable',
+                          result.stderr)
+        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_ignored_local_tool_remains_available(self):
+        '''
+        Repository-local ignored tools such as a virtualenv entry
+        point are intentionally external to the commit tree. The
+        tracked fixture ignore rule covers the runtime directory.
+        Put a check tool there, authenticate its location via
+        preflight, then execute the boundary and confirm the tool
+        ran with its source path while the imported module came
+        from the isolated checkout.
+
+        '''
+        helper = self.runtime / 'ignored-check.sh'
+        helper.write_text(
+            '#!/bin/sh\n'
+            f'printf "ran\\n" >> "{self.check_count}"\n'
+        )
+        helper.chmod(0o755)
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [str(helper)]
+
+        self.rewrite_spec(update)
+        self.invoke('--preflight')
+        result = self.invoke('--execute', '1')
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertEqual(self.line_count(self.check_count), 1)
+        self.assertEqual(self.commit_count(), 2)
+
+    def test_unignored_live_helper_is_refused(self):
+        '''
+        A live local executable absent from the boundary tree is
+        not automatically a trusted external tool. Create an
+        untracked, unignored script in the fixture source root and
+        pin its absolute path as a project check. Preflight must
+        refuse it rather than authorizing mutable code merely
+        because the file exists and has executable permissions.
+
+        '''
+        helper = self.root / 'unignored-check.sh'
+        helper.write_text('#!/bin/sh\nexit 0\n')
+        helper.chmod(0o755)
+
+        def update(spec):
+            check = spec['boundaries'][0]['project_checks'][0]
+            check['argv'] = [str(helper)]
+
+        self.rewrite_spec(update)
+        result = self.invoke('--preflight', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            'required executable unavailable', result.stderr,
+        )
+        self.assertEqual(self.line_count(self.editor_count), 0)
+        self.assertEqual(self.commit_count(), 1)
 
     def test_symlinked_runtime_directory_is_rejected(self):
         '''

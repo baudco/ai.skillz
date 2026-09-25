@@ -974,11 +974,54 @@ def artifact_snapshot(
     return payload
 
 
+def external_tool_allowed(
+    spec: dict[str, Any],
+    value: str,
+) -> bool:
+    '''
+    Refuse live repository code unless it is an ignored local tool.
+
+    '''
+    live_root = Path(spec['repo_root'])
+    path = Path(os.path.abspath(value))
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    trees = {
+        spec['initial_tree'],
+        spec['initial_index_tree'],
+        *(item['tree'] for item in spec['boundaries']),
+    }
+    for candidate in {path, resolved}:
+        try:
+            relative = candidate.relative_to(live_root)
+        except ValueError:
+            continue
+        if not relative.parts:
+            return False
+        name = str(relative)
+        for tree in trees:
+            tracked = git(
+                live_root, 'ls-tree', tree, '--', name,
+            ).stdout.strip()
+            if tracked:
+                return False
+        ignored = git(
+            live_root, 'check-ignore', '-q',
+            '--no-index', '--', name, check=False,
+        )
+        if ignored.returncode:
+            return False
+    return True
+
+
 def command_executable(
     description: dict[str, Any],
     root: Path,
     tree: str,
     key: str,
+    spec: dict[str, Any],
 ) -> bool:
     '''
     Check the directly invoked project executable without running it.
@@ -990,7 +1033,11 @@ def command_executable(
         if path.is_absolute():
             try:
                 is_executable = path.stat().st_mode & 0o111 != 0
-                return path.is_file() and is_executable
+                return (
+                    path.is_file()
+                    and is_executable
+                    and external_tool_allowed(spec, value)
+                )
             except OSError:
                 return False
         if '..' in path.parts:
@@ -1020,7 +1067,8 @@ def command_executable(
     )
     if unsafe_path:
         return False
-    return shutil.which(value, path=search_path) is not None
+    found = shutil.which(value, path=search_path)
+    return found is not None and external_tool_allowed(spec, found)
 
 
 def validate_index_file(
@@ -1424,6 +1472,15 @@ def run_project_checks(
             )
             check_env = environment.copy()
             check_env.update(description['env'])
+            for key in ('resolution_argv', 'argv'):
+                if not command_executable(
+                    description, root, boundary['tree'],
+                    key, spec,
+                ):
+                    name = visible_text(description[key][0])
+                    raise PlanError(
+                        f'required executable unavailable: {name}'
+                    )
             secrets = secret_values(
                 check_env,
             )
@@ -1460,11 +1517,7 @@ def run_project_checks(
                     secrets=secrets,
                 )
                 return probe.returncode
-            paths = [
-                line
-                for line in probe.stdout.splitlines()
-                if line
-            ]
+            paths = probe.stdout.splitlines()
             if not paths:
                 raise validation_error(
                     resolve_phase,
@@ -1474,8 +1527,17 @@ def run_project_checks(
                     probe,
                     secrets,
                 )
+            if len(paths) != 1 or not paths[0]:
+                raise validation_error(
+                    resolve_phase,
+                    resolution,
+                    root,
+                    'resolution check must print exactly one path',
+                    probe,
+                    secrets,
+                )
             try:
-                source = Path(paths[-1])
+                source = Path(paths[0])
                 if not source.is_absolute():
                     source = root / source
                 source.resolve(
@@ -1549,6 +1611,7 @@ def preflight(spec: dict[str, Any], root: Path) -> None:
                     root,
                     boundary['tree'],
                     key,
+                    spec,
                 ):
                     name = description[key][0]
                     name = visible_text(name)

@@ -121,8 +121,14 @@ Record relative project executables only when they are executable files in the
 boundary tree. Resolve ignored repository-local tools, including virtual
 environment entry points, to absolute paths. For Python projects, include the
 documented import-resolution probe with every distinct interpreter/environment
-and require the imported package path to remain beneath
+and require exactly one reported import path beneath
 `AI_SKILLZ_BOUNDARY_ROOT`.
+
+Absolute helpers under the live repository are accepted only when ignored
+and absent from the recorded boundary trees. Record tracked executables as
+relative paths so execution resolves their pinned boundary-tree copies.
+The executor revalidates executable locations in the isolated checkout
+before running the probe or project check.
 
 ## 4. Materialize Every Boundary
 
