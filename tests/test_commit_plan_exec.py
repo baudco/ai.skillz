@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import termios
 import time
 import unittest
 from pathlib import Path
@@ -1496,6 +1497,96 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertEqual(
             self.git('write-tree').stdout.strip(), self.tree_one,
         )
+
+    def test_pager_interrupt_restores_tty_before_shell_prompt(self):
+        '''
+        A pager can be killed by Ctrl-C before it restores its raw
+        terminal mode. Returning to Xonsh in that mode lets a late
+        cursor-position reply appear as shell input and delays its
+        prompt. Launch a pager which intentionally disables canonical
+        input and echo, then send Ctrl-C and a cursor reply through a
+        real PTY. The executor must abort without opening the editor,
+        preserve the staged boundary, restore the terminal mode and
+        discard the stray cursor reply before the shell resumes.
+
+        '''
+        pager = self.runtime / 'raw-pager.py'
+        pager.write_text(
+            'import os, signal, termios\n'
+            "fd = os.open('/dev/tty', os.O_RDWR)\n"
+            'mode = termios.tcgetattr(fd)\n'
+            'mode[3] &= ~(termios.ICANON | termios.ECHO)\n'
+            'termios.tcsetattr(fd, termios.TCSANOW, mode)\n'
+            "os.write(1, b'PAGER_READY\\n\\x1b[6n')\n"
+            'signal.signal(signal.SIGINT, signal.SIG_DFL)\n'
+            'signal.pause()\n'
+        )
+        environment = os.environ.copy()
+        executable = shlex.quote(sys.executable)
+        script = shlex.quote(str(pager))
+        environment['GIT_PAGER'] = f'{executable} -u {script}'
+        environment['GIT_EDITOR'] = str(self.editor_script)
+        environment['PYTHONPATH'] = str(self.root)
+        environment['NO_COLOR'] = '1'
+        arguments = [
+            sys.executable, str(SCRIPT), '--spec',
+            str(self.spec_path), '--sha256',
+            self.spec_digest, '--execute', '1',
+        ]
+        pid, master = pty.fork()
+        if pid == 0:
+            os.chdir(self.root)
+            os.execve(sys.executable, arguments, environment)
+        slave = os.open(
+            os.ptsname(master),
+            os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY,
+        )
+        before = termios.tcgetattr(master)
+        chunks = []
+        finished = 0
+        status = 0
+        interrupted = False
+        try:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                ready, _, _ = select.select(
+                    [master], [], [], 0.1,
+                )
+                if ready:
+                    try:
+                        output = os.read(master, 65536)
+                    except OSError:
+                        output = b''
+                    chunks.append(output)
+                    if not interrupted and b'PAGER_READY' in (
+                        b''.join(chunks)
+                    ):
+                        os.write(master, b'\x03\x1b[59;1R')
+                        interrupted = True
+                finished, status = os.waitpid(pid, os.WNOHANG)
+                if finished:
+                    break
+            if not finished:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+                self.fail('interrupted pager never finished')
+            self.assertTrue(interrupted)
+            self.assertEqual(os.waitstatus_to_exitcode(status), 130)
+            self.assertEqual(self.line_count(self.editor_count), 0)
+            self.assertEqual(self.commit_count(), 1)
+            self.assertEqual(
+                self.git('write-tree').stdout.strip(), self.tree_one,
+            )
+            self.assertEqual(
+                termios.tcgetattr(master)[3]
+                & (termios.ICANON | termios.ECHO),
+                before[3] & (termios.ICANON | termios.ECHO),
+            )
+            with self.assertRaises(BlockingIOError):
+                os.read(slave, 128)
+        finally:
+            os.close(slave)
+            os.close(master)
 
     def test_no_pager_flag_requires_execution(self):
         '''

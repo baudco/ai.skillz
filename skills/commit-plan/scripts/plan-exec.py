@@ -20,6 +20,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import termios
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -490,6 +491,8 @@ def review_diff(root: Path, *, no_pager: bool = False) -> int:
             if interactive and not no_pager:
                 pager = configured_diff_pager(root)
                 if pager:
+                    tty_fd = sys.stdin.fileno()
+                    tty_mode = termios.tcgetattr(tty_fd)
                     try:
                         viewed = subprocess.run(
                             ['sh', '-c', pager],
@@ -506,7 +509,12 @@ def review_diff(root: Path, *, no_pager: bool = False) -> int:
                         viewed = subprocess.CompletedProcess(
                             ['sh', '-c', pager], 130,
                         )
+                    finally:
+                        termios.tcsetattr(
+                            tty_fd, termios.TCSANOW, tty_mode,
+                        )
                     if viewed.returncode:
+                        termios.tcflush(tty_fd, termios.TCIFLUSH)
                         trace_result('review', viewed)
                         return viewed.returncode
                 else:
