@@ -32,12 +32,14 @@ process:
    differs from the git-dir, you are in a worktree.
    Tell the user which tree you're operating on.
 
-   Determine `<ai-service>` from the active agent
+   Determine the actual harness running this workflow
    (e.g. `codex`, `claude` for Claude Code, `copilot` for
-   GitHub Copilot).
+   GitHub Copilot). Record the model provider and exact model
+   identifier only when independently known. Never infer one
+   identity from another.
 
    ```bash
-   mkdir -p ai/prompt-io/<ai-service>/
+   mkdir -p ai/prompt-io/
    ```
 
 1. **Classify scope and substantive threshold**
@@ -89,7 +91,16 @@ process:
    ```
 
    Write the raw AI response to:
-   `ai/prompt-io/<service>/<ts>_<hash>_prompt_io.raw.md`
+   `ai/prompt-io/<ts>_<hash>_prompt_io.raw.md`
+
+   Before writing, check that neither this path nor its structured
+   log partner exists. If either exists, choose a fresh unique
+   identifier (for example, append a short random suffix to
+   `<hash>`) and check both paths again. Create each file only if
+   absent; if another writer claims a path first, retry with a
+   new identifier. Never overwrite either record. Timestamp plus
+   HEAD hash alone can collide across harnesses or repeated
+   records in one second.
 
    **This file MUST be written BEFORE any human
    edits are applied to the AI output.**
@@ -98,13 +109,21 @@ process:
 
    ```markdown
    ---
-   model: <model-name-and-version>
-   service: <ai-service>
-   timestamp: <ISO-8601>
+   created_at: <actual-UTC-ISO-8601>
+   generated_by:
+     harness: <actual-harness>
+     provider: <known-provider>
+     model: <exact-known-model-id>
    git_ref: <short-hash>
    diff_cmd: git diff <ref>~1..<ref>
    ---
    ```
+
+   Omit `provider` or `model` when unknown. Do not write
+   placeholders into actual records. `generated_by` is the
+   original generation watermark and must survive later edits.
+   Keep the raw output as originally captured; later revisions
+   to a summary must not rewrite its historical raw partner.
 
    If the commit hash is not yet known (entry
    written before committing), use the branch
@@ -165,16 +184,18 @@ process:
 4. **Write the prompt-io log entry**
 
    Write the main log to:
-   `ai/prompt-io/<service>/<ts>_<hash>_prompt_io.md`
+   `ai/prompt-io/<ts>_<hash>_prompt_io.md`
 
    Format:
 
    ```markdown
    ---
-   model: <model-name-and-version>
-   service: <ai-service>
+   created_at: <actual-UTC-ISO-8601>
+   generated_by:
+     harness: <actual-harness>
+     provider: <known-provider>
+     model: <exact-known-model-id>
    session: <session-uuid>
-   timestamp: <ISO-8601>
    git_ref: <short-hash>
    scope: <code|docs|tests|config|data>
    substantive: <true|false>
@@ -213,6 +234,13 @@ process:
    review.>
    ```
 
+   Omit unknown optional identity fields and a session ID when
+   unavailable. Use the same original generation identity in the
+   structured log and raw partner. Keep `created_at` and
+   `generated_by` when revising the log. Record substantive later
+   contributions in `## Human edits`, another concise section,
+   or associated prompt-IO records; Git tracks ordinary edits.
+
    **Human contribution accounting is mandatory.** Before writing
    "None", review the complete interaction, including follow-up turns
    after the initial generation. A human identifying a bad design,
@@ -220,17 +248,16 @@ process:
    removal has edited the outcome for provenance purposes. Do not
    present agent-applied revisions as solely AI-generated.
 
-5. **Ensure per-service README exists**
+5. **Ensure the shared README exists**
 
-   Check for `ai/prompt-io/<service>/README.md`.
+   Check for `ai/prompt-io/README.md`.
    If absent, create it (never overwrite existing):
 
    ```markdown
-   # AI Prompt I/O Log — <service>
+   # AI Prompt I/O Log
 
    This directory tracks prompt inputs and model
-   outputs for AI-assisted development using
-   `<service>`.
+   outputs for AI-assisted development across harnesses.
 
    ## Policy
 
@@ -238,7 +265,7 @@ process:
    [NLNet generative AI policy][nlnet-ai].
    All substantive AI contributions are logged
    with:
-   - Model name and version
+   - Original harness, and provider/model when known
    - Timestamps
    - The prompts that produced the output
    - Unedited model output (`.raw.md` files)
@@ -262,7 +289,7 @@ process:
    adding a trailer to the commit message:
 
    ```
-   Prompt-IO: ai/prompt-io/<service>/<filename>.md
+   Prompt-IO: ai/prompt-io/<filename>.md
    ```
 
    This links the commit to its prompt provenance
@@ -281,7 +308,7 @@ process:
 
 This skill satisfies five NLNet requirements:
 
-1. **Prompt provenance** — model name, timestamps,
+1. **Prompt provenance** — exact model when known, timestamps,
    prompts, and unedited outputs in `.raw.md`
 2. **Substantive-use marking** — scope classification
    and `substantive:` frontmatter flag
@@ -295,8 +322,8 @@ This skill satisfies five NLNet requirements:
 ## File naming convention
 
 ```
-ai/prompt-io/<service>/<ts>_<hash>_prompt_io.md
-ai/prompt-io/<service>/<ts>_<hash>_prompt_io.raw.md
+ai/prompt-io/<ts>_<hash>_prompt_io.md
+ai/prompt-io/<ts>_<hash>_prompt_io.raw.md
 ```
 
 - `<ts>`: `date -u +%Y%m%dT%H%M%SZ`
@@ -304,3 +331,13 @@ ai/prompt-io/<service>/<ts>_<hash>_prompt_io.raw.md
 - `<hash>`: first 7 chars of HEAD
   (`git log -1 --format=%h`)
 - Mirrors `commit-msg/msgs/` naming convention
+- `<hash>` may gain a unique suffix when either partner path
+  already exists; never replace a prior record.
+
+Read historical `ai/prompt-io/<service>/` records in place. Legacy
+`service` maps to `generated_by.harness`, and legacy `timestamp`
+maps to `created_at` for discovery only. A legacy `model` is a
+model identifier only if it is exact and known; missing or
+placeholder values stay unknown. Never infer a provider, rewrite
+legacy front matter, move records, or change committed
+`Prompt-IO:` references.

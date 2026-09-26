@@ -144,9 +144,11 @@ trees, generic skills use whole-directory links, while hybrid skills
 such as `commit-msg` and `pr-msg` link only declared files and
 resources. Repository-owned runtime state stays outside the shared
 source directories. The
-[shared runtime contract](docs/runtime-state.md) uses `.ai/` for
-configuration and `.ai/state/` for generated artifacts in fresh
-repositories. Existing runtime paths under `.claude/` remain in place
+[shared runtime contract](docs/runtime-state.md) uses `ai/plans/`
+and `ai/prompt-io/` for new durable artifacts, `.ai/` for
+configuration, and `.ai/state/` for operational state in fresh
+repositories. Some dot-directory configuration is versioned.
+Existing runtime paths under `.claude/` remain in place
 until explicit runtime migration; source deployment does not migrate
 or delete message archives, configuration, review context, or
 worktree state.

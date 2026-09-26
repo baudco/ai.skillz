@@ -182,21 +182,25 @@ When generating commit messages, always follow this process:
    **Check for prompt-io provenance** (chained from
    the `/prompt-io` skill):
 
-   Scan the staged `--stat` for paths under
-   `ai/prompt-io/`. If any are found:
+   Inspect `git diff --cached --name-only -z` paths under
+   `ai/prompt-io/`, including
+   direct new records and historical service subdirectories.
+   If any structured logs are found:
 
-   a) Collect the `.md` log entry paths (exclude
-      `.raw.md` files — those are unedited output,
-      not the provenance log).
+   a) Collect staged `.md` structured log paths. Exclude
+      `.raw.md` partners and README files; neither is a
+      provenance log. Use each exact repository-relative path;
+      do not synthesize a directory from metadata.
    b) In step 3, emit a `Prompt-IO:` trailer for
       each log entry, just before the credit footer
       (same position as `Review:` trailers):
 
       ```
-      Prompt-IO: ai/prompt-io/<service>/<file>.md
+      Prompt-IO: ai/prompt-io/<file>.md
+      Prompt-IO: ai/prompt-io/<historical-service>/<file>.md
       ```
 
-   If **no** `ai/prompt-io/` files are staged but
+   If **no** structured `ai/prompt-io/` logs are staged but
    the "patch" credit footer will be used (meaning
    a substantive AI contribution), remind the user
    that `/prompt-io` logging may be needed per

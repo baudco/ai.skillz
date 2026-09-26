@@ -16,7 +16,9 @@ therefore links whole directories, including the three skills that
 use hybrid layouts in legacy deployments. Repository-owned runtime
 state uses the [shared runtime contract](runtime-state.md), outside
 those source directories. Existing state requires explicit migration;
-fresh repositories use `.ai` configuration and `.ai/state` artifacts.
+fresh repositories use `.ai` configuration and `.ai/state` operational
+artifacts. New durable plans and prompt records use `ai/plans/` and
+`ai/prompt-io/` across harnesses.
 
 Start a fresh Codex session in the target worktree and use `/skills`
 to inspect discovery. Invoke `$commit-plan`, or request the installed
