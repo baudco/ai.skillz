@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import os
 import pty
@@ -13,6 +14,7 @@ import termios
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +25,11 @@ SCRIPT = (
     / 'scripts'
     / 'plan-exec.py'
 )
+MODULE_SPEC = importlib.util.spec_from_file_location(
+    'commit_plan_exec', SCRIPT,
+)
+PLAN_EXEC = importlib.util.module_from_spec(MODULE_SPEC)
+MODULE_SPEC.loader.exec_module(PLAN_EXEC)
 
 
 class CommitPlanExecTests(unittest.TestCase):
@@ -1032,6 +1039,80 @@ class CommitPlanExecTests(unittest.TestCase):
         result = self.invoke('--preflight', check=False)
         self.assertEqual(result.returncode, 2)
         self.assertIn('runtime must not use symlinks', result.stderr)
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_runtime_reads_hold_parent_descriptors(self):
+        '''
+        `runtime_file()` used to validate the messages directory
+        before `read_regular()` opened a pathname. Replacing that
+        directory with a symlink between those calls redirected
+        the spec, patch or message read outside the runtime. For
+        each artifact, swap the parent at the final file-open
+        boundary and offer different bytes at the external path.
+        The read must use the held original directory descriptor,
+        returning the pinned bytes without touching the replacement.
+
+        '''
+        messages = self.runtime.parent
+        loaded = PLAN_EXEC.load_spec(
+            self.spec_path, self.spec_digest,
+        )
+        items = (
+            ('spec', self.spec_path, None, 'plan specification'),
+            (
+                'patch', self.patches[0],
+                loaded['boundaries'][0]['patch'], 'boundary patch',
+            ),
+            (
+                'message', self.messages[0],
+                loaded['boundaries'][0]['message'], 'commit message',
+            ),
+        )
+        original_read = PLAN_EXEC.read_regular
+        for role, source, description, label in items:
+            with self.subTest(role=role):
+                expected = source.read_bytes()
+                held = Path(self.temp_dir.name) / f'held-{role}'
+                external = Path(self.temp_dir.name) / role
+                outside = external / 'test-runtime'
+                outside.mkdir(parents=True)
+                (outside / source.name).write_bytes(
+                    b'external bytes'
+                )
+
+                def swap(path, kind, *, dir_fd=None):
+                    messages.rename(held)
+                    messages.symlink_to(
+                        external, target_is_directory=True,
+                    )
+                    if dir_fd is None:
+                        return original_read(path, kind)
+                    return original_read(
+                        path, kind, dir_fd=dir_fd,
+                    )
+
+                try:
+                    with patch.object(
+                        PLAN_EXEC, 'read_regular', side_effect=swap,
+                    ):
+                        if role == 'spec':
+                            result = PLAN_EXEC.load_spec(
+                                source, self.spec_digest,
+                            )
+                            self.assertEqual(
+                                result['repo_root'],
+                                str(self.root.resolve()),
+                            )
+                        else:
+                            payload = PLAN_EXEC.artifact_snapshot(
+                                loaded, description, label,
+                            )
+                            self.assertEqual(payload, expected)
+                finally:
+                    if messages.is_symlink():
+                        messages.unlink()
+                    if held.exists():
+                        held.rename(messages)
         self.assertEqual(self.commit_count(), 1)
 
     def test_relative_path_entry_is_rejected(self):

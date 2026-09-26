@@ -273,7 +273,12 @@ def digest(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def read_regular(path: Path, label: str) -> bytes:
+def read_regular(
+    path: Path,
+    label: str,
+    *,
+    dir_fd: int | None = None,
+) -> bytes:
     '''
     Read one regular non-symlink file through a single descriptor.
 
@@ -284,7 +289,7 @@ def read_regular(path: Path, label: str) -> bytes:
         | getattr(os, 'O_NONBLOCK', 0)
     )
     try:
-        descriptor = os.open(path, flags)
+        descriptor = os.open(path, flags, dir_fd=dir_fd)
     except OSError as error:
         raise PlanError(f'unable to open {label}') from error
     try:
@@ -684,7 +689,7 @@ def runtime_root(root: Path) -> Path:
 
 def runtime_file(root: Path, value: Path, label: str) -> Path:
     '''
-    Resolve one runtime file without a symlinked directory chain.
+    Validate one runtime file path before its descriptor-based read.
 
     '''
     runtime = runtime_root(root)
@@ -706,6 +711,50 @@ def runtime_file(root: Path, value: Path, label: str) -> Path:
         message = f'{label} is missing or outside commit-msg runtime'
         raise PlanError(message) from error
     return lexical
+
+
+def read_runtime(root: Path, value: Path, label: str) -> bytes:
+    '''
+    Hold every runtime parent while opening its regular file.
+
+    '''
+    path = runtime_file(root, value, label)
+    parts = path.relative_to(root).parts
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    with contextlib.ExitStack() as stack:
+        try:
+            directory = os.open(root, flags)
+            stack.callback(os.close, directory)
+            for part in parts[:-1]:
+                next_dir = os.open(part, flags, dir_fd=directory)
+                stack.callback(os.close, next_dir)
+                directory = next_dir
+        except OSError as error:
+            raise PlanError(
+                f'{label} parent is missing or symlinked'
+            ) from error
+        return read_regular(
+            Path(parts[-1]), label, dir_fd=directory,
+        )
+
+
+def spec_runtime_root(path: Path) -> Path:
+    '''
+    Locate the runtime anchor without opening the spec by pathname.
+
+    '''
+    absolute = Path(os.path.abspath(path))
+    for parent in absolute.parents:
+        if len(parent.parents) < 4:
+            continue
+        names = tuple(item.name for item in parent.parents[:3])
+        if parent.name == 'msgs' and names == (
+            'commit-msg', 'skills', '.claude',
+        ):
+            return canonical_root(str(parent.parents[3]))
+    raise PlanError(
+        'plan specification is outside commit-msg runtime'
+    )
 
 
 def validate_spec(data: Any) -> dict[str, Any]:
@@ -771,7 +820,8 @@ def load_spec(path: Path, expected_digest: str) -> dict[str, Any]:
     Load and authenticate one specification byte snapshot.
 
     '''
-    payload = read_regular(path, 'plan specification')
+    root = spec_runtime_root(path)
+    payload = read_runtime(root, path, 'plan specification')
     if digest(payload) != expected_digest:
         raise PlanError('plan specification digest changed')
     try:
@@ -780,8 +830,8 @@ def load_spec(path: Path, expected_digest: str) -> dict[str, Any]:
         message = 'unable to decode plan specification'
         raise PlanError(message) from error
     spec = validate_spec(data)
-    root = Path(spec['repo_root'])
-    runtime_file(root, path, 'plan specification')
+    if Path(spec['repo_root']) != root:
+        raise PlanError('plan specification repository changed')
     return spec
 
 
@@ -975,8 +1025,7 @@ def artifact_snapshot(
     '''
     root = Path(spec['repo_root'])
     raw = Path(description['path'])
-    path = runtime_file(root, raw, role)
-    payload = read_regular(path, role)
+    payload = read_runtime(root, raw, role)
     if digest(payload) != description['sha256']:
         raise PlanError(f'{role} digest changed')
     return payload
