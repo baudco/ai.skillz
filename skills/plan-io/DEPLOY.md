@@ -1,7 +1,7 @@
 # Deploying `/plan-io`
 
-This generic whole-directory skill writes plans under the
-provider-neutral `plans/<ai-service>/` convention.
+This generic whole-directory skill writes new durable plans and
+summaries directly under `ai/plans/`.
 
 ## Deployment
 
@@ -20,10 +20,11 @@ directory link at `.agents/skills/plan-io`. Legacy selectors use
 an alias for `--harness`. Local mode uses ignored absolute links;
 submodule mode uses trackable relative links through `.ai/ai.skillz`.
 
-The active provider writes its own plan namespace, such as
-`plans/claude/` or `plans/opencode/`. These are project artifacts, not
-skill source state. Preserve their contents during migration and keep
-their task markers human-owned.
+Existing `plans/claude/`, `plans/opencode/`, and other historical
+namespaces remain readable and in place. Deployment does not move
+them. New plans use subject-based names in `ai/plans/`, with original
+generation identity in YAML front matter. Keep task markers
+human-owned.
 
 Track provider links, `.gitmodules`, and the anchor gitlink only in submodule
 mode. Local provider links remain ignored. Deployment

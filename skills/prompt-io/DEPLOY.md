@@ -1,7 +1,8 @@
 # Deploying `/prompt-io`
 
-The skill source is a generic whole directory. Prompt records are
-provider-neutral project artifacts namespaced by AI service.
+The skill source is a generic whole directory. New prompt records
+are durable, provider-neutral project artifacts directly under
+`ai/prompt-io/`.
 
 ## Deployment
 
@@ -18,10 +19,9 @@ directory link at `.agents/skills/prompt-io`. Legacy selectors use
 `.claude/skills/prompt-io` and/or `.opencode/skills/prompt-io`;
 `all` retains its Claude plus OpenCode meaning. `--provider` remains
 an alias for `--harness`. Local mode uses ignored absolute links;
-submodule mode uses trackable relative links through `.ai/ai.skillz`. The
-active service writes under
-`ai/prompt-io/claude/`, `ai/prompt-io/opencode/`, or another matching
-service namespace.
+submodule mode uses trackable relative links through `.ai/ai.skillz`.
+The active harness identifies itself in record front matter, not
+in the directory name.
 
 Always track the durable prompt records required by project policy. Track
 provider links, `.gitmodules`, and the anchor gitlink only in submodule mode;
@@ -35,11 +35,14 @@ Quit and restart OpenCode after deployment or update. Default
 
 ## Tracked prompt records
 
-- `ai/prompt-io/<service>/README.md`
-- `ai/prompt-io/<service>/*_prompt_io.md`
-- `ai/prompt-io/<service>/*_prompt_io.raw.md`
+- `ai/prompt-io/README.md`
+- `ai/prompt-io/<timestamp>_<identifier>.md`
+- `ai/prompt-io/<timestamp>_<identifier>.raw.md`
 
-Source migration preserves these records in place.
+Historical `ai/prompt-io/<service>/` records and their existing
+`Prompt-IO:` paths remain valid. Source migration preserves them
+in place. Both layouts are discoverable; commit trailers name only
+the structured log, never its `.raw.md` partner.
 
 ## Maintenance
 

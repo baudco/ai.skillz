@@ -14,6 +14,15 @@ Use `scripts/deploy.sh` and `deploy-manifest.conf` for deployment.
 consumer source anchor. Skill metadata does not configure model
 providers, credentials, tool permissions, or sandbox policy.
 
+New durable plans and summaries go in `ai/plans/`; new prompt/output
+records go directly in `ai/prompt-io/`. Identify the generating
+harness, and known provider/model, in YAML front matter. Preserve
+historical paths and original generation metadata on revision.
+`.ai/` and harness dot-directories hold configuration and operational
+state; some configuration is versioned. Consult the shared
+`plan-io`, `prompt-io`, and runtime contracts rather than a harness's
+native plan directory defaults.
+
 Preserve user-owned task and checklist states unless the user requests
 the exact transition. Implementation completion does not imply human
 acceptance. Preserve runtime files and unrelated worktree changes.

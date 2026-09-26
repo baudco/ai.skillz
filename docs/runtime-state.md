@@ -1,9 +1,20 @@
 # Repository configuration and workflow state
 
 Skill discovery lives in `.agents/skills/` or a harness adapter tree.
-Repository configuration lives in `.ai/`; generated workflow artifacts
-live in `.ai/state/`. This contract is shared by Codex, Claude Code,
+Durable, shareable engineering artifacts intended for repository history
+and cross-harness use live in `ai/`: new plans in `ai/plans/` and new
+prompt/output records in `ai/prompt-io/`. Tool configuration and
+immediate session or operational state live in `.ai/` or harness-specific
+dot-directories. Some dot-directory configuration is intentionally
+versioned; placement there alone neither authorizes deletion nor means
+every file is ignored. This contract is shared by Codex, Claude Code,
 and OpenCode. It does not depend on the model provider.
+
+Ordinary plan and handoff documents belong with durable artifacts,
+not in `.ai/state/`. The review context and regression files listed
+below are operational handoffs for review and commit workflows, with
+a distinct runtime role. Historical durable artifacts keep their
+original locations and references.
 
 ## Workflow integration
 
@@ -27,7 +38,9 @@ generated commands, and artifacts; never write the tokens literally.
 Reuse this resolution across skills rather than selecting independent
 locations. Never write consumer state through skill discovery links.
 
-Fresh repositories use `.ai` configuration and `.ai/state` artifacts.
+Fresh repositories use `.ai` configuration and `.ai/state` for
+operational workflow state. Durable new plans and prompt records use
+`ai/` regardless of this runtime backend selection.
 Existing data keeps its legacy backend until explicit migration;
 source deployment does not migrate archives. Resolution, migration,
 and recovery details follow.
