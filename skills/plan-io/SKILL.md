@@ -3,7 +3,7 @@ name: plan-io
 description: >
   Manage plan file I/O for AI agent sessions. Ensures
   plans and their execution summaries are persisted to
-  the repo under `plans/<ai-service>/`. Auto-applied
+  the repo under `ai/plans/`. Auto-applied
   when entering or exiting plan mode.
 compatibility: >
   Works with agentic coding harnesses that write plans.
@@ -17,14 +17,12 @@ disable-model-invocation: true
 
 ## Directory layout
 
-All plan artifacts live under `plans/` in the repo
-root, namespaced by AI service:
+New durable plan artifacts live under `ai/plans/` in the repo root:
 
 ```
-plans/
-└── <ai-service>/          # e.g. codex, claude, copilot
-    ├── <plan-name>.md
-    └── <plan-name>.summary.md
+ai/plans/
+├── <plan-name>.md
+└── <plan-name>.summary.md
 ```
 
 ## Rules
@@ -34,21 +32,47 @@ plans/
 When entering plan mode or writing a plan:
 
 1. Write the plan to
-   `plans/<ai-service>/<plan-name>.md`
+   `ai/plans/<plan-name>.md`
    (NOT only the ephemeral tool-internal location).
 2. Use a descriptive `<plan-name>` derived from the
    task (e.g. `init-extraction-plan`,
    `add-auth-feature`, `refactor-api-layer`).
-3. The `<ai-service>` is the name of the AI coding
-   tool generating the plan (e.g. `codex`, `claude`,
-   `cursor`, `windsurf`).
+3. Choose the name by subject, not by harness. Before writing,
+   check for an existing plan on that subject in `ai/plans/` and
+   historical `plans/<harness>/` directories. Revise the relevant
+   plan in place when appropriate; do not create parallel copies
+   for different harnesses or overwrite an unrelated plan.
+4. Start a newly generated plan with YAML front matter:
+
+   ```yaml
+   ---
+   created_at: 2026-09-25T12:00:00Z
+   generated_by:
+     harness: opencode
+     provider: openai
+     model: gpt-6-astra
+   ---
+   ```
+
+   Set `created_at` to the artifact's actual UTC creation time.
+   `harness` names the tool running the agent workflow. Include
+   `provider` and `model` only when independently known; do not
+   infer one from the harness or the other. Omit unknown fields.
+   Preserve `created_at` and `generated_by` when revising a plan:
+   they identify its original generation, not its latest editor.
+   Describe substantive later human or agent contributions in a
+   concise document section or an associated prompt-IO record.
+   Git remains the ordinary edit history.
 
 ### On plan completion
 
 After executing a plan to completion:
 
 1. Write a summary to
-   `plans/<ai-service>/<plan-name>.summary.md`
+   `ai/plans/<plan-name>.summary.md`
+   Give a newly generated summary its own front matter using
+   the same identity rules and its actual creation time. Keep
+   that watermark on later revisions.
 2. The summary follows the project's commit message
    style conventions:
    - Single 50-char summary line
@@ -56,8 +80,6 @@ After executing a plan to completion:
    - Bullet list of high-level changes/steps
    - Backtick markup around code references
    - Present tense (no past tense)
-   - Attribution naming the actual harness; identify the model
-     and provider only when known, without inferring one from another
 3. Include a `## Deferred` section if any planned
    items were not completed.
 4. Include a `## Stats` section with counts
@@ -72,6 +94,12 @@ After executing a plan to completion:
 ## Example summary
 
 ```markdown
+---
+created_at: 2026-09-25T12:00:00Z
+generated_by:
+  harness: opencode
+---
+
 Refactor authentication into middleware layer
 
 - Extract auth logic from route handlers into
@@ -89,7 +117,15 @@ Refactor authentication into middleware layer
 
 - 3 commits, 14 files changed
 - All tests passing
-
-(this summary was generated in some part by <actual-harness>;
-model: <known-model>; provider: <known-provider>)
 ```
+
+Existing plans and summaries in `plans/<harness>/` stay in place.
+Read and revise them without inventing missing metadata or moving
+committed references. New subjects use `ai/plans/`.
+
+For example, if OpenCode creates `ai/plans/network-recovery.md`,
+Claude Code later edits that same file. Its original
+`generated_by.harness: opencode` stays intact. Describe the
+substantive Claude Code revision in a `## Contributions` section
+or a linked prompt-IO record; do not create a second plan under
+`plans/claude/`.
