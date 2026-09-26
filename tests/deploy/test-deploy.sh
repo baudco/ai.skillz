@@ -1825,7 +1825,7 @@ test_opencode_command_adapter_contracts() {
 
 test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Create a complete multi-commit package by composing with the'
+        'Create a complete commit package by composing with the'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         '`commit-msg` skill.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1837,21 +1837,88 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'compare a later boundary with live `HEAD`'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Do not execute project checks while generating the plan by default.'
+        'A one-boundary plan is correct when all changes'
+    assert_file_contains "$ROOT/deploy-manifest.conf" \
+        'skill|commit-plan|hybrid|SKILL.md,scripts|commit-msg,run-tests'
+    assert_file_contains \
+        "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
+        '[boundary {ordinal}] SKIP already complete'
+    assert_file_contains \
+        "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
+        'HEAD diverged from the planned boundary chain'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'Resolve the repository'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Do not repeat that repository inspection for each boundary.'
+        'Use the loaded `/run-tests` contract'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        'safe broad regression'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        'authorization-required commands'
+    assert_file_contains "$ROOT/skills/run-tests/SKILL.md" \
+        'fresh-process isolation'
+    assert_file_contains "$ROOT/templates/run-tests/SKILL.md.j2" \
+        '{{ safe_regression_commands }}'
+    assert_file_contains "$ROOT/templates/run-tests/SKILL.md.j2" \
+        '{{ authorization_required_commands }}'
+    assert_file_contains "$ROOT/templates/run-tests/SKILL.md.j2" \
+        '{{ process_isolation }}'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'the full suite once, against the final boundary tree'
+        'authorization-required exclusions'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'omit that check from the execution sequence rather than running it twice'
+        'broadest repository-documented safe regression sequence'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'tree in an isolated temporary checkout'
+        'literal test-root run is'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'Run a project check during'
+        'project checks while planning unless the user requests it.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'planning only when the user explicitly requests pre-execution'
+        'omit that check rather than running it twice'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'harness-reported command parser metadata'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'undeclared Python names or one-shot `assert` preconditions'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'startup files disabled where supported, parse every fence line'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'required executables without running resolution or import probes'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'The executor asset is a non-executable Python source file'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Never render a bare `plan-exec.py --<mode>`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'python3 <skill-dir>/scripts/plan-exec.py --spec <plan.json> --sha256 <digest> --preflight'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'selects a Python interpreter before the script path'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'pager opens by default'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'Selection honors `GIT_PAGER`, `pager.diff`'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        '`--no-pager` prints the sanitized diff directly'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'shared, no-checkout clone in a temporary project'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`git rev-parse --show-toplevel`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'wrapper and fresh-process boundary'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'exclude separately tested or state-leaking tiers from a'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'full canonical object IDs'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'rejects ambient Git'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'every `--execute` line is a successful no-op'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`git diff --staged` review and `git commit --edit --file`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'boundary phase, cwd and command immediately before running it'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'escape terminal controls and redact authenticated and inherited'
+    assert_file_contains \
+        "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
+        "'[{phase}] FAIL exit={result.returncode}'"
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'partial or complete execution without'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'lightweight structural boundary checks and their outcomes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1945,7 +2012,7 @@ test_commit_plan_contract() {
     assert_not_contains "$(<"$ROOT/skills/commit-plan/SKILL.md")" \
         'every invocation requires a full scan'
     assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
-        'without re-entering the compatibility redirect'
+        're-entering the compatibility redirect'
     assert_file_contains "$ROOT/providers/opencode/commands/commit-plan.md" \
         'verify the real index remained unchanged'
     assert_not_contains \
@@ -1958,7 +2025,14 @@ test_commit_plan_contract() {
     assert_file_contains "$TMP_ROOT/failure.out" \
         "requires healthy opencode skill 'commit-msg'"
     bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    assert_fails bash "$DEPLOY" commit-plan "$REPO" \
+        --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'run-tests'"
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
+    [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-exec.py" ] \
+        || fail 'commit-plan executor asset was not deployed'
     bash "$DEPLOY" command commit-plan "$REPO" \
         --provider opencode >/dev/null
     rm "$REPO/.opencode/skills/commit-msg/SKILL.md"
@@ -1968,10 +2042,17 @@ test_commit_plan_contract() {
     assert_fails bash "$ROOT/scripts/validate-deployment.sh" "$REPO"
     assert_fails bash "$DEPLOY" command commit-plan "$REPO" \
         --provider opencode
+    bash "$DEPLOY" commit-msg "$REPO" --provider opencode >/dev/null
+    rm "$REPO/.opencode/skills/run-tests/SKILL.md"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'dependency run-tests missing or unhealthy'
     local home="$TMP_ROOT/commit-plan-global-home"
     mkdir -p "$home"
     assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
     env HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
+    assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
+    env HOME="$home" bash "$DEPLOY" run-tests --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
     local cycle="$TMP_ROOT/commit-plan-cycle"
     cp -a "$SOURCE_WORK" "$cycle"
@@ -1980,7 +2061,11 @@ test_commit_plan_contract() {
     assert_fails bash "$cycle/scripts/deploy.sh" status "$REPO"
     assert_file_contains "$TMP_ROOT/failure.out" \
         'skill dependency cycle includes'
-    pass 'commit-plan composes with commit-msg without project pre-checks'
+    (
+        cd "$ROOT"
+        python -m unittest tests.test_commit_plan_exec
+    )
+    pass 'commit-plan composes with commit-msg and run-tests safely'
 }
 
 test_opencode_debug_if_available() {
