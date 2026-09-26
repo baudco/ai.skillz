@@ -64,6 +64,19 @@ submodule installations use trackable relative links through
 skills with legacy hybrid layouts. Repository-owned runtime files
 remain outside the shared source directories.
 
+In a consumer's versioned repository instructions (for example,
+`AGENTS.md` or `CLAUDE.md`), use this shared location guidance so
+the harness does not fall back to its native plan directory:
+
+```markdown
+Use the deployed plan-io and prompt-io skills for durable AI records.
+Write new plans and summaries under ai/plans/ by subject, and new
+prompt/output records directly under ai/prompt-io/. Keep the original
+generated_by watermark on revision. Preserve historical paths and
+task states. Use .ai/ and harness dot-directories for configuration
+and operational state, following the shared runtime contract.
+```
+
 `--provider` remains an alias for `--harness`. Existing deployment
 `all` still means Claude plus OpenCode; it does not mean every harness
 or include shared deployment. Status `all` also audits `.agents`.
@@ -106,8 +119,10 @@ before applying changes.
 
 Message archives, test references, configuration, and review context
 use the [shared runtime contract](runtime-state.md). Fresh repositories
-use `.ai/` configuration and `.ai/state/` artifacts; existing legacy
-data keeps its legacy backend until an explicit runtime migration.
+use `.ai/` configuration and `.ai/state/` operational artifacts;
+new durable plans and prompt records use `ai/plans/` and
+`ai/prompt-io/` directly. Existing legacy data keeps its legacy
+backend until an explicit runtime migration.
 Consumer runtime migration remains separate from source deployment.
 Use `runtime status` to inspect, `runtime migrate` to preview, and
 `runtime migrate --apply <preview-sha256>` with the target repository
