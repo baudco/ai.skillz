@@ -1084,9 +1084,10 @@ def validate_index_file(
     environment: dict[str, str] | None = None,
     *,
     snapshot: bool = False,
-) -> bytes | None:
+) -> bytes | bool | None:
     '''
     Open only a regular index without following links or blocking.
+    Return True for presence, None for absence, or snapshot bytes.
 
     '''
     alternate = (environment or {}).get('GIT_INDEX_FILE')
@@ -1117,7 +1118,7 @@ def validate_index_file(
             with os.fdopen(descriptor, 'rb') as stream:
                 descriptor = -1
                 return stream.read()
-        return None
+        return True
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -1127,12 +1128,17 @@ def index_matches(
     root: Path,
     tree: str,
     environment: dict[str, str] | None = None,
+    *,
+    require_index: bool = False,
 ) -> bool:
     '''
     Compare the real index with one tree without changing it.
+    Optionally require a materialized index even for the empty tree.
 
     '''
-    validate_index_file(root, environment)
+    present = validate_index_file(root, environment)
+    if require_index and present is None:
+        return False
     result = git(
         root,
         'diff',
@@ -1240,9 +1246,13 @@ def stage_under_lock(
             )
         else:
             alternate.write_bytes(snapshot)
-        result = apply_patch(root, payload, environment)
-        if result:
-            return result
+        if payload:
+            result = apply_patch(root, payload, environment)
+            if result:
+                return result
+        elif before_tree != target_tree:
+            raise PlanError('empty patch cannot change staged tree')
+        # `read-tree` materializes a missing, already-empty index.
         if not index_matches(root, target_tree, environment):
             raise PlanError(
                 'staging did not produce the boundary tree'
@@ -1886,7 +1896,7 @@ def execute(
     if unmerged:
         raise PlanError('the real index contains unmerged entries')
     target_tree = boundary['tree']
-    if not index_matches(root, target_tree):
+    if not index_matches(root, target_tree, require_index=True):
         before_tree = boundary['index_before_tree']
         if not index_matches(root, before_tree):
             raise PlanError(

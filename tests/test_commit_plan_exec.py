@@ -1924,6 +1924,86 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertEqual(self.line_count(self.check_count), 0)
         self.assertEqual(self.line_count(self.editor_count), 0)
 
+    def test_absent_index_stages_nonempty_boundary(self):
+        '''
+        An absent real index represents the empty tree even when
+        HEAD contains tracked files. Pin the first boundary's patch
+        against that empty tree, remove the fixture's real index,
+        and execute it. The executor must create the exact target
+        index under its lock before review and commit; this path
+        must keep working while handling an empty target too.
+
+        '''
+        empty = self.git(
+            'hash-object', '-w', '-t', 'tree', '/dev/null',
+        ).stdout.strip()
+        patch = self.make_patch(
+            'absent-index.patch', empty, self.tree_one,
+        )
+
+        def update(spec):
+            spec['initial_index_tree'] = empty
+            boundary = spec['boundaries'][0]
+            boundary['index_before_tree'] = empty
+            boundary['patch'] = {
+                'path': self.relative(patch),
+                'sha256': self.digest(patch),
+            }
+
+        self.rewrite_spec(update)
+        index = self.root / '.git' / 'index'
+        index.unlink()
+        self.invoke('--preflight')
+        result = self.invoke('--execute', '1')
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertTrue(index.is_file())
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(), self.tree_one,
+        )
+        self.assertEqual(self.commit_count(), 2)
+
+    def test_absent_index_materializes_empty_target(self):
+        '''
+        `git diff --cached` treats a missing index as the empty
+        tree, so an empty target previously skipped staging and
+        reached the commit lock without a real index. Make a plan
+        to delete all tracked files from a nonempty HEAD, with an
+        empty initial index, target and patch. Removing the index
+        reproduces the skip; execution must publish an empty index
+        under its lock, review the deletion, and commit exactly once.
+
+        '''
+        empty = self.git(
+            'hash-object', '-w', '-t', 'tree', '/dev/null',
+        ).stdout.strip()
+        patch = self.make_patch('empty-target.patch', empty, empty)
+
+        def update(spec):
+            spec['initial_index_tree'] = empty
+            spec['boundaries'] = spec['boundaries'][:1]
+            boundary = spec['boundaries'][0]
+            boundary['tree'] = empty
+            boundary['index_before_tree'] = empty
+            boundary['project_checks'] = []
+            boundary['patch'] = {
+                'path': self.relative(patch),
+                'sha256': self.digest(patch),
+            }
+
+        self.rewrite_spec(update)
+        index = self.root / '.git' / 'index'
+        index.unlink()
+        self.invoke('--preflight')
+        result = self.invoke('--execute', '1')
+        self.assertIn('[boundary 1] PASS', result.stdout)
+        self.assertTrue(index.is_file())
+        self.assertEqual(
+            self.git('write-tree').stdout.strip(), empty,
+        )
+        self.assertEqual(self.commit_count(), 2)
+        self.assertEqual(self.line_count(self.editor_count), 1)
+        self.assertEqual(self.line_count(self.check_count), 0)
+
     def test_external_diff_and_textconv_never_run(self):
         '''
         Git can load `GIT_EXTERNAL_DIFF` and an attribute-selected
