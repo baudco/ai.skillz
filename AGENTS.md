@@ -26,3 +26,12 @@ deployment cases can also run with `--shared-only`. Run
 Hard-wrap ordinary prose near 69 columns, keeping code references and
 links intact. Resolve supporting files relative to the skill being
 read, rather than the shell's current directory.
+
+Use `code-nav-refs` for every human-facing repository location.
+Before sending an answer, check citations from the ORIGINAL user
+workspace root, not the most recent tool workdir; use verified
+absolute paths for other worktrees. If that root is uncertain,
+prefer absolute paths throughout. For a `/commit-plan` response,
+include the entire pinned handoff instead of abbreviating its
+execution sequence. The shared validator and harness capabilities
+are documented in `skills/code-nav-refs/references/enforcement.md`.
