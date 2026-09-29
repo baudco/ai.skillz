@@ -41,6 +41,10 @@ absolute path:
 /absolute/path/to/other-worktree/path/to/file.py:42-57
 ```
 
+When the original workspace root is uncertain, prefer an absolute
+path even for a file in the current repository. An unrelated tool
+`workdir` cannot establish the root used by the human's editor.
+
 Do not emit a path merely because it was relative to a tool call's temporary
 working directory. A relative citation must resolve from the active worktree
 root used by the human's editor.
@@ -61,6 +65,31 @@ location in each span so cursor-based navigation is unambiguous.
 - Refresh line numbers after edits before presenting the final response.
 - Do not invent a location when only a symbol name or approximate area is
   known; cite the file alone in prose instead.
+
+## Validate the response, not just its citations
+
+The stdlib-only checker in `scripts/code_refs.py` reads the final
+Markdown reply on stdin. Pass the original reply worktree explicitly
+with `--reply-root`, not the last Bash/tool workdir. Its conservative
+`--absolute-only` mode avoids ambiguity when identical relative
+paths exist in the original and edited worktrees. It verifies file
+existence and line ranges, detects unwrapped references, and ignores
+shell fences and web URLs. A path that exists in the wrong worktree
+can otherwise pass a purely syntactic check.
+
+For a commit-plan handoff, also pass `--plan-commands` and
+`--plan-overview` with the pinned rendered artifacts. This requires
+the entire command fence and overview verbatim, rather than accepting
+a shorter, unverified paraphrase. See `references/enforcement.md`
+for opt-in harness hooks, tests, and their limitations.
+
+Claude Code and Codex expose a blocking Stop hook with the final
+assistant text. The shared Stop adapter runs this check before the
+agent stops, but those hooks have continuation limits and only work
+where explicitly installed and trusted. OpenCode currently has no
+documented pre-display assistant-text veto. Its optional plugin
+reinforces the rule at model-call time; it is NOT a blocking gate.
+Do not claim every interactive OpenCode reply is mechanically checked.
 
 ## Portability
 
