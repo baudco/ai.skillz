@@ -51,18 +51,19 @@ def _display_text(value: object) -> str:
 def format_dialog_table(
     sessions: list[dict],
     show_cwd: bool = True,
+    show_timestamps: bool = False,
 ) -> str:
     '''
     Format dialog metadata and worktree labels for terminal display.
 
     `main()` passes newest-first `dialogs.list_dialogs()` records
     here; caller order and input dictionaries remain unchanged.
-    Display `updated_at` Unix seconds as UTC minutes, leaving
+    Show `updated_at` as UTC minutes only when requested, leaving
     invalid/missing times blank. Reuse one `WktLookup` instance
     for the WKT column, which can reflect confirmed `/open-wkt` or
     index relations even when saved cwd names the main checkout.
-    Uniform CWD and harness values move above the column headers;
-    `show_cwd=False` hides CWD in both places.
+    The sort rule appears above the table. Uniform CWD and harness
+    values follow it; `show_cwd=False` hides CWD in both places.
 
     Keep full IDs, cap names at 36 characters with an ellipsis,
     abbreviate home paths and neutralize control characters. Return
@@ -86,19 +87,20 @@ def format_dialog_table(
             '(multiple)' if len(roots) > 1
             else Path(next(iter(roots))).name if roots else ''
         )
-        updated: object = display.get('updated_at')
-        display['updated'] = ''
-        if isinstance(updated, (int, float)):
-            try:
-                display['updated'] = datetime.fromtimestamp(
-                    updated, timezone.utc,
-                ).strftime('%Y-%m-%d %H:%M')
-            except (
-                OverflowError,
-                OSError,
-                ValueError,
-            ):
-                pass
+        if show_timestamps:
+            updated: object = display.get('updated_at')
+            display['updated'] = ''
+            if isinstance(updated, (int, float)):
+                try:
+                    display['updated'] = datetime.fromtimestamp(
+                        updated, timezone.utc,
+                    ).strftime('%Y-%m-%d %H:%M')
+                except (
+                    OverflowError,
+                    OSError,
+                    ValueError,
+                ):
+                    pass
         if cwd == home:
             display['cwd'] = '~'
         elif cwd.startswith(home_prefix):
@@ -111,7 +113,9 @@ def format_dialog_table(
             values['name'] = values['name'][:35] + '…'
         displays.append(values)
 
-    context: list[str] = []
+    context: list[str] = [
+        'sort-by: "last-update-time" (newest first)',
+    ]
     cwd_values: set[str] = {
         row.get('cwd', '') for row in displays
     }
@@ -139,8 +143,9 @@ def format_dialog_table(
         ('name', 'NAME'),
         ('id', 'DIALOG ID'),
         ('wkt', 'WKT'),
-        ('updated', 'UPDATED (UTC)'),
     ]
+    if show_timestamps:
+        columns.append(('updated', 'UPDATED (UTC)'))
     if (
         show_cwd
         and
@@ -225,6 +230,10 @@ def main(argv: list[str]|None = None) -> int:
     )
     parser.add_argument('-a', '--all-repos', action='store_true')
     parser.add_argument('--all-sources', action='store_true')
+    parser.add_argument(
+        '-t', '--timestamps', action='store_true',
+        help='show last-update time (UTC); newest first regardless',
+    )
     parser.add_argument('--json', action='store_true')
     args: argparse.Namespace = parser.parse_args(argv)
     try:
@@ -243,7 +252,9 @@ def main(argv: list[str]|None = None) -> int:
     output: str = (
         json.dumps(sessions, indent=2)
         if args.json
-        else format_dialog_table(sessions)
+        else format_dialog_table(
+            sessions, show_timestamps=args.timestamps,
+        )
     )
     if (
         not args.json
@@ -273,11 +284,14 @@ def main(argv: list[str]|None = None) -> int:
             line: str
             for line in context.splitlines():
                 label: str
-                equal: str
+                separator: str
                 value: str
-                label, equal, value = line.partition('=')
+                delimiter: str = (
+                    ': ' if line.startswith('sort-by: ') else '='
+                )
+                label, separator, value = line.partition(delimiter)
                 colored.append(
-                    f'\x1b[90m{label}{equal}\x1b[0m{value}'
+                    f'\x1b[90m{label}{separator}\x1b[0m{value}'
                 )
             context = '\n'.join(colored)
         output = (

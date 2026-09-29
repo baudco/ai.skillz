@@ -155,15 +155,16 @@ Store errors propagate rather than masquerading as a missing ID.
 
 OpenCode IDs are not UUIDs.
 
-The CLI orders columns as name, dialog ID, WKT, updated time,
-CWD, then harness. When every displayed dialog has the same CWD
-or harness, it shows that value once above the table and drops
-the repeated column. `CWD` uses `~` for your home directory;
-`HARNESS` uses the canonical name even when filtered with `cx`,
-`oc`, or `cld`. JSON and Python records keep all fields.
-`UPDATED (UTC)` shows the harness metadata
-update time to the minute. Results already sort newest first using
-the full `updated_at` value; displaying it does not change sorting.
+The CLI orders columns as name, dialog ID, WKT, CWD, then harness.
+It shows `sort-by: "last-update-time" (newest first)` above the
+table. Pass `-t` / `--timestamps` to add an `UPDATED (UTC)` column
+after WKT, showing harness metadata update time to the minute.
+The flag changes only display: results always sort newest first
+using the full `updated_at` value. When every displayed dialog has
+the same CWD or harness, it shows that value once above the table
+and drops the repeated column. `CWD` uses `~` for your home
+directory; `HARNESS` uses the canonical name even when filtered
+with `cx`, `oc`, or `cld`. JSON and Python records keep all fields.
 Codex/OpenCode timestamps come from their stores; Claude uses log
 modification time, which is a proxy for activity.
 `WKT` shows a linked worktree associated with the dialog. For example,

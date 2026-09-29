@@ -177,8 +177,12 @@ class DlogsTests(unittest.TestCase):
         )
         self.assertIn(uuid, output)
         self.assertNotIn('\x1b', output)
-        self.assertEqual(output.splitlines()[0], 'HARNESS=codex')
-        self.assertEqual(len(output.splitlines()), 4)
+        self.assertEqual(
+            output.splitlines()[0],
+            'sort-by: "last-update-time" (newest first)',
+        )
+        self.assertEqual(output.splitlines()[1], 'HARNESS=codex')
+        self.assertEqual(len(output.splitlines()), 5)
         self.assertIn('DIALOG ID', table([]))
 
     @unittest.skipUnless(shutil.which('git'), 'git unavailable')
@@ -225,8 +229,8 @@ class DlogsTests(unittest.TestCase):
         Long session names previously pushed cwd far off screen.
 
         Render a long name alongside an exact-boundary name. Check
-        ellipsis truncation, stable ID alignment, and name/ID/WKT/
-        time order, while preserving the caller's original name.
+        ellipsis truncation, stable ID alignment, and name/ID/WKT
+        order, while preserving the caller's original name.
         The shared cwd moves above the header instead of repeating.
 
         '''
@@ -242,19 +246,19 @@ class DlogsTests(unittest.TestCase):
             },
         ]
         lines: list[str] = table(sessions).splitlines()
-        self.assertEqual(lines[0], 'CWD=/repo')
-        self.assertEqual(lines[1], '')
         self.assertEqual(
-            lines[2].split(),
-            [
-                'NAME', 'DIALOG', 'ID', 'WKT',
-                'UPDATED', '(UTC)', 'HARNESS',
-            ],
+            lines[0], 'sort-by: "last-update-time" (newest first)',
         )
-        self.assertTrue(lines[3].startswith(name[:35] + '…'))
-        self.assertTrue(lines[4].startswith('x' * 36))
-        self.assertEqual(lines[3].index('dialog-one'), 38)
-        self.assertEqual(lines[4].index('dialog-two'), 38)
+        self.assertEqual(lines[1], 'CWD=/repo')
+        self.assertEqual(lines[2], '')
+        self.assertEqual(
+            lines[3].split(),
+            ['NAME', 'DIALOG', 'ID', 'WKT', 'HARNESS'],
+        )
+        self.assertTrue(lines[4].startswith(name[:35] + '…'))
+        self.assertTrue(lines[5].startswith('x' * 36))
+        self.assertEqual(lines[4].index('dialog-one'), 38)
+        self.assertEqual(lines[5].index('dialog-two'), 38)
         self.assertEqual(sessions[0]['name'], name)
 
     def test_uniform_harness_moves_above_table(self) -> None:
@@ -278,13 +282,17 @@ class DlogsTests(unittest.TestCase):
         ]
         output: str = table(rows)
         self.assertTrue(output.startswith(
+            'sort-by: "last-update-time" (newest first)\n'
             'CWD=/repo\nHARNESS=codex\n\nNAME',
         ))
-        self.assertNotIn('HARNESS', output.splitlines()[3])
+        self.assertNotIn('HARNESS', output.splitlines()[4])
         rows[1]['cwd'] = '/other'
         mixed: str = table(rows)
-        self.assertTrue(mixed.startswith('HARNESS=codex\n\nNAME'))
-        self.assertIn('CWD', mixed.splitlines()[2])
+        self.assertTrue(mixed.startswith(
+            'sort-by: "last-update-time" (newest first)\n'
+            'HARNESS=codex\n\nNAME',
+        ))
+        self.assertIn('CWD', mixed.splitlines()[3])
 
     def test_short_harness_flag_leaves_help_at_h(self) -> None:
         '''
@@ -342,6 +350,8 @@ class DlogsTests(unittest.TestCase):
             os.environ.pop('NO_COLOR', None)
             self.assertEqual(dlogs_main([]), 0)
         self.assertTrue(output.getvalue().startswith(
+            '\x1b[90msort-by: \x1b[0m'
+            '"last-update-time" (newest first)\n'
             '\x1b[90mCWD=\x1b[0m/repo\n'
             '\x1b[90mHARNESS=\x1b[0mcodex\n\n'
             '\x1b[90mNAME',

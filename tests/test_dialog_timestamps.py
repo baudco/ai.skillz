@@ -4,7 +4,7 @@
 
 
 '''
-Verify displayed UTC recency without changing metadata or sorting.
+Verify optional UTC recency without changing metadata or sorting.
 
 `list_dialogs()` already orders full timestamps; these tests exercise
 its handoff to `table()` using synthetic metadata and a disposable
@@ -12,6 +12,8 @@ Git repository. No harness database or assignment store is modified.
 
 '''
 
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 import shutil
 import subprocess
@@ -20,13 +22,14 @@ import unittest
 from unittest.mock import patch
 
 from aiskillz.cli import format_dialog_table as table
+from aiskillz.cli import main as dlogs_main
 from aiskillz import list_dialogs
 
 
 @unittest.skipUnless(shutil.which('git'), 'git unavailable')
 class DialogTimestampTests(unittest.TestCase):
     '''
-    Check the CLI timestamp column using isolated dialog records.
+    Check opt-in timestamps using isolated dialog records.
 
     '''
 
@@ -48,12 +51,11 @@ class DialogTimestampTests(unittest.TestCase):
 
     def test_updated_time_display_and_order(self) -> None:
         '''
-        Recency was sorted but invisible in the dialog table.
-
         Feed reversed store records through list_dialogs, then render
-        known Unix times. The newest must come first with a UTC
-        minute timestamp; original fractional values stay untouched.
-        Missing timestamps in caller-provided rows render blank.
+        known Unix times. The newest must come first even when the
+        timestamp column is hidden. Opting in shows UTC minutes;
+        original fractional values stay untouched. Missing times
+        in caller-provided rows render blank.
 
         '''
         records: list[dict] = [
@@ -72,16 +74,33 @@ class DialogTimestampTests(unittest.TestCase):
         ):
             rows: list[dict] = list_dialogs(harness='claude')
         self.assertEqual(rows[0]['id'], 'two')
-        lines: list[str] = table(rows).splitlines()
-        self.assertEqual(lines[0], 'CWD=' + str(self.root))
-        self.assertEqual(lines[1], 'HARNESS=claude')
-        self.assertIn('UPDATED (UTC)', lines[3])
-        self.assertIn('1970-01-01 00:01', lines[4])
-        self.assertIn('1970-01-01 00:00', lines[5])
+        default: str = table(rows)
+        self.assertTrue(default.startswith(
+            'sort-by: "last-update-time" (newest first)\n',
+        ))
+        self.assertNotIn('UPDATED (UTC)', default)
+        self.assertNotIn('1970-', default)
+        lines: list[str] = table(
+            rows, show_timestamps=True,
+        ).splitlines()
+        self.assertEqual(lines[1], 'CWD=' + str(self.root))
+        self.assertEqual(lines[2], 'HARNESS=claude')
+        self.assertIn('UPDATED (UTC)', lines[4])
+        self.assertIn('1970-01-01 00:01', lines[5])
+        self.assertIn('1970-01-01 00:00', lines[6])
         self.assertEqual(records[1]['updated_at'], 60.5)
         self.assertNotIn('1970', table([{
             'name': 'missing', 'id': 'three', 'harness': 'claude',
-        }]))
+        }], show_timestamps=True))
+
+        with patch(
+            'aiskillz.cli.dialogs.list_dialogs',
+            return_value=rows,
+        ):
+            output: StringIO = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(dlogs_main(['-t']), 0)
+        self.assertIn('UPDATED (UTC)', output.getvalue())
 
 
 
