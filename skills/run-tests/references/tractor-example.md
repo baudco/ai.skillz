@@ -63,6 +63,25 @@ CI covers TCP and UDS separately across Linux and macOS. Run only the
 transport requested during targeted iteration; use the matrix when transport
 behavior changed.
 
+## Regression Safety And Authorization
+
+The default safe broad regression command is:
+
+```text
+python -m pytest tests/ -x --tb=short --no-header
+```
+
+Optional spawn backends and tests that require external services are not part
+of that default. Run them only when the user requests the documented backend
+and its prerequisites are available. Mutating `scripts/tractor-reap` cleanup
+always requires separate approval after its dry-run candidates are shown.
+
+## Process Isolation
+
+Launch each transport or spawn-backend matrix entry as a fresh pytest
+process. Do not merge separately documented runner commands into one pytest
+invocation unless the current harness documents that combination.
+
 ## Test Layout
 
 ```text

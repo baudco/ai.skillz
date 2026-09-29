@@ -54,6 +54,8 @@ Template fields:
 - `default_flags`, `custom_flags`
 - `fixture_invariants`, `test_layout`, `change_test_mapping`
 - `quick_check_commands`, `known_outcomes`, `tractor_runtime_notes`
+- `safe_regression_commands`, `authorization_required_commands`
+- `process_isolation`
 
 See `references/tractor-example.md` and `references/modden-example.md` for
 complete examples with different harnesses.

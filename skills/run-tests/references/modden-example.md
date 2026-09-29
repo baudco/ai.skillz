@@ -67,6 +67,19 @@ nix develop .#i3test --command uv run pytest tests/ --headless --twm sway --twm 
 - `--tl` controls Tractor runtime logging.
 - Hyprland and `--sw` are planned, not active harness options.
 
+## Regression Safety And Authorization
+
+The fast deterministic subset is the default safe regression command.
+Nested-WM integration tiers require an explicit request and their documented
+Nix environment; do not include them in a default broad run when the required
+Sway, i3, Wayland, or Xephyr services are unavailable.
+
+## Process Isolation
+
+Run the deterministic subset and each nested-WM integration tier in fresh
+pytest processes. Keep TCP and UDS coverage in separate pytest sessions, and
+do not rerun a state-sensitive tier inside a later broad process.
+
 ## Fixture Invariants
 
 Tests select example config beneath `example/modden/`, then copy it into a

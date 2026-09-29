@@ -54,6 +54,27 @@ GUI services, containers, or special hardware.
 Document supported combinations and the commands that provision each
 backend. Do not list planned but unavailable options as runnable.
 
+## Regression Safety And Authorization
+
+Safe broad regression sequence, in execution order:
+
+```text
+{{ safe_regression_commands }}
+```
+
+Commands or scopes that require explicit authorization, including the exact
+credentials, services, GUI access, containers, hardware, persistent mutation,
+or cleanup that makes each one opt-in:
+
+{{ authorization_required_commands }}
+
+## Process Isolation
+
+{{ process_isolation }}
+
+State which tiers must launch as fresh runner processes and which scopes a
+later broad command must exclude to avoid rerunning state-sensitive tests.
+
 ## Fixture Invariants
 
 {{ fixture_invariants }}

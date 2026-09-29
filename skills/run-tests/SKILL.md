@@ -40,7 +40,9 @@ When the override exists:
 - read it before constructing commands;
 - treat it as authoritative for environment setup, package/import name,
   test roots, runner commands, default flags, backend matrices, fixture
-  invariants, known outcomes, and change-to-test mappings;
+  invariants, known outcomes, change-to-test mappings, safe broad regression
+  sequences, authorization-required commands, and fresh-process isolation
+  groups;
 - reject it as unfinished if it still contains Jinja markers such as `{{`
   or `}}`, then report the deployment issue.
 
@@ -49,6 +51,18 @@ When the override is absent, inspect `pyproject.toml`, `pytest.ini`,
 test directories. Use only commands supported by repository evidence. Tell
 the user that no local harness reference was found; do not import another
 repository's conventions.
+
+When the local reference does not classify regression commands, infer these
+fields conservatively from repository documentation and CI:
+
+- call a broad sequence safe only when project evidence presents it as a
+  normal developer check without credentials, network services, GUI access,
+  containers, special hardware, persistent-state mutation, or cleanup;
+- classify commands with those requirements as authorization-required and
+  state the requirement rather than silently including them;
+- keep separately documented runner invocations in fresh processes, and never
+  merge their scopes unless project evidence says they may share one process;
+- omit and report any command whose safety or isolation remains uncertain.
 
 ## 2. Parse The Request
 
@@ -98,6 +112,10 @@ order:
 1. the resolved test scope;
 2. repository defaults that do not conflict with user flags;
 3. explicit user options unchanged.
+
+For a broad regression request, use the reference's safe broad sequence and
+preserve its command order and fresh-process boundaries. Do not append an
+authorization-required tier unless the user's request authorizes it.
 
 Prefer a targeted progression:
 
