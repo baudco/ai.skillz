@@ -42,6 +42,14 @@ generalized for cross-repo deployment.
 | `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
 
+`code-nav-refs` includes a shared final-answer checker and
+opt-in Stop hooks for Claude Code and Codex. OpenCode has an
+optional instruction plugin, but no supported blocking final-text
+hook. Hook installation never happens as a side effect of deploying
+the skill. See
+[`code-nav-refs` enforcement](skills/code-nav-refs/references/enforcement.md)
+for installation, command-plan validation, and limitations.
+
 ## Shell utilities
 
 `aiskillz` provides fast local session discovery for Codex, OpenCode,

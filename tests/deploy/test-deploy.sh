@@ -1870,7 +1870,7 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'A one-boundary plan is correct when all changes'
     assert_file_contains "$ROOT/deploy-manifest.conf" \
-        'skill|commit-plan|hybrid|SKILL.md,scripts|commit-msg,run-tests'
+        'skill|commit-plan|hybrid|SKILL.md,scripts|commit-msg,run-tests,code-nav-refs'
     assert_file_contains \
         "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
         '[boundary {ordinal}] SKIP already complete'
@@ -2097,6 +2097,12 @@ test_commit_plan_contract() {
     assert_file_contains "$TMP_ROOT/failure.out" \
         "requires healthy opencode skill 'run-tests'"
     bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
+    assert_fails bash "$DEPLOY" commit-plan "$REPO" \
+        --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        "requires healthy opencode skill 'code-nav-refs'"
+    bash "$DEPLOY" code-nav-refs "$REPO" \
+        --provider opencode >/dev/null
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
     [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-exec.py" ] \
         || fail 'commit-plan executor asset was not deployed'
@@ -2134,12 +2140,21 @@ test_commit_plan_contract() {
     assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
     assert_file_contains "$TMP_ROOT/failure.out" \
         'dependency run-tests missing or unhealthy'
+    bash "$DEPLOY" run-tests "$REPO" --provider opencode >/dev/null
+    rm "$REPO/.opencode/skills/code-nav-refs"
+    assert_fails bash "$DEPLOY" status "$REPO" --provider opencode
+    assert_file_contains "$TMP_ROOT/failure.out" \
+        'dependency code-nav-refs missing or unhealthy'
+    bash "$DEPLOY" code-nav-refs "$REPO" \
+        --provider opencode >/dev/null
     local home="$TMP_ROOT/commit-plan-global-home"
     mkdir -p "$home"
     assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
     env HOME="$home" bash "$DEPLOY" commit-msg --global >/dev/null
     assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
     env HOME="$home" bash "$DEPLOY" run-tests --global >/dev/null
+    assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
+    env HOME="$home" bash "$DEPLOY" code-nav-refs --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
     local cycle="$TMP_ROOT/commit-plan-cycle"
     cp -a "$SOURCE_WORK" "$cycle"
@@ -2152,7 +2167,7 @@ test_commit_plan_contract() {
         cd "$ROOT"
         python -m unittest tests.test_commit_plan_exec tests.test_commit_plan_build
     )
-    pass 'commit-plan composes with commit-msg and run-tests safely'
+    pass 'commit-plan composes with commit-msg, run-tests, and code-nav-refs safely'
 }
 
 test_opencode_debug_if_available() {

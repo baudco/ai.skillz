@@ -4,10 +4,10 @@ description: >
   Build complete, ready-to-run multi-commit plans with exact boundaries,
   project-style messages, checks, and shell-correct commands. Use when the
   user says "commit plan", "multi-commit plan", or asks to split changes into
-  commits. Requires the `commit-msg` and `run-tests` skills.
+  commits. Requires `commit-msg`, `run-tests`, and `code-nav-refs`.
 compatibility: >
-  Requires git CLI, deployed commit-msg and run-tests skills, and a known
-  command parser.
+  Requires git CLI, deployed commit-msg, run-tests and code-nav-refs
+  skills, and a known command parser.
 metadata:
   author: goodboy
   version: "0.1"
@@ -35,8 +35,9 @@ commits, pushes, rebases, stashes, or worktree cleanup.
 
 ## 1. Load The Dependencies
 
-Resolve and read the `commit-msg` and `run-tests` skills advertised by
-the current harness before inspecting changes. Use each skill's
+Resolve and read `commit-msg`, `run-tests`, and `code-nav-refs`
+as advertised by the current harness before inspecting changes.
+Use each skill's
 advertised resource path when available. Otherwise check the current
 repository's `.agents/skills/`,
 then the active harness's `.claude/skills/` or `.opencode/skills/` deployment,
@@ -59,12 +60,16 @@ authorization-required exclusions, process-isolation rules, command ordering
 and known outcomes. Its repository-local harness reference is optional; use its
 documented conservative fallback when one is absent.
 
+`code-nav-refs` owns validation of human-facing source locations
+and the final rendered handoff. Its script requires the original
+reply root and the digest-pinned overview and commands artifacts.
+
 This skill owns multi-boundary orchestration. When reading `commit-msg`, ignore
 only its **"COMMIT PLAN" compatibility redirect**; following that redirect
 would recurse back into this already-active skill. Apply every other relevant
 `commit-msg` rule.
 
-If either trusted dependency is unavailable, stop and give the canonical
+If a trusted dependency is unavailable, stop and give the canonical
 deployment command. Never invent message conventions, test commands, package
 names, environments or known outcomes.
 
@@ -190,6 +195,18 @@ The pinned spec is unchanged by rendering, including its branch policy.
 Keep stdout in the tool result and transfer the returned overview and
 fence verbatim. Do not add a dependent receipt read or separate
 overview/render calls solely to recover the final pin or handoff.
+Before delivering the reply, run `code-nav-refs`'s shared
+`scripts/code_refs.py` over the COMPLETE drafted Markdown with
+`--absolute-only`, the original reply root, `--plan-overview` and
+`--plan-commands` pointing to the pinned rendered artifacts,
+and their respective `--plan-overview-sha256` and
+`--plan-commands-sha256` values from the finalize receipt.
+This checks that the human receives both the full native overview
+and the unabridged runnable block, even when artifact generation
+itself succeeded. A validation failure is not a finished plan.
+Where a Stop hook is installed it may also check citations, but
+it cannot infer this plan's artifact pins from an arbitrary reply;
+do not substitute the hook for the explicit handoff check.
 The helper reuses its validated spec and existing executor preflight;
 it does not run a second preflight for rendering. Maintain
 `commit_latest` separately as above. Complete the existing no-startup
