@@ -405,6 +405,7 @@ For example, one printed pair might be:
 ```text
 STATUS     HARNESS:DIALOG ID / NAME
 READY      "opencode:ses_example implement_feature"
+Resume (xonsh/POSIX sh): ai.resume implement_feature -a -b opencode --id ses_example
   "/repos/demo/wkts/feature" [saved-cwd]
 ```
 
@@ -412,22 +413,40 @@ READY      "opencode:ses_example implement_feature"
 `AMBIGUOUS` means it found several; choose one before saving a
 relation. In the preview JSON, the `candidates` field lists those
 WKT paths and the evidence next to each path.
+The terminal preview leaves a blank line between dialog blocks. It
+dims status and field labels, highlights dialog identities in cyan
+and WKT paths in blue when color is enabled. It omits the repeated
+`legacy-owner-matching-dialog-id` marker from human-readable paths;
+the preview JSON retains that evidence. Other evidence labels remain
+visible next to their paths.
+
+Each named dialog gets a `Resume (xonsh/POSIX sh):` command above
+its WKT paths when one spelling works in both shells. A name or ID
+containing an apostrophe instead gets separate `Resume (xonsh):`
+and `Resume (POSIX sh):` commands because their quoting differs.
+These commands pin the harness and dialog ID, and use `-a` to find
+dialogs whose saved cwd is inside a WKT rather than the repository
+root. Resuming lets you ask the dialog which WKTs it used before
+choosing a relation; it does not save that relation. `ai.resume`
+launches from an already recorded WKT, or from the harness's saved
+cwd if no relation exists.
 
 The command then prints the preview path, its SHA-256 checksum, and
-an `Apply:` line. Copy that line only after reviewing the pairs. The
-first command creates the preview file; the `Apply:` command saves
-the selected relations in `relations.json`, which `ai.dlogs` and
-`list_wkt_relations()` read.
+an `Apply (xonsh/POSIX sh):` command. Paths containing an apostrophe
+get separate shell-specific commands. Run the one for your shell
+only after reviewing the pairs. The preview command creates the
+preview file; the apply command saves the selected relations in
+`relations.json`, which `ai.dlogs` and `list_wkt_relations()` read.
 
 ### 2. Save the reviewed relations
 
-For example, a printed `Apply:` line could be:
+For example, a printed shared-shell apply command could be:
 
 ```xsh
-ai.dlogs index @('/repos/demo') --apply @('/repos/demo/.ai/state/dialogs/previews/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json') --sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ai.dlogs index /repos/demo --apply /repos/demo/.ai/state/dialogs/previews/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json --sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ```
 
-That digest is illustrative; use the exact `Apply:` line printed by
+That digest is illustrative; use the exact apply command printed by
 your own preview. Python callers can use JSON output to keep the
 actual path and digest together:
 

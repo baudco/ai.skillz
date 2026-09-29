@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -46,6 +47,46 @@ def _display_text(value: object) -> str:
             for char in str(value)
         ).split()
     )
+
+
+def _terminal_color_enabled() -> bool:
+    '''Use color only for an interactive terminal that permits it.'''
+    return (
+        sys.stdout.isatty()
+        and not os.environ.get('NO_COLOR')
+        and os.environ.get('TERM') != 'dumb'
+    )
+
+
+def _grey_label(label: str, color: bool) -> str:
+    '''Dim a preview label without coloring its value.'''
+    return f'\x1b[90m{label}\x1b[0m' if color else label
+
+
+def _highlight(value: str, code: int, color: bool) -> str:
+    '''Color one preview value while preserving plain output.'''
+    return f'\x1b[{code}m{value}\x1b[0m' if color else value
+
+
+def _shell_commands(
+    action: str,
+    argv: list[str],
+    xonsh_command: str,
+) -> list[tuple[str, str]]:
+    '''Format a preview action for Xonsh and POSIX shell users.
+
+    `index_main()` uses this for both Resume and Apply. Ordinary
+    `shlex.join()` output works in both shells. POSIX's apostrophe
+    quoting does not parse in Xonsh, so that case gets two commands.
+
+    '''
+    posix_command: str = shlex.join(argv)
+    if any("'" in arg for arg in argv):
+        return [
+            (f'{action} (xonsh):', xonsh_command),
+            (f'{action} (POSIX sh):', posix_command),
+        ]
+    return [(f'{action} (xonsh/POSIX sh):', posix_command)]
 
 
 def format_dialog_table(
@@ -256,15 +297,7 @@ def main(argv: list[str]|None = None) -> int:
             sessions, show_timestamps=args.timestamps,
         )
     )
-    if (
-        not args.json
-        and
-        sys.stdout.isatty()
-        and
-        not os.environ.get('NO_COLOR')
-        and
-        os.environ.get('TERM') != 'dumb'
-    ):
+    if not args.json and _terminal_color_enabled():
         context: str
         context_separator: str
         table: str
@@ -371,10 +404,14 @@ def index_main(argv: list[str]) -> int:
     Dispatch the metadata-index CLI modes and report their outcomes.
 
     Called by `cli.main()` after consuming the `index` subcommand.
-    Default mode builds and saves a preview, printing WKT matches,
-    counts, warnings and a concrete Xonsh apply command. Empty
-    proposals omit that command; `--json` exposes the proposal and
-    its pin to tooling.
+    Default mode builds and saves a preview, printing separated WKT
+    matches, exact-ID resume commands, counts, warnings and a
+    reviewed apply command. Commands shared by Xonsh and POSIX sh
+    appear once; paths or names needing different quoting get both
+    forms. The common legacy-owner evidence marker stays in the
+    saved preview but is omitted from repeated terminal rows.
+    Empty proposals omit the apply command; `--json` exposes the
+    complete proposal and its pin to tooling.
 
     `--apply` requires a digest and permits explicit ambiguous
     choices. `--record` requires a worktree and delegates current-ID
@@ -449,8 +486,12 @@ def index_main(argv: list[str]) -> int:
                     'data': data,
                 }, indent=2))
             else:
+                color: bool = _terminal_color_enabled()
                 if data['entries']:
-                    print('STATUS     HARNESS:DIALOG ID / NAME')
+                    print(_grey_label(
+                        'STATUS     HARNESS:DIALOG ID / NAME',
+                        color,
+                    ))
                 else:
                     print('No new WKT relations to apply.')
                 entry: dict
@@ -461,31 +502,80 @@ def index_main(argv: list[str]) -> int:
                     label: str = json.dumps(
                         harness + ':' + did + ' ' + entry['name'],
                     )
-                    print(f'{status:<10} {label}')
+                    print(
+                        _grey_label(f'{status:<10}', color),
+                        _highlight(label, 36, color),
+                    )
+                    if entry['name'] != '(metadata)':
+                        resume_label: str
+                        resume_command: str
+                        for resume_label, resume_command in _shell_commands(
+                            'Resume',
+                            [
+                                'ai.resume', entry['name'],
+                                '-a', '-b', harness, '--id', did,
+                            ],
+                            f'ai.resume @({entry["name"]!r}) '
+                            f'-a -b {harness} --id @({did!r})',
+                        ):
+                            print(
+                                _grey_label(resume_label, color),
+                                resume_command,
+                            )
                     candidate: dict
                     for candidate in entry['candidates']:
                         target: str = json.dumps(
                             candidate['worktree'],
                         )
                         evidence: str = ', '.join(
-                            candidate['evidence'],
+                            item for item in candidate['evidence']
+                            if item != 'legacy-owner-matching-dialog-id'
                         )
-                        print(f'  {target} [{evidence}]')
-                print('Unresolved:', len(data['unresolved']))
-                print('Already recorded:', data['confirmed'])
+                        detail: str = f' [{evidence}]' if evidence else ''
+                        print(
+                            '  ' + _highlight(target, 34, color)
+                            + detail,
+                        )
+                    print()
+                print(
+                    _grey_label('Unresolved:', color),
+                    len(data['unresolved']),
+                )
+                print(
+                    _grey_label('Already recorded:', color),
+                    data['confirmed'],
+                )
                 warning: str
                 for warning in data['warnings']:
-                    print('Warning:', json.dumps(warning))
-                print('Preview:', json.dumps(str(path)))
-                print('SHA-256:', digest)
+                    print(
+                        _grey_label('Warning:', color),
+                        json.dumps(warning),
+                    )
+                print(
+                    _grey_label('Preview:', color),
+                    json.dumps(str(path)),
+                )
+                print(_grey_label('SHA-256:', color), digest)
                 repo: str = str(Path(args.repo).resolve())
                 preview_path: str = str(path)
                 if data['entries']:
-                    print(
-                        f'Apply: ai.dlogs index @({repo!r}) '
+                    apply_label: str
+                    apply_command: str
+                    for apply_label, apply_command in _shell_commands(
+                        'Apply',
+                        [
+                            'ai.dlogs', 'index', repo,
+                            '--apply', preview_path,
+                            '--sha256', digest,
+                        ],
+                        f'ai.dlogs index @({repo!r}) '
                         f'--apply @({preview_path!r}) '
-                        f'--sha256 {digest}'
-                    )
+                        f'--sha256 {digest}',
+                    ):
+                        print(
+                            _grey_label(apply_label, color),
+                            apply_command,
+                        )
     except (
         OSError,
         ValueError,
