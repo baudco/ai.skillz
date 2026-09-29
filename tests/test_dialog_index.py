@@ -12,6 +12,7 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -27,7 +28,7 @@ from aiskillz import (
     record_worktree,
 )
 from aiskillz.wkt._relations import identity
-from aiskillz.cli import main
+from aiskillz.cli import _shell_commands, main
 from aiskillz.dialogs import (
     preview_wkt_relations as preview,
     save_wkt_preview as save_preview,
@@ -447,8 +448,142 @@ class DialogIndexTests(unittest.TestCase):
         text: str = output.getvalue()
         self.assertIn('No new WKT relations to apply.', text)
         self.assertIn('Already recorded: 0', text)
-        self.assertNotIn('Apply:', text)
+        self.assertNotIn('Apply (', text)
         self.assertNotIn('STATUS', text)
+
+    def test_preview_separates_matches_and_dims_labels(self) -> None:
+        '''
+        Keep each dialog's WKT choices readable in terminal output.
+
+        Plain output retains copyable labels and commands. Only TTY
+        output colors labels, dialog identities and WKT paths.
+
+        '''
+        class Terminal(StringIO):
+            '''Capture terminal-only color output.'''
+
+            def isatty(self) -> bool:
+                '''Enable the terminal color branch.'''
+                return True
+
+        entries: list[dict] = [
+            {
+                'status': 'ready', 'harness': 'codex',
+                'id': 'one', 'name': 'first',
+                'candidates': [{
+                    'worktree': str(self.first),
+                    'evidence': ['saved-cwd'],
+                }],
+            },
+            {
+                'status': 'ambiguous', 'harness': 'opencode',
+                'id': 'two', 'name': "second's work",
+                'candidates': [{
+                    'worktree': str(self.first),
+                    'evidence': ['legacy-owner-matching-dialog-id'],
+                }, {
+                    'worktree': str(self.second),
+                    'evidence': ['legacy-owner-matching-dialog-id'],
+                }],
+            },
+        ]
+        proposal: dict = {
+            'entries': entries, 'unresolved': [],
+            'confirmed': 0, 'warnings': ['check owner metadata'],
+        }
+        preview_path: Path = self.repo / 'preview.json'
+        plain: StringIO = StringIO()
+        terminal: Terminal = Terminal()
+        with (
+            patch('aiskillz.cli.dialogs.preview_wkt_relations',
+                  return_value=proposal),
+            patch('aiskillz.cli.dialogs.save_wkt_preview',
+                  return_value=(preview_path, 'abcd')),
+            patch.dict(os.environ, {'TERM': 'xterm', 'NO_COLOR': ''}),
+        ):
+            with patch('aiskillz.cli.sys.stdout', plain):
+                self.assertEqual(main(['index', str(self.repo)]), 0)
+            with patch('aiskillz.cli.sys.stdout', terminal):
+                self.assertEqual(main(['index', str(self.repo)]), 0)
+
+        text: str = plain.getvalue()
+        self.assertIn(
+            'Resume (xonsh/POSIX sh): '
+            'ai.resume first -a -b codex --id one\n'
+            f'  "{self.first}" [saved-cwd]\n\nAMBIGUOUS',
+            text,
+        )
+        self.assertIn(
+            'Resume (xonsh): '
+            '''ai.resume @("second's work") '''
+            "-a -b opencode --id @('two')\n"
+            'Resume (POSIX sh): ',
+            text,
+        )
+        posix: str = next(
+            line.split(': ', 1)[1]
+            for line in text.splitlines()
+            if line.startswith('Resume (POSIX sh): ')
+            and 'opencode' in line
+        )
+        self.assertEqual(shlex.split(posix), [
+            'ai.resume', "second's work", '-a', '-b',
+            'opencode', '--id', 'two',
+        ])
+        self.assertIn(
+            f'Resume (POSIX sh): {posix}\n'
+            f'  "{self.first}"\n  "{self.second}"\n\n'
+            'Unresolved: 0',
+            text,
+        )
+        self.assertIn('\n\nUnresolved: 0', text)
+        self.assertNotIn('legacy-owner-matching-dialog-id', text)
+        apply: str = next(
+            line.split(': ', 1)[1]
+            for line in text.splitlines()
+            if line.startswith('Apply (xonsh/POSIX sh): ')
+        )
+        self.assertEqual(shlex.split(apply), [
+            'ai.dlogs', 'index', str(self.repo),
+            '--apply', str(preview_path), '--sha256', 'abcd',
+        ])
+        apostrophe_path: str = str(self.repo / "preview's.json")
+        shell_forms: list[tuple[str, str]] = _shell_commands(
+            'Apply',
+            [
+                'ai.dlogs', 'index', str(self.repo),
+                '--apply', apostrophe_path, '--sha256', 'abcd',
+            ],
+            f'ai.dlogs index @({str(self.repo)!r}) '
+            f'--apply @({apostrophe_path!r}) --sha256 abcd',
+        )
+        self.assertEqual(
+            [label for label, _ in shell_forms],
+            ['Apply (xonsh):', 'Apply (POSIX sh):'],
+        )
+        self.assertEqual(shlex.split(shell_forms[1][1]), [
+            'ai.dlogs', 'index', str(self.repo),
+            '--apply', apostrophe_path, '--sha256', 'abcd',
+        ])
+        colored: str = terminal.getvalue()
+        self.assertTrue(colored.startswith(
+            '\x1b[90mSTATUS     HARNESS:DIALOG ID / NAME\x1b[0m\n'
+            '\x1b[90mREADY     \x1b[0m '
+            '\x1b[36m"codex:one first"\x1b[0m',
+        ))
+        self.assertIn('\x1b[90mAMBIGUOUS \x1b[0m', colored)
+        self.assertIn(
+            f'\x1b[34m"{self.first}"\x1b[0m [saved-cwd]',
+            colored,
+        )
+        for label in (
+            'Unresolved:', 'Already recorded:', 'Warning:',
+            'Preview:', 'SHA-256:', 'Apply (xonsh/POSIX sh):',
+            'Resume (xonsh/POSIX sh):', 'Resume (xonsh):',
+            'Resume (POSIX sh):',
+        ):
+            self.assertIn(f'\x1b[90m{label}\x1b[0m', colored)
+        self.assertNotIn('\x1b', text)
 
     def test_prompt_text_is_not_evidence_and_cli_dispatch(
         self,
