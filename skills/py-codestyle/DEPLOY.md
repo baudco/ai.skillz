@@ -1,7 +1,12 @@
 # Deploying `/py-codestyle`
 
 This whole-directory skill is auto-applied when writing or editing
-Python. It has no per-repo state or customization.
+Python. Its shared reference covers general review lessons. A
+consumer repository may add project-specific runtime and review
+lessons at `.ai/py-codestyle/review-lessons.md`. The skill reads
+that file from the active worktree when it exists; deployment
+does not create or overwrite it. Keep project topology and local
+test-case examples there rather than editing the shared skill.
 
 ## Deployment
 

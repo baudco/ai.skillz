@@ -163,6 +163,14 @@ For each comment triaged as `fix`:
   suggestion.
 - Follow all project code-style rules (see
   `py-codestyle` skill if applicable).
+- For Python/runtime test feedback, read
+  `references/review-lessons.md` if it exists in the target's
+  selected `py-codestyle` deployment. Also read the optional
+  `<repo-root>/.ai/py-codestyle/review-lessons.md` from the
+  receiving worktree when present. If neither exists, follow
+  the target's project guidance and nearby code. Inspect human
+  unstaged edits before rewriting reviewed code, and preserve
+  their rationale as the remediation baseline.
 
 ### Cross-repo symlink fixes
 
