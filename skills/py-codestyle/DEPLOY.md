@@ -1,7 +1,12 @@
 # Deploying `/py-codestyle`
 
 This whole-directory skill is intended for every Python/Xonsh
-writing task. It has no per-repo state or customization.
+writing task. Its shared reference covers general review lessons. A
+consumer repository may add project-specific runtime and review
+lessons at `.ai/py-codestyle/review-lessons.md`. The skill reads
+that file from the active worktree when it exists; deployment
+does not create or overwrite it. Keep project topology and local
+test-case examples there rather than editing the shared skill.
 
 ## Deployment
 
