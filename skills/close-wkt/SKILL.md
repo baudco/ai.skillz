@@ -75,6 +75,17 @@ absolute common Git directory and verify it against `git worktree list
 --porcelain`; do not use the linked worktree's `--show-toplevel` as the main
 root. The resulting main root owns the canonical `wkts/` parent.
 
+Before removal, follow
+[the worktree retirement archive contract](../../docs/runtime-state.md#worktree-retirement-archives).
+Inventory ignored runtime evidence even when Git reports a clean tree
+or teardown notifications are disabled. Retain useful evidence in the
+main checkout's `.ai/state/archive/wkts/<name>/`, with explicit human
+authorization and verified copies before removing the source worktree.
+If preservation or discard intent is unclear, stop and report the
+inventory. Ignored files are not automatically disposable. Archival
+does not grant takeover, removal, branch-deletion, or task-state
+authorization; all ownership and teardown gates below still apply.
+
 1. **Validate the managed target and locate metadata**: require `<name>` to
    satisfy the same snake_case rule as `/open-wkt`; reject separators, `..`,
    leading dots/dashes, and any canonical path outside

@@ -148,6 +148,65 @@ Migrate each existing worktree independently. A worktree containing a
 tracked neutral selection plus legacy data needs its own reviewed
 migration; do not point it at another worktree's runtime directory.
 
+## Worktree retirement archives
+
+Worktrees are ephemeral source checkouts. Keep ownership/lifecycle
+records in Git administrative storage under the `open-wkt` contract;
+they do not belong among source files. Inspect ignored runtime files
+before retirement too: a clean Git status does not make them disposable.
+
+Preserve private evidence in the repository's main checkout at:
+
+```text
+<main-checkout>/.ai/state/archive/wkts/<wkt-name>/
+```
+
+Identify the main checkout from the common Git directory and verify it
+against `git worktree list --porcelain`; a linked worktree's own
+`--show-toplevel` is not the main checkout. If there is no available
+main checkout, stop and agree on an archive destination. Verify the
+destination is ignored, is outside the retiring worktree, and does not
+redirect through symlinks. Do not silently use `.git` as the evidence
+archive. Administrative locks and live ownership records stay there.
+
+The archive can hold benchmark captures, source snapshots, archived
+commit packages, review drafts/receipts, and copies of lifecycle
+metadata. Preserve original bytes, file modes, relative layout, and
+embedded references. Record the source worktree path, branch/HEAD,
+capture date, retained paths, and archive digest. Ownership copies are
+historical evidence, not authorization to acquire or restore a lock.
+Use a new destination or dated snapshot for each retirement; never
+overwrite evidence from a previous worktree with the same name.
+
+Pause writers and obtain explicit archival authorization before copying.
+Verify archive integrity and compare retained contents with the source
+while it is quiescent. On differences or failure, stop before removal.
+Archival success does not authorize worktree removal, branch deletion,
+or changing human-owned task/review states. Retain branch refs unless
+their deletion is separately requested.
+
+Historical plans and reply candidates may contain paths to the removed
+worktree. They are recovery/provenance material, not runnable plans;
+regenerate pending work through the owning skill. Native harness/Tuicr
+session stores have their own contracts and are not implicitly migrated
+by archiving repository-local evidence.
+
+Rebuildable caches and generated dependencies can be discarded during
+authorized retirement. OpenCode may create local SDK package files and
+`node_modules` even without local plugins; inspect active dependencies
+before discarding them. Small package manifests may be retained as
+provenance without keeping the installed dependency tree. Temporary
+execution files need a defined operation lifetime and cleanup/recovery
+rule, not an accidental permanent archive.
+
+Raw private evidence stays in ignored `.ai` state. Selected durable,
+shareable reports and reproducible inputs may be promoted into `ai/`
+through a separate reviewed change. This retirement convention does
+not relocate active per-worktree runtime paths. Repository-wide storage
+for future review evidence remains a separate resolver contract change:
+keep reviewed worktree/session identity distinct from storage location,
+namespace concurrent writers, and preserve executor path requirements.
+
 ## Recovery and limits
 
 A normal setup, copy, or selection failure removes files created by
