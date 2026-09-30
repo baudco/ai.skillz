@@ -15,6 +15,14 @@ disable-model-invocation: true
 
 These rules apply globally to ALL python projects.
 
+For concurrent/runtime test code and review remediation, read
+[the shared review lessons](references/review-lessons.md). Also read
+`<repo-root>/.ai/py-codestyle/review-lessons.md` when present.
+Resolve that optional project reference from the active worktree,
+not from this skill's deployment directory. It adds local examples
+and conventions; the shared rules and user authorization prevail
+where instructions conflict. Never import another project's file.
+
 ## Preserve maintainer context
 
 - Treat comments, TODOs, FIXMEs, disabled experiments,
@@ -322,50 +330,47 @@ These rules apply globally to ALL python projects.
 
 ## Boolean & branch expressions
 
-- In any branch condition (`if`/`elif`/`while`/`assert`)
-  that combines sub-expressions with boolean
-  connectives (`and`/`or`), put each **connective on
-  its OWN line**, separate from the operand
-  expressions it joins. The operands each get their
-  own line(s) too. This keeps every clause visually
-  isolated and makes diffs that add/remove a clause
-  minimal — same spirit as the multi-line tuple rules.
-- Apply this whenever the condition has more than one
-  operand, even if it would fit on one line. A single
-  operand (`if ready:`, `while not done:`) stays
-  inline.
+- A flat chain of simple predicates using only `and` or only
+  `or` may stay compact when it fits within 69 characters.
+  When it wraps, put each next connective and predicate on one
+  line when that line fits. Keep the original evaluation order.
+- For mixed `and` and `or`, or nested compound operands, use
+  parentheses to make grouping explicit. Put each top-level
+  connective on its own line between its operand groups.
+  Format nested compound groups the same way when they wrap.
+- The same rules apply to `if`/`elif`/`while`/`assert`
+  conditions and booleans assigned to named locals.
 
   ```python
-  # GOOD - each operand + connective on its own line
+  # GOOD - flat, simple predicates with one connective
+  if ready and channel_open:
+      ...
+
   if (
-      grandrent is con.workspace()
+      ctx.chan is chan
+      and ctx.side == 'parent'
+      and ctx._scope is not None
+      and ctx._status._remote_error is None
+      and ctx._status._outcome_is_unfinished()
+  ):
+      ...
+
+  # GOOD - mixed connectives with explicit grouping
+  if (
+      ready
       or
-      any('wks' in mrk for mrk in grandrent.marks)
+      (
+          retry_allowed
+          and
+          channel_open
+      )
   ):
       ...
 
-  if (
-      rescued
-      and
-      (cur_src_id := src_node.id) in con_ids
-  ):
-      ...
-
-  # BAD - connective jammed inline with operands
-  if rescued and (cur_src_id := src_node.id) in con_ids:
-      ...
-
-  # BAD - connective trailing an operand line
-  if (
-      grandrent is con.workspace() or
-      any('wks' in mrk for mrk in grandrent.marks)
-  ):
+  # BAD - mixed connectives obscure grouping
+  if ready or retry_allowed and channel_open:
       ...
   ```
-
-- The same shape applies to a boolean assigned to a
-  named local (`reset_ppt: bool = (...)`) — operands
-  and connectives each on their own line.
 
 ## Re-exports from `__init__` modules
 
