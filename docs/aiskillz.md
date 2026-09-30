@@ -21,6 +21,7 @@ Start a fresh Xonsh after installing, then load the extension:
 ```xsh
 xontrib load aiskillz
 ai.dlogs
+ai.dlogs --did
 ai.dlogs --harness codex
 ai.dlogs --harness oc
 ai.dlogs --harness claude
@@ -155,7 +156,10 @@ Store errors propagate rather than masquerading as a missing ID.
 
 OpenCode IDs are not UUIDs.
 
-The CLI orders columns as name, dialog ID, WKT, CWD, then harness.
+The CLI orders columns as name, WKT, CWD, then harness. Pass
+`--did` to add the full dialog ID after the name when copying an ID
+or resolving duplicate names. `ai.resume NAME` can use the name
+directly; JSON and Python records always include the ID.
 It shows `sort-by: "last-update-time" (newest first)` above the
 table. Pass `-t` / `--timestamps` to add an `UPDATED (UTC)` column
 after WKT, showing harness metadata update time to the minute.

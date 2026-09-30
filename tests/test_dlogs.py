@@ -157,25 +157,24 @@ class DlogsTests(unittest.TestCase):
             codex_sessions(missing, None)
         self.assertFalse(missing.exists())
 
-    def test_table_preserves_ids_and_removes_controls(self) -> None:
+    def test_ids_are_opt_in_and_controls_removed(self) -> None:
         '''
-        Session titles can contain newlines and terminal escapes.
+        The default table no longer needs wide dialog IDs.
 
-        Rendering must keep each session on one logical line and
-        preserve the complete ID for resume and selection tools.
+        A session title can contain terminal controls. Keep one
+        logical row, show the full ID with `--did`, and retain the
+        unchanged ID in JSON for callers that need it.
 
         '''
         uuid: str = '01980000-0000-7000-8000-000000000001'
-        output: str = table(
-            [
-                {
-                    'harness': 'codex',
-                    'id': uuid,
-                    'name': 'name\nwith\x1b[31m controls',
-                }
-            ]
-        )
-        self.assertIn(uuid, output)
+        sessions: list[dict] = [{
+            'harness': 'codex',
+            'id': uuid,
+            'name': 'name\nwith\x1b[31m controls',
+        }]
+        output: str = table(sessions)
+        self.assertNotIn(uuid, output)
+        self.assertNotIn('DIALOG ID', output)
         self.assertNotIn('\x1b', output)
         self.assertEqual(
             output.splitlines()[0],
@@ -183,7 +182,23 @@ class DlogsTests(unittest.TestCase):
         )
         self.assertEqual(output.splitlines()[1], 'HARNESS=codex')
         self.assertEqual(len(output.splitlines()), 5)
-        self.assertIn('DIALOG ID', table([]))
+        self.assertIn(uuid, table(sessions, show_did=True))
+        self.assertIn('DIALOG ID', table([], show_did=True))
+
+        with patch(
+            'aiskillz.cli.dialogs.list_dialogs',
+            return_value=sessions,
+        ):
+            rendered: io.StringIO = io.StringIO()
+            with redirect_stdout(rendered):
+                self.assertEqual(dlogs_main(['--did']), 0)
+            self.assertIn(uuid, rendered.getvalue())
+            rendered = io.StringIO()
+            with redirect_stdout(rendered):
+                self.assertEqual(dlogs_main(['--did', '--json']), 0)
+            self.assertEqual(
+                json.loads(rendered.getvalue()), sessions,
+            )
 
     @unittest.skipUnless(shutil.which('git'), 'git unavailable')
     def test_worktree_from_recorded_subdirectory(self) -> None:
@@ -229,8 +244,9 @@ class DlogsTests(unittest.TestCase):
         Long session names previously pushed cwd far off screen.
 
         Render a long name alongside an exact-boundary name. Check
-        ellipsis truncation, stable ID alignment, and name/ID/WKT
-        order, while preserving the caller's original name.
+        ellipsis truncation and name/WKT order by default, then
+        stable ID alignment when requested. Preserve the original
+        name in the caller's records.
         The shared cwd moves above the header instead of repeating.
 
         '''
@@ -253,12 +269,20 @@ class DlogsTests(unittest.TestCase):
         self.assertEqual(lines[2], '')
         self.assertEqual(
             lines[3].split(),
-            ['NAME', 'DIALOG', 'ID', 'WKT', 'HARNESS'],
+            ['NAME', 'WKT', 'HARNESS'],
         )
         self.assertTrue(lines[4].startswith(name[:35] + '…'))
         self.assertTrue(lines[5].startswith('x' * 36))
-        self.assertEqual(lines[4].index('dialog-one'), 38)
-        self.assertEqual(lines[5].index('dialog-two'), 38)
+        self.assertNotIn('dialog-one', lines[4])
+        with_ids: list[str] = table(
+            sessions, show_did=True,
+        ).splitlines()
+        self.assertEqual(
+            with_ids[3].split(),
+            ['NAME', 'DIALOG', 'ID', 'WKT', 'HARNESS'],
+        )
+        self.assertEqual(with_ids[4].index('dialog-one'), 38)
+        self.assertEqual(with_ids[5].index('dialog-two'), 38)
         self.assertEqual(sessions[0]['name'], name)
 
     def test_uniform_harness_moves_above_table(self) -> None:
