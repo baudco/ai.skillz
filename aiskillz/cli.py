@@ -93,6 +93,7 @@ def format_dialog_table(
     sessions: list[dict],
     show_cwd: bool = True,
     show_timestamps: bool = False,
+    show_did: bool = False,
 ) -> str:
     '''
     Format dialog metadata and worktree labels for terminal display.
@@ -106,11 +107,11 @@ def format_dialog_table(
     The sort rule appears above the table. Uniform CWD and harness
     values follow it; `show_cwd=False` hides CWD in both places.
 
-    Keep full IDs, cap names at 36 characters with an ellipsis,
-    abbreviate home paths and neutralize control characters. Return
-    plain text; `main()` adds optional header color. JSON/Python
-    metadata bypasses this formatting and contains neither shortened
-    names nor WKT labels.
+    Show full IDs only when requested. Cap names at 36 characters
+    with an ellipsis, abbreviate home paths and neutralize control
+    characters. Return plain text; `main()` adds optional header
+    color. JSON/Python metadata bypasses this formatting and
+    contains neither shortened names nor WKT labels.
 
     '''
     displays: list[dict[str, str]] = []
@@ -182,9 +183,10 @@ def format_dialog_table(
 
     columns: list[tuple[str, str]] = [
         ('name', 'NAME'),
-        ('id', 'DIALOG ID'),
-        ('wkt', 'WKT'),
     ]
+    if show_did:
+        columns.append(('id', 'DIALOG ID'))
+    columns.append(('wkt', 'WKT'))
     if show_timestamps:
         columns.append(('updated', 'UPDATED (UTC)'))
     if (
@@ -275,6 +277,10 @@ def main(argv: list[str]|None = None) -> int:
         '-t', '--timestamps', action='store_true',
         help='show last-update time (UTC); newest first regardless',
     )
+    parser.add_argument(
+        '--did', action='store_true',
+        help='show dialog IDs in the terminal table',
+    )
     parser.add_argument('--json', action='store_true')
     args: argparse.Namespace = parser.parse_args(argv)
     try:
@@ -294,7 +300,9 @@ def main(argv: list[str]|None = None) -> int:
         json.dumps(sessions, indent=2)
         if args.json
         else format_dialog_table(
-            sessions, show_timestamps=args.timestamps,
+            sessions,
+            show_timestamps=args.timestamps,
+            show_did=args.did,
         )
     )
     if not args.json and _terminal_color_enabled():
