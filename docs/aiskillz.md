@@ -276,17 +276,18 @@ a nonempty `NO_COLOR` environment variable disable coloring.
 while `--all` corresponds to Python's `all=True`. Table output neutralizes
 terminal control characters; JSON and Python retain the original names.
 
-## Resume a named dialog
+## Resume a dialog by name or ID
 
-`ai.resume NAME` finds a dialog name in the current directory
-and launches the matching harness with its dialog ID. Full names
-match exactly. A copied 36-character NAME ending in `…` also works
+`ai.resume NAME_OR_ID` accepts either a dialog name or its exact ID
+and launches the matching harness. Exact IDs take precedence over
+names when both match. A copied 36-character NAME ending in `…` works
 when it identifies one dialog. The lookup reads the same saved
 dialog records as `ai.dlogs`. Inspect the choice first:
 
 ```xsh
 ai.resume 'xharness_w_codex' --dry-run
 ai.resume 'xharness_w_codex'
+ai.resume 01a06e03-e304-7052-876c-ee4556c68174 --dry-run
 ```
 
 `--dry-run` prints JSON with the selected harness, ID, launch cwd,
@@ -296,8 +297,8 @@ provides an `ai.resume` executable and Xontrib alias; sourcing
 
 The default search uses the current directory, just like `ai.dlogs`.
 Use `--repo PATH` for another saved cwd or `-a` / `--all-repos` to
-search all saved directories. Exact duplicate names fail with a
-list of harnesses, IDs, and saved directories; narrow them with
+search all saved directories for either names or IDs. Duplicates
+fail with a list of harnesses, IDs, and saved directories; narrow with
 `-b` / `--harness`, `--repo`, or `--id`:
 
 ```xsh
