@@ -533,10 +533,21 @@ def main() -> None:
         if args.command == 'prepare':
             if result['blockers']:
                 raise ValueError('; '.join(result['blockers']))
-            setup(root)
-            if result['selection'] == 'inferred':
-                select(root, result['backend'])
-            result = inspect(root)
+            ignore: Path = safe(root, '.gitignore')
+            old_ignore: bytes | None = (
+                ignore.read_bytes() if ignore.exists() else None
+            )
+            try:
+                setup(root)
+                if result['selection'] == 'inferred':
+                    select(root, result['backend'])
+                result = inspect(root)
+            except Exception:
+                if old_ignore is None:
+                    ignore.unlink(missing_ok=True)
+                else:
+                    ignore.write_bytes(old_ignore)
+                raise
     print(json.dumps(result, indent=2))
     if result['blockers']:
         raise SystemExit(1)

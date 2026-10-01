@@ -5,6 +5,7 @@ Exercise migration against disposable repositories and worktrees.
 '''
 
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -463,6 +464,105 @@ class MigrationTests(unittest.TestCase):
                 STATE.apply(self.root, plan['sha256'])
         self.assertEqual(ignore.read_text(), '# user-owned\n')
         self.assertFalse((self.root / STATE.MARKER).exists())
+
+    def test_prepare_failures_restore_ignores_and_allow_retry(
+        self,
+    ) -> None:
+        '''
+        Preparation called mutating setup outside rollback even
+        after migration's apply path was fixed. Through the real CLI
+        dispatch, inject partial ignore writes, later mkdir failures,
+        and selection rename errors. For existing and absent ignores,
+        require original bytes/absence and no selection temporary or
+        marker. An unmocked retry must succeed without staging
+        source.
+
+        '''
+        self.write(STATE.PATHS['commit_style'][0], 'style')
+        ignore: Path = self.root / '.gitignore'
+        original_write = Path.write_text
+        original_mkdir = Path.mkdir
+        argv: list[str] = [
+            'workflow-state.py', 'prepare', str(self.root),
+        ]
+        stages: bytes = self.git('ls-files', '--stage')
+
+        def prepare() -> None:
+            '''
+            Exercise normal preparation with captured JSON output.
+
+            '''
+            with patch.object(STATE.sys, 'argv', argv):
+                with patch.object(
+                    STATE.sys, 'stdout', io.StringIO(),
+                ):
+                    STATE.main()
+
+        def partial(path: Path, text: str, *args, **kwargs) -> int:
+            '''
+            Fail after truncating the existing or newly made ignore.
+
+            '''
+            if path == ignore:
+                path.write_bytes(b'partial')
+                raise OSError('partial write')
+            return original_write(path, text, *args, **kwargs)
+
+        def mkdir_failure(path: Path, *args, **kwargs) -> None:
+            '''
+            Fail after setup installs ignores but before selection.
+
+            '''
+            if path == self.root / '.ai':
+                raise OSError('parent creation failure')
+            original_mkdir(path, *args, **kwargs)
+
+        for contents in ('# user-owned\n', None):
+            for failure in ('write', 'mkdir', 'select'):
+                with self.subTest(
+                    contents=contents, failure=failure,
+                ):
+                    ignore.unlink(missing_ok=True)
+                    if contents is not None:
+                        self.write('.gitignore', contents)
+                    if failure == 'write':
+                        fault = patch.object(
+                            Path, 'write_text', autospec=True,
+                            side_effect=partial,
+                        )
+                    elif failure == 'mkdir':
+                        fault = patch.object(
+                            Path, 'mkdir', autospec=True,
+                            side_effect=mkdir_failure,
+                        )
+                    else:
+                        fault = patch.object(
+                            STATE.os, 'replace', side_effect=OSError,
+                        )
+                    with fault:
+                        with self.assertRaises(OSError):
+                            prepare()
+                    if contents is None:
+                        self.assertFalse(ignore.exists())
+                    else:
+                        self.assertEqual(
+                            ignore.read_text(), contents,
+                        )
+                    self.assertFalse(
+                        (self.root / STATE.MARKER).exists()
+                    )
+                    temporary: Path = (
+                        self.root / (STATE.MARKER + '.new')
+                    )
+                    self.assertFalse(temporary.exists())
+                    self.assertEqual(
+                        self.git('ls-files', '--stage'), stages,
+                    )
+        prepare()
+        self.assertEqual(
+            STATE.inspect(self.root)['backend'], 'legacy',
+        )
+        self.assertEqual(self.git('ls-files', '--stage'), stages)
 
     def test_symlink_layout_refused(self) -> None:
         '''

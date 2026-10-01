@@ -141,6 +141,8 @@ A normal setup, copy, or selection failure removes files created by
 that application and restores the previous `.gitignore`; empty
 directories may remain. Selection failures clean up only the `.new`
 file created by that invocation, never a pre-existing temporary.
+Ordinary preparation also restores previous ignore bytes or absence
+if setup or backend selection fails; a failed prepare can be retried.
 Sources and pre-existing destinations are preserved. An interrupted
 process can leave partial neutral copies or a `.new` selection file.
 Inspect these against the preview before removing only incomplete
