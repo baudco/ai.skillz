@@ -13,9 +13,44 @@ can replace a harness's older saved cwd. This module does not spawn.
 '''
 
 from pathlib import Path
+import re
+import subprocess
 
 from . import dialogs
 from .wkt import WktLookup
+
+
+def _codex_supports_no_daemon() -> bool:
+    '''
+    Check whether this Codex CLI accepts --no-daemon on resume.
+
+    `resume_target()` probes the installed command rather than a
+    version string because package layouts can differ. A missing,
+    failed, or unresponsive CLI keeps the older resume argv; the
+    eventual launch reports any executable failure to the caller.
+
+    '''
+    try:
+        result: subprocess.CompletedProcess[str] = subprocess.run(
+            ['codex', 'resume', '--help'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
+        return False
+    return (
+        result.returncode == 0
+        and
+        re.search(
+            r'(?m)^\s*--no-daemon(?:\s|$)',
+            result.stdout + '\n' + result.stderr,
+        ) is not None
+    )
 
 
 def resume_target(
@@ -109,6 +144,14 @@ def resume_target(
     }
     if provider not in commands:
         raise ValueError('Unsupported harness: ' + provider)
+    if (
+        provider == 'codex'
+        and
+        _codex_supports_no_daemon()
+    ):
+        commands['codex'] = [
+            'codex', 'resume', '--no-daemon', did,
+        ]
 
     saved: str = selected.get('cwd', '')
     if (
