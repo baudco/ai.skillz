@@ -287,6 +287,28 @@ where instructions conflict. Never import another project's file.
   )
   ```
 
+## Dictionary literals
+
+- In multiline dictionary literals, put each key/value pair or
+  `**mapping` expansion on its own physical line, with a trailing
+  comma. Never pack multiple entries onto one line. This keeps
+  individual field changes easy to scan and diffs minimal.
+
+  ```python
+  # GOOD - one entry per line, including unpacked mappings
+  state: dict = {
+      'version': 1,
+      'active': None,
+      **defaults,
+  }
+
+  # BAD - multiple entries packed into a multiline literal
+  state: dict = {
+      'version': 1, 'active': None,
+      **defaults, 'steps': [],
+  }
+  ```
+
 ## Tuple unpacking
 
 - When unpacking tuples with N > 2 elements, always
@@ -312,6 +334,7 @@ where instructions conflict. Never import another project's file.
   # GOOD
   try:
       ...
+
   except (
       FileNotFoundError,
       PermissionError,
@@ -400,3 +423,76 @@ where instructions conflict. Never import another project's file.
 
 - Never write lines containing only whitespace;
   use a bare carriage return (empty line) instead.
+
+### Vertical space at scope boundaries
+
+- Add a blank line where a scope boundary is visually crowded or
+  separates distinct phases. Judge the preceding body's density,
+  the following clause's width, and dedent depth together; none
+  is a mechanical threshold. Busy guards and substantial bodies
+  beside long `except`/`elif` headers usually benefit from a gap.
+- Compact bodies, short headers such as `finally:`, and cohesive
+  cleanup tails may remain contiguous. A one-line body can stay
+  beside a long clause header; horizontal overlap alone does not
+  require spacing. Larger dedents often separate scopes already.
+  A `return`/`raise` alone does not mandate a blank line. Preserve
+  readable existing grouping instead of maximizing blank lines.
+- Apply this to branches, loops, function/class bodies, exception
+  clauses, and `with` / `async with` blocks. This includes the gap
+  before `elif`, `else`, `except`, `finally`, or the next `case`.
+- Apply the same guidance after early exits and normal fall-through.
+  Count indentation levels, not raw columns. Ordinary same-scope
+  code does not need a blank line after every statement.
+- One blank line can delimit several scopes ending at the same
+  statement. Preserve the usual two blank lines between top-level
+  definitions; do not add extra blank lines solely at end-of-file.
+- Do not insert a blank line between a scope header and its first
+  statement, or treat wrapped expressions as new scopes.
+
+  ```python
+  def load_state(path: Path) -> dict:
+      '''
+      Load state after checking its source path.
+
+      '''
+      if not path.exists():
+          raise RuntimeError('no pending stack operation')
+
+      with path.open() as stream:
+          state: dict = json.load(stream)
+
+      if state.get('cancelled'):
+          return {}
+
+      return state
+  ```
+
+  ```python
+  # No gap: the next clause dedents by two levels.
+  def coordinate(resume: bool, cancelled: bool) -> int:
+      '''
+      Coordinate an operation or report its cancellation.
+
+      '''
+      if resume:
+          if cancelled:
+              report_cancellation()
+              return 1
+      else:
+          start_operation()
+
+      return 0
+  ```
+
+  ```python
+  # Compact exception/cleanup clauses remain a cohesive unit.
+  try:
+      run_operation()
+
+  except RuntimeError as error:
+      report(error)
+  finally:
+      for handle in handles:
+          handle.close()
+      handles.clear()
+  ```
