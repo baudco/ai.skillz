@@ -312,6 +312,11 @@ WKTs match, or the selected directory no longer exists, use
 passes an argv list directly to `codex resume ID`,
 `opencode --session ID`, or `claude --resume ID`; it does not
 interpret the dialog name as a shell command.
+For Codex resumes, it checks `codex resume --help` and adds
+`--no-daemon` when that CLI supports the option. Older or unavailable
+Codex installations retain `codex resume ID`; `--dry-run` shows the
+exact argv selected for the current installation. Other harnesses
+are unaffected.
 
 ## Storage and limits
 

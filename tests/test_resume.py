@@ -48,6 +48,10 @@ def test_resume_name_routes_to_harness(
     }
     listing: Mock = Mock(return_value=[record])
     monkeypatch.setattr(_resume.dialogs, 'list_dialogs', listing)
+    probe: Mock = Mock(return_value=False)
+    monkeypatch.setattr(
+        _resume, '_codex_supports_no_daemon', probe,
+    )
     target: dict = _resume.resume_target(
         'Build feature', repo=str(tmp_path),
     )
@@ -58,6 +62,69 @@ def test_resume_name_routes_to_harness(
     assert listing.call_args.kwargs['path'] == '.'
     _resume.resume_target('Build feature', all_repos=True)
     assert listing.call_args.kwargs['path'] is None
+    assert probe.call_count == (3 if harness == 'codex' else 0)
+
+
+@pytest.mark.parametrize(
+    ('help_text', 'returncode', 'expected'),
+    [
+        ('      --no-daemon\n', 0, True),
+        ('      --last\n', 0, False),
+        ('      --no-daemon\n', 1, False),
+    ],
+)
+def test_codex_resume_probes_help_for_no_daemon(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+    help_text: str,
+    returncode: int,
+    expected: bool,
+) -> None:
+    '''
+    Codex installations differ in daemon flag support.
+
+    Mock the installed CLI's resume help with and without the
+    option, including failed help. `ai.resume --dry-run` must show
+    the same argv a real launch would receive, with the flag only
+    when a successful help response advertises it.
+
+    '''
+    record: dict = {
+        'name': 'Feature',
+        'id': 'dialog-id',
+        'harness': 'codex',
+        'cwd': str(tmp_path),
+    }
+    monkeypatch.setattr(
+        _resume.dialogs, 'list_dialogs',
+        lambda **kwargs: [record],
+    )
+    monkeypatch.setattr(
+        _resume.WktLookup, 'roots',
+        lambda *args: set(),
+    )
+    probe: Mock = Mock(return_value=SimpleNamespace(
+        returncode=returncode,
+        stdout=help_text,
+        stderr='',
+    ))
+    monkeypatch.setattr(_resume.subprocess, 'run', probe)
+
+    assert resume_main(['Feature', '--dry-run']) == 0
+    target: dict = json.loads(capsys.readouterr().out)
+    argv: list[str] = ['codex', 'resume']
+    if expected:
+        argv.append('--no-daemon')
+    argv.append('dialog-id')
+    assert target['argv'] == argv
+    probe.assert_called_once_with(
+        ['codex', 'resume', '--help'],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
 
 
 def test_duplicate_name_requires_explicit_selection(
