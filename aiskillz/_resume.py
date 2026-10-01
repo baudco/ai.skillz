@@ -3,7 +3,7 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Resolve a dialog name to one harness command and working directory.
+Resolve a dialog name or ID to a harness command and directory.
 
 `cli.resume_main()` selects a dialog through `dialogs.list_dialogs()`
 and calls `resume_target()` before launching a child process. The
@@ -64,12 +64,13 @@ def resume_target(
     '''
     Return one dialog's harness argv and launch directory.
 
-    Match the exact saved name in the current directory by default;
-    `all_repos=True` widens the saved-cwd search. Also accept a
-    unique 36-character name shortened by `ai.dlogs`. Never pick a
-    duplicate name by recency; `dialog_id`, `harness`, and `repo`
-    let the caller narrow it. Prefer one registered WKT relation
-    from `WktLookup.roots()`. An explicit cwd overrides that lookup.
+    Interpret `name` as an exact ID first, then as a saved name.
+    Search the current directory by default; `all_repos=True`
+    widens the saved-cwd search for either selector. Also accept a
+    unique 36-character name shortened by `ai.dlogs`. Never pick
+    duplicate IDs or names by recency; `dialog_id`, `harness`, and
+    `repo` let the caller narrow them. Prefer a registered WKT
+    relation from `WktLookup.roots()`. An explicit cwd overrides it.
     No process starts until `cli.resume_main()` consumes the result.
 
     '''
@@ -78,7 +79,7 @@ def resume_target(
         or
         not name
     ):
-        raise ValueError('NAME must be a nonempty string')
+        raise ValueError('NAME_OR_ID must be a nonempty string')
     records: list[dict] = dialogs.list_dialogs(
         path=None if all_repos else repo,
         harness=harness,
@@ -86,12 +87,13 @@ def resume_target(
     record: dict
     matches: list[dict] = [
         record for record in records
-        if (
-            record['name'] == name
-            and
-            (dialog_id is None or record['id'] == dialog_id)
-        )
+        if record['id'] == name
     ]
+    if not matches:
+        matches = [
+            record for record in records
+            if record['name'] == name
+        ]
     if (
         not matches
         and
@@ -101,15 +103,16 @@ def resume_target(
     ):
         matches = [
             record for record in records
-            if (
-                record['name'].startswith(name[:35])
-                and
-                (dialog_id is None or record['id'] == dialog_id)
-            )
+            if record['name'].startswith(name[:35])
+        ]
+    if dialog_id is not None:
+        matches = [
+            record for record in matches
+            if record['id'] == dialog_id
         ]
     if not matches:
         raise ValueError(
-            'No dialog named ' + repr(name) +
+            'No dialog matching ' + repr(name) +
             ' in the selected scope'
         )
     if len(matches) > 1:
@@ -119,7 +122,7 @@ def resume_target(
             for row in matches
         )
         raise ValueError(
-            'Dialog name is ambiguous; use --id, -b, or --repo: '
+            'Dialog selector is ambiguous; use --id, -b, or --repo: '
             + choices
         )
     selected: dict = matches[0]

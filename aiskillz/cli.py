@@ -345,7 +345,7 @@ def main(argv: list[str]|None = None) -> int:
 
 def resume_main(argv: list[str]|None = None) -> int:
     '''
-    Resolve a name, then run its harness with an exact dialog ID.
+    Resolve a name or ID, then run the selected dialog's harness.
 
     `ai.resume`, the Xontrib alias and the source alias all reach
     this entrypoint. `resume_target()` performs selection and WKT
@@ -355,9 +355,9 @@ def resume_main(argv: list[str]|None = None) -> int:
     '''
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         prog='ai.resume',
-        description='Resume a named dialog in its harness.',
+        description='Resume a dialog by name or ID in its harness.',
     )
-    parser.add_argument('name', metavar='NAME')
+    parser.add_argument('name', metavar='NAME_OR_ID')
     parser.add_argument(
         '--repo', default='.',
         help='saved cwd to search (default: current directory)',
@@ -367,7 +367,7 @@ def resume_main(argv: list[str]|None = None) -> int:
         choices=[
             'codex', 'cx', 'opencode', 'oc', 'claude', 'cld',
         ],
-        help='narrow duplicate names to one harness',
+        help='narrow duplicate names or IDs to one harness',
     )
     parser.add_argument('-a', '--all-repos', action='store_true')
     parser.add_argument('--id', help='narrow duplicate names by ID')

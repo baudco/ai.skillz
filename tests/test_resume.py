@@ -3,7 +3,7 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Check name-based resume selection without starting real harnesses.
+Check name and ID resume selection without starting real harnesses.
 
 '''
 
@@ -19,6 +19,9 @@ from aiskillz.cli import resume_main
 
 
 @pytest.mark.parametrize(
+    'selector', ['Build feature', 'dialog-id'],
+)
+@pytest.mark.parametrize(
     ('harness', 'argv'),
     [
         ('codex', ['codex', 'resume', 'dialog-id']),
@@ -31,13 +34,14 @@ def test_resume_name_routes_to_harness(
     monkeypatch: pytest.MonkeyPatch,
     harness: str,
     argv: list[str],
+    selector: str,
 ) -> None:
     '''
-    A name is meaningful only with its harness dialog ID.
+    Names and IDs must resolve to the same harness command.
 
-    Feed one exact saved name from a temporary directory. Assert
-    that each installed CLI form receives the ID, not the name,
-    while the selected directory remains the process cwd.
+    Feed one dialog from a temporary directory and select it by
+    either name or ID. Assert each CLI receives its ID and that
+    both selectors preserve cwd filtering and all-repo opt-in.
 
     '''
     record: dict = {
@@ -53,16 +57,72 @@ def test_resume_name_routes_to_harness(
         _resume, '_codex_supports_no_daemon', probe,
     )
     target: dict = _resume.resume_target(
-        'Build feature', repo=str(tmp_path),
+        selector, repo=str(tmp_path),
     )
     assert target['argv'] == argv
     assert target['cwd'] == str(tmp_path)
     assert listing.call_args.kwargs['path'] == str(tmp_path)
-    _resume.resume_target('Build feature')
+    _resume.resume_target(selector)
     assert listing.call_args.kwargs['path'] == '.'
-    _resume.resume_target('Build feature', all_repos=True)
+    _resume.resume_target(selector, all_repos=True)
     assert listing.call_args.kwargs['path'] is None
     assert probe.call_count == (3 if harness == 'codex' else 0)
+
+
+def test_resume_id_precedes_name_and_refuses_id_collisions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    '''
+    Treating every selector as a name could launch the wrong dialog.
+
+    Give one dialog an ID that another uses as its name. The CLI
+    dry run must select the exact ID. Then add a cross-harness ID
+    collision: refuse it until a harness filter narrows the result.
+    A conflicting --id must fail instead of falling back to a name.
+
+    '''
+    rows: list[dict] = [
+        {
+            'name': 'Actual dialog', 'id': 'shared-id',
+            'harness': 'opencode', 'cwd': str(tmp_path),
+        },
+        {
+            'name': 'shared-id', 'id': 'other-id',
+            'harness': 'claude', 'cwd': str(tmp_path),
+        },
+    ]
+
+    def listing(**kwargs) -> list[dict]:
+        '''
+        Supply the requested harness scope to resume selection.
+
+        '''
+        return [
+            row for row in rows
+            if kwargs['harness'] in (None, row['harness'])
+        ]
+
+    monkeypatch.setattr(_resume.dialogs, 'list_dialogs', listing)
+    monkeypatch.setattr(
+        _resume.WktLookup, 'roots', lambda *args: set(),
+    )
+    assert resume_main(['shared-id', '--dry-run']) == 0
+    target: dict = json.loads(capsys.readouterr().out)
+    assert target['name'] == 'Actual dialog'
+    assert target['argv'] == ['opencode', '--session', 'shared-id']
+    with pytest.raises(ValueError, match='No dialog matching'):
+        _resume.resume_target('shared-id', dialog_id='other-id')
+
+    rows.append({
+        'name': 'Collision', 'id': 'shared-id',
+        'harness': 'claude', 'cwd': str(tmp_path),
+    })
+    with pytest.raises(ValueError, match='ambiguous'):
+        _resume.resume_target('shared-id')
+    target = _resume.resume_target('shared-id', harness='claude')
+    assert target['argv'] == ['claude', '--resume', 'shared-id']
 
 
 @pytest.mark.parametrize(
