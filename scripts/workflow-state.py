@@ -400,10 +400,17 @@ def select(root: Path, backend: str) -> None:
     '''
     path: Path = safe(root, MARKER)
     temporary: Path = path.with_name(path.name + '.new')
-    with temporary.open('x') as stream:
-        json.dump({'version': 1, 'backend': backend}, stream)
-        stream.write('\n')
-    os.replace(temporary, path)
+    created: bool = False
+    try:
+        with temporary.open('x') as stream:
+            created = True
+            json.dump({'version': 1, 'backend': backend}, stream)
+            stream.write('\n')
+        os.replace(temporary, path)
+        created = False
+    finally:
+        if created:
+            temporary.unlink(missing_ok=True)
 
 
 def apply(root: Path, expected: str) -> dict[str, Any]:
@@ -433,8 +440,8 @@ def apply(root: Path, expected: str) -> dict[str, Any]:
         ignore.read_bytes() if ignore.exists() else None
     )
     created: list[Path] = []
-    setup(root)
     try:
+        setup(root)
         operation: dict[str, Any]
         for operation in plan['operations']:
             source: Path = safe(root, operation['source'])

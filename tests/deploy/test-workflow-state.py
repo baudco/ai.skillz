@@ -342,6 +342,128 @@ class MigrationTests(unittest.TestCase):
             STATE.inspect(self.root)['blockers'],
         )
 
+    def test_selection_write_and_replace_failures_are_retryable(
+        self,
+    ) -> None:
+        '''
+        Selection failures left an owned `.new` behind, blocking
+        every retry at exclusive creation. Inject serialization and
+        rename errors after creation, requiring cleanup and no
+        marker. A subsequent unmocked selection must succeed
+        normally.
+
+        '''
+        (self.root / '.ai').mkdir()
+        temporary: Path = self.root / (STATE.MARKER + '.new')
+        for owner, name in (
+            (STATE.json, 'dump'), (STATE.os, 'replace'),
+        ):
+            with self.subTest(operation=name):
+                with patch.object(owner, name, side_effect=OSError):
+                    with self.assertRaises(OSError):
+                        STATE.select(self.root, 'neutral')
+                self.assertFalse(temporary.exists())
+                self.assertFalse((self.root / STATE.MARKER).exists())
+        STATE.select(self.root, 'neutral')
+        self.assertEqual(
+            STATE.inspect(self.root)['backend'], 'neutral',
+        )
+        self.assertFalse(temporary.exists())
+
+    def test_selection_preserves_preexisting_temporary(self) -> None:
+        '''
+        Cleanup must not delete a temporary created by another run.
+        Prepopulate `.new` with sentinel bytes, then require
+        exclusive creation to fail with both the sentinel and absent
+        selection unchanged. This controls ownership without timing.
+
+        '''
+        temporary: Path = self.write(
+            STATE.MARKER + '.new', 'another invocation',
+        )
+        with self.assertRaises(FileExistsError):
+            STATE.select(self.root, 'neutral')
+        self.assertEqual(temporary.read_text(), 'another invocation')
+        self.assertFalse((self.root / STATE.MARKER).exists())
+
+    def test_setup_failure_restores_existing_or_absent_ignore(
+        self,
+    ) -> None:
+        '''
+        Setup writes ignores before creating the selection parent,
+        but used to run outside apply's rollback. Fail that mkdir for
+        existing and absent ignores; original bytes or absence must
+        be restored, with no copied state or backend publication.
+
+        '''
+        relative: str = STATE.PATHS['commit_style'][0]
+        self.write(relative, 'style')
+        original = Path.mkdir
+
+        def fail(path: Path, *args, **kwargs) -> None:
+            '''
+            Fail only after setup's ignore mutation.
+
+            '''
+            if path == self.root / '.ai':
+                raise OSError('selection parent creation failed')
+            original(path, *args, **kwargs)
+
+        ignore: Path = self.root / '.gitignore'
+        for contents in ('# user-owned\n', None):
+            with self.subTest(contents=contents):
+                ignore.unlink(missing_ok=True)
+                if contents is not None:
+                    self.write('.gitignore', contents)
+                plan: dict = STATE.preview(self.root)
+                with patch.object(
+                    Path, 'mkdir', autospec=True, side_effect=fail,
+                ):
+                    with self.assertRaises(OSError):
+                        STATE.apply(self.root, plan['sha256'])
+                if contents is None:
+                    self.assertFalse(ignore.exists())
+                else:
+                    self.assertEqual(ignore.read_text(), contents)
+                self.assertFalse((self.root / STATE.MARKER).exists())
+                target: Path = (
+                    self.root / STATE.destination(relative)
+                )
+                self.assertFalse(target.exists())
+
+    def test_partial_ignore_write_restores_original_bytes(
+        self,
+    ) -> None:
+        '''
+        An ordinary write failure can occur after truncating ignores.
+        Replace only setup's write with a partial write and
+        exception; apply must restore the saved bytes despite setup
+        not finishing.
+
+        '''
+        self.write(STATE.PATHS['commit_style'][0], 'style')
+        ignore: Path = self.write('.gitignore', '# user-owned\n')
+        plan: dict = STATE.preview(self.root)
+        original = Path.write_text
+
+        def partial(path: Path, text: str, *args, **kwargs) -> int:
+            '''
+            Simulate a failed setup write after filesystem mutation.
+
+            '''
+            if path == ignore:
+                path.write_bytes(b'partial')
+                raise OSError('partial ignore write')
+            return original(path, text, *args, **kwargs)
+
+        with patch.object(
+            Path, 'write_text', autospec=True, side_effect=partial,
+        ):
+            with self.assertRaises(OSError):
+                STATE.apply(self.root, plan['sha256'])
+        self.assertEqual(ignore.read_text(), '# user-owned\n')
+        self.assertFalse((self.root / STATE.MARKER).exists())
+
     def test_symlink_layout_refused(self) -> None:
         '''
         Reject a neutral root that could escape repository isolation.
