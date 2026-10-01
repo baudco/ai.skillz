@@ -156,3 +156,15 @@ application requires a quiet worktree.
 Run a fresh preview before every actual migration. Keep inventories
 of local repositories and their usage in ignored local state, such as
 `.ai/state/migrations/`, rather than in public documentation.
+
+## Follow-up: retire legacy migration
+
+TODO: Once the main collaborator confirms their deployment is updated
+and working, reassess the need for legacy workflow compatibility.
+Remove the legacy backend selection, migration preview/apply/recovery
+machinery, migration-only tests, and obsolete guidance when that
+remaining consumer no longer needs them. Keep neutral runtime-path
+resolution and necessary fresh-repository preparation. Preserve old
+archives as evidence; retiring compatibility is not permission to
+delete historical data. The collaborator's confirmation is the gate,
+not completion of this implementation or a passing test suite.
