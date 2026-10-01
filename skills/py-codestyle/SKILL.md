@@ -334,6 +334,28 @@ where instructions conflict. Never import another project's file.
   )
   ```
 
+## Dictionary literals
+
+- In multiline dictionary literals, put each key/value pair or
+  `**mapping` expansion on its own physical line, with a trailing
+  comma. Never pack multiple entries onto one line. This keeps
+  individual field changes easy to scan and diffs minimal.
+
+  ```python
+  # GOOD - one entry per line, including unpacked mappings
+  state: dict = {
+      'version': 1,
+      'active': None,
+      **defaults,
+  }
+
+  # BAD - multiple entries packed into a multiline literal
+  state: dict = {
+      'version': 1, 'active': None,
+      **defaults, 'steps': [],
+  }
+  ```
+
 ## Tuple unpacking
 
 - When unpacking tuples with N > 2 elements, always
