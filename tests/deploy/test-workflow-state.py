@@ -5,6 +5,7 @@ Exercise migration against disposable repositories and worktrees.
 '''
 
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -207,6 +208,139 @@ class MigrationTests(unittest.TestCase):
                             path.rmdir()
                         else:
                             path.unlink()
+
+    def test_chmod_invalidates_approved_preview(self) -> None:
+        '''
+        Preview used only byte hashes although apply copied modes.
+        Change an archived helper's executable bit after preview;
+        its new digest must differ and the old pin must be refused
+        without creating the destination or changing the real index.
+
+        '''
+        relative: str = STATE.PATHS['commit_messages'][0] + '/run.sh'
+        source: Path = self.write(relative, 'helper')
+        source.chmod(0o600)
+        plan: dict = STATE.preview(self.root)
+        before: bytes = self.git('ls-files', '--stage')
+        source.chmod(0o750)
+        self.assertNotEqual(
+            plan['sha256'], STATE.preview(self.root)['sha256'],
+        )
+        with self.assertRaisesRegex(ValueError, 'Preview changed'):
+            STATE.apply(self.root, plan['sha256'])
+        self.assertEqual(before, self.git('ls-files', '--stage'))
+        self.assertFalse(
+            (self.root / STATE.destination(relative)).exists()
+        )
+
+    def test_identical_destination_requires_matching_mode(
+        self,
+    ) -> None:
+        '''
+        Equal destination bytes previously bypassed mode validation.
+        Offer the same archived helper with an executable source but
+        a nonexecutable target. Preview must block, and application
+        must leave both files unchanged rather than report migration.
+
+        '''
+        relative: str = STATE.PATHS['commit_messages'][0] + '/run.sh'
+        source: Path = self.write(relative, 'helper')
+        target: Path = self.write(
+            STATE.destination(relative), 'helper',
+        )
+        source.chmod(0o750)
+        target.chmod(0o600)
+        plan: dict = STATE.preview(self.root)
+        self.assertIn(
+            'Destination conflict: ' + STATE.destination(relative),
+            plan['blockers'],
+        )
+        with self.assertRaisesRegex(
+            ValueError, 'Destination conflict',
+        ):
+            STATE.apply(self.root, plan['sha256'])
+        self.assertEqual(source.stat().st_mode & 0o777, 0o750)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+    def test_mode_change_during_apply_rolls_back(self) -> None:
+        '''
+        Recomputing preview alone cannot catch changes after setup.
+        Change the source mode at that deterministic boundary without
+        changing bytes. Apply must reject the drift, restore ignores,
+        and publish neither copied state nor backend selection.
+
+        '''
+        relative: str = STATE.PATHS['commit_messages'][0] + '/run.sh'
+        source: Path = self.write(relative, 'helper')
+        source.chmod(0o600)
+        ignore: Path = self.write('.gitignore', '# user-owned\n')
+        plan: dict = STATE.preview(self.root)
+        original = STATE.setup
+
+        def changed(root: Path, write: bool = True) -> None:
+            '''
+            Order source-mode drift after the approved preview.
+
+            '''
+            original(root, write=write)
+            if write:
+                source.chmod(0o750)
+
+        with patch.object(STATE, 'setup', side_effect=changed):
+            with self.assertRaisesRegex(
+                ValueError, 'Source changed',
+            ):
+                STATE.apply(self.root, plan['sha256'])
+        self.assertEqual(ignore.read_text(), '# user-owned\n')
+        self.assertFalse(
+            (self.root / STATE.destination(relative)).exists()
+        )
+        self.assertFalse((self.root / STATE.MARKER).exists())
+        self.assertFalse((self.root / STATE.RECEIPT).exists())
+
+    def test_recovery_detects_legacy_mode_drift(self) -> None:
+        '''
+        A successful receipt formerly recorded only source bytes.
+        Migrate a helper, then change only its legacy executable bit.
+        Resolution must expose the late write while the neutral copy
+        retains the mode approved in the migration preview.
+
+        '''
+        relative: str = STATE.PATHS['commit_messages'][0] + '/run.sh'
+        source: Path = self.write(relative, 'helper')
+        source.chmod(0o600)
+        self.migrate()
+        source.chmod(0o750)
+        self.assertIn(
+            'Legacy modes changed after migration',
+            STATE.inspect(self.root)['blockers'],
+        )
+        target: Path = self.root / STATE.destination(relative)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+    def test_byte_only_recovery_receipt_remains_readable(
+        self,
+    ) -> None:
+        '''
+        Existing consumers have receipts from byte-only previews.
+        Remove the new mode field to model one of those receipts;
+        unchanged sources must still resolve, while a subsequent
+        source-byte change remains blocked by the original inventory.
+
+        '''
+        relative: str = STATE.PATHS['commit_style'][0]
+        self.write(relative, 'style')
+        self.migrate()
+        receipt: Path = self.root / STATE.RECEIPT
+        saved: dict = json.loads(receipt.read_text())
+        saved.pop('legacy_modes', None)
+        receipt.write_text(json.dumps(saved))
+        self.assertEqual(STATE.inspect(self.root)['blockers'], [])
+        self.write(relative, 'changed')
+        self.assertIn(
+            'Legacy files changed after migration',
+            STATE.inspect(self.root)['blockers'],
+        )
 
     def test_symlink_layout_refused(self) -> None:
         '''

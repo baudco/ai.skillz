@@ -146,6 +146,17 @@ def files(
     return result
 
 
+def modes(root: Path, inventory: dict[str, str]) -> dict[str, int]:
+    '''
+    Record normalized permission modes for inventoried files.
+
+    '''
+    return {
+        relative: safe(root, relative).stat().st_mode & 0o777
+        for relative in inventory
+    }
+
+
 def inspect(root: Path) -> dict[str, Any]:
     '''
     Resolve one backend and report conflicting payloads.
@@ -177,6 +188,7 @@ def inspect(root: Path) -> dict[str, Any]:
         legacy.update(files(
             root, str(extra.relative_to(root)), directory=False,
         ))
+    legacy_modes: dict[str, int] = modes(root, legacy)
     backend: str = selected or ('legacy' if legacy else 'neutral')
     blockers: list[str] = []
     if selected is None and legacy and neutral:
@@ -211,6 +223,13 @@ def inspect(root: Path) -> dict[str, Any]:
                 blockers.append(
                     'Legacy files changed after migration'
                 )
+            if (
+                'legacy_modes' in saved
+                and saved['legacy_modes'] != legacy_modes
+            ):
+                blockers.append(
+                    'Legacy modes changed after migration'
+                )
     if backend == 'legacy':
         key_neutral: str
         for key, pair in PATHS.items():
@@ -236,6 +255,7 @@ def inspect(root: Path) -> dict[str, Any]:
         'selection': 'configured' if selected else 'inferred',
         'paths': resolved,
         'legacy': legacy,
+        'legacy_modes': legacy_modes,
         'neutral': neutral,
         'blockers': sorted(set(blockers)),
     }
@@ -266,10 +286,11 @@ def preview(root: Path) -> dict[str, Any]:
         item
         for item in state['blockers']
         if item.startswith(
-            ('Additional provider', 'Legacy files changed')
+            ('Additional provider', 'Legacy files changed',
+             'Legacy modes changed')
         )
     ]
-    operations: list[dict[str, str]] = []
+    operations: list[dict[str, Any]] = []
     source: str
     target: str
     seen: set[str] = set()
@@ -290,6 +311,7 @@ def preview(root: Path) -> dict[str, Any]:
         seen.add(target)
         source_path: Path = safe(root, source)
         target_path: Path = safe(root, target)
+        source_mode: int = state['legacy_modes'][source]
         payload: bytes = source_path.read_bytes()
         rewritten: bool = source == PATHS['review_context'][0]
         if rewritten:
@@ -304,6 +326,7 @@ def preview(root: Path) -> dict[str, Any]:
             if (
                 not target_path.is_file()
                 or target_path.read_bytes() != payload
+                or target_path.stat().st_mode & 0o777 != source_mode
             ):
                 blockers.append(f'Destination conflict: {target}')
         operations.append(
@@ -311,6 +334,7 @@ def preview(root: Path) -> dict[str, Any]:
                 'source': source,
                 'target': target,
                 'source_sha256': state['legacy'][source],
+                'source_mode': source_mode,
                 'target_sha256': digest(payload),
                 'action': 'rewrite-review-paths'
                 if rewritten
@@ -321,6 +345,7 @@ def preview(root: Path) -> dict[str, Any]:
         'repo': str(root),
         'backend': state['backend'],
         'legacy': state['legacy'],
+        'legacy_modes': state['legacy_modes'],
         'operations': operations,
         'blockers': sorted(set(blockers)),
     }
@@ -410,12 +435,16 @@ def apply(root: Path, expected: str) -> dict[str, Any]:
     created: list[Path] = []
     setup(root)
     try:
-        operation: dict[str, str]
+        operation: dict[str, Any]
         for operation in plan['operations']:
             source: Path = safe(root, operation['source'])
             target: Path = safe(root, operation['target'])
             payload: bytes = source.read_bytes()
-            if digest(payload) != operation['source_sha256']:
+            source_mode: int = operation['source_mode']
+            if (
+                digest(payload) != operation['source_sha256']
+                or source.stat().st_mode & 0o777 != source_mode
+            ):
                 raise ValueError('Source changed during migration')
             if operation['action'] == 'rewrite-review-paths':
                 pair: tuple[str, str]
@@ -426,7 +455,10 @@ def apply(root: Path, expected: str) -> dict[str, Any]:
                         pair[0].encode(), pair[1].encode()
                     )
             if target.exists():
-                if target.read_bytes() != payload:
+                if (
+                    target.read_bytes() != payload
+                    or target.stat().st_mode & 0o777 != source_mode
+                ):
                     raise ValueError(
                         'Destination changed during migration'
                     )
@@ -436,8 +468,12 @@ def apply(root: Path, expected: str) -> dict[str, Any]:
                 created.append(target)
                 os.chmod(target, 0o600)
                 stream.write(payload)
-            target.chmod(source.stat().st_mode & 0o777)
-        if inspect(root)['legacy'] != plan['legacy']:
+            target.chmod(source_mode)
+        current: dict[str, Any] = inspect(root)
+        if (
+            current['legacy'] != plan['legacy']
+            or current['legacy_modes'] != plan['legacy_modes']
+        ):
             raise ValueError('Legacy data changed during migration')
         receipt: Path = safe(root, RECEIPT)
         receipt.parent.mkdir(parents=True, exist_ok=True)

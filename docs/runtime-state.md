@@ -66,7 +66,8 @@ Legacy sources are the corresponding `.claude/skills/` locations,
 `.claude/git_commit_msg_LATEST.md`, `.claude/review_context.md`,
 `.claude/review_regression.md`, and `.claude/review_replies/`.
 Other root `.claude/git_commit_msg_*.md` files enter the commit archive.
-The resolver reports exact legacy and neutral inventories with hashes.
+The resolver reports exact legacy and neutral inventories with hashes
+and the legacy files' normalized permission modes (`mode & 0o777`).
 Managed roots must match their roles: message/reply archives are
 directories; guidance, configuration, and latest/handoff paths are
 files. Wrong-kind roots are refused even when empty.
@@ -108,7 +109,8 @@ bash /path/to/ai.skillz/scripts/deploy.sh runtime migrate . --apply <preview-sha
 
 The second command is a read-only preview. Review its `operations` and
 `blockers`, then supply its exact `sha256` to apply. Changed source
-content invalidates the preview. Divergent destinations, symlinks,
+content or permission modes invalidate the preview. Divergent
+destination bytes or modes, symlinks,
 unsupported file types, ignored project guidance, and extra provider
 payloads require manual reconciliation. Additional `.opencode/` or
 `.codex/` local payloads are reported, never selected silently.
@@ -122,6 +124,9 @@ The backend changes only after successful copies and a recovery record
 at `.ai/state/migrations/workflow-state.json`. Repeating a successful
 migration is harmless. Later changes to legacy originals stop workflow
 resolution, exposing writers still using the old contract.
+New recovery records include legacy mode inventories and detect later
+permission changes too. Older byte-only records remain readable, but
+cannot establish historical mode provenance or detect mode-only drift.
 
 Review and commit the neutral guidance, selection, and ignore changes
 separately from ignored runtime data. Tracked legacy guidance is left
