@@ -67,6 +67,9 @@ Legacy sources are the corresponding `.claude/skills/` locations,
 `.claude/review_regression.md`, and `.claude/review_replies/`.
 Other root `.claude/git_commit_msg_*.md` files enter the commit archive.
 The resolver reports exact legacy and neutral inventories with hashes.
+Managed roots must match their roles: message/reply archives are
+directories; guidance, configuration, and latest/handoff paths are
+files. Wrong-kind roots are refused even when empty.
 
 Already neutral `.ai/code-review/reports/`, `.ai/taken/exports/`,
 Git worktree coordination, and `wkts/` retain their existing contracts.

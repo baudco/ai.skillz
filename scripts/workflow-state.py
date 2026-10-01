@@ -67,6 +67,9 @@ PATHS: dict[str, tuple[str, str]] = {
     ),
 }
 GUIDANCE: set[str] = {'commit_style', 'test_harness'}
+DIRECTORIES: set[str] = {
+    'commit_messages', 'pr_messages', 'review_replies',
+}
 MARKER: str = '.ai/workflow-state.json'
 RECEIPT: str = '.ai/state/migrations/workflow-state.json'
 IGNORE: str = '''# BEGIN ai.skillz: workflow-state
@@ -114,7 +117,12 @@ def safe(root: Path, relative: str) -> Path:
     return path
 
 
-def files(root: Path, relative: str) -> dict[str, str]:
+def files(
+    root: Path,
+    relative: str,
+    *,
+    directory: bool | None = None,
+) -> dict[str, str]:
     '''
     Inventory regular files beneath a managed path.
 
@@ -122,6 +130,11 @@ def files(root: Path, relative: str) -> dict[str, str]:
     path: Path = safe(root, relative)
     if not path.exists():
         return {}
+    if directory is not None and path.is_dir() != directory:
+        kind: str = 'directory' if directory else 'file'
+        raise ValueError(
+            f'Managed path must be a {kind}: {relative}'
+        )
     if path.is_file():
         return {relative: digest(path.read_bytes())}
     if not path.is_dir():
@@ -154,13 +167,16 @@ def inspect(root: Path) -> dict[str, Any]:
     key: str
     pair: tuple[str, str]
     for key, pair in PATHS.items():
-        legacy.update(files(root, pair[0]))
-        neutral.update(files(root, pair[1]))
+        directory: bool = key in DIRECTORIES
+        legacy.update(files(root, pair[0], directory=directory))
+        neutral.update(files(root, pair[1], directory=directory))
     extra: Path
     for extra in sorted(
         (root / '.claude').glob('git_commit_msg_*.md')
     ):
-        legacy.update(files(root, str(extra.relative_to(root))))
+        legacy.update(files(
+            root, str(extra.relative_to(root)), directory=False,
+        ))
     backend: str = selected or ('legacy' if legacy else 'neutral')
     blockers: list[str] = []
     if selected is None and legacy and neutral:
@@ -210,7 +226,7 @@ def inspect(root: Path) -> dict[str, Any]:
             alternate: str = pair[0].replace(
                 '.claude/', provider + '/', 1
             )
-            if files(root, alternate):
+            if files(root, alternate, directory=key in DIRECTORIES):
                 blockers.append(
                     f'Additional provider data: {alternate}'
                 )

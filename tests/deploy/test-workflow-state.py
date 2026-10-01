@@ -138,13 +138,15 @@ class MigrationTests(unittest.TestCase):
 
     def test_archived_helpers_preserve_bytes_and_modes(self) -> None:
         '''
-        Preserve opaque helper archives instead of blocking migration.
+        Preserve opaque helper archives instead of blocking
+        migration.
 
         Migration previously classified every archived patch or
         executable helper as pending based only on its extension. The
         fixture writes each supported helper type with an executable
-        mode. A successful migration proves that their exact bytes and
-        modes reach neutral state while each legacy source remains.
+        mode. A successful migration proves that their exact bytes
+        and modes reach neutral state while each legacy source
+        remains.
 
         '''
         sources: list[str] = []
@@ -164,9 +166,47 @@ class MigrationTests(unittest.TestCase):
         for source in sources:
             legacy: Path = self.root / source
             neutral: Path = self.root / STATE.destination(source)
-            self.assertEqual(neutral.read_bytes(), legacy.read_bytes())
+            self.assertEqual(
+                neutral.read_bytes(), legacy.read_bytes(),
+            )
             self.assertEqual(neutral.stat().st_mode & 0o777, 0o750)
             self.assertTrue(legacy.exists())
+
+    def test_managed_roots_reject_wrong_kinds(self) -> None:
+        '''
+        `files()` accepted either kind for every `PATHS` role,
+        migrating guidance directories and archive files into
+        unusable destinations. Put the wrong kind at each managed
+        root in both layouts, including empty directories. Inspection
+        and preview must reject before creating workflow state.
+
+        '''
+        directories: set[str] = {
+            'commit_messages', 'pr_messages', 'review_replies',
+        }
+        for key, pair in STATE.PATHS.items():
+            for relative in pair:
+                with self.subTest(key=key, relative=relative):
+                    path: Path = self.root / relative
+                    if key in directories:
+                        self.write(relative, 'not a directory')
+                    else:
+                        path.mkdir(parents=True)
+                    try:
+                        with self.assertRaisesRegex(
+                            ValueError, 'Managed path must be',
+                        ):
+                            STATE.inspect(self.root)
+                        with self.assertRaises(ValueError):
+                            STATE.preview(self.root)
+                        self.assertFalse(
+                            (self.root / STATE.MARKER).exists()
+                        )
+                    finally:
+                        if path.is_dir():
+                            path.rmdir()
+                        else:
+                            path.unlink()
 
     def test_symlink_layout_refused(self) -> None:
         '''
