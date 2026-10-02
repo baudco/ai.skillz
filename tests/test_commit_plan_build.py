@@ -568,6 +568,84 @@ class PlanBuildTests(unittest.TestCase):
         self.finalize(prepared, prior_pass=[entry])
         self.assert_cleaned()
 
+    def test_finalize_retains_preflight_failure_context(self):
+        '''
+        A missing child was reduced to generic preflight failure,
+        hiding the actionable check/tool identity. Declare a missing
+        child and a low-entropy environment value that would redact
+        numeric IDs. Finalize must preserve public target context and
+        tool detail, while cleaning its unpublished package/index.
+
+        '''
+        self.request['checks'] = {'pending': {
+            'argv': [sys.executable],
+            'required_executables': ['/missing/prerequisite'],
+            'env': {'FLAG': '1'},
+            'resolution_argv': [sys.executable],
+        }}
+        self.request['boundaries'][0]['checks'] = ['pending']
+        prepared = self.prepare()
+        initial = BUILD.snapshot(self.root)[0]
+        with self.assertRaises(BUILD.EXEC.PlanError) as caught:
+            self.finalize(prepared)
+        self.assertIn('boundary 1, check 1', str(caught.exception))
+        self.assertIn('/missing/prerequisite', str(caught.exception))
+        self.assertFalse((self.output / 'final').exists())
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.assert_cleaned()
+
+    def test_preflight_diagnostics_escape_controls_and_secrets(self):
+        '''
+        Forwarded child stderr must not leak overlays/inherited
+        secrets or forge terminal lines. Replace only the preflight
+        child with controlled hostile stderr, leaving Git plumbing
+        real. Assert redaction and escaped controls, no successful
+        receipt output, and cleanup preserving the prepared input.
+
+        '''
+        secret = 'sensitive-check-value'
+        inherited = 'sensitive-inherited-value'
+        self.request['checks'] = {'pending': {
+            'argv': [sys.executable], 'env': {'TOKEN': secret},
+            'resolution_argv': [sys.executable],
+        }}
+        self.request['boundaries'][0]['checks'] = ['pending']
+        prepared = self.prepare()
+        original = subprocess.run
+
+        def hostile(argv, **kwargs):
+            '''
+            Inject data only at the subprocess diagnostic boundary.
+
+            '''
+            if argv[0] != 'git' and argv[-1] == '--preflight':
+                text = f'{secret}\n\x1b[2J{inherited}\r\n'
+                payload = text.encode()
+                return subprocess.CompletedProcess(
+                    argv, 2, b'', payload,
+                )
+            return original(argv, **kwargs)
+
+        output = io.StringIO()
+        initial = BUILD.snapshot(self.root)[0]
+        with (
+            patch.dict(os.environ, {'API_TOKEN': inherited}),
+            patch('subprocess.run', side_effect=hostile),
+            contextlib.redirect_stdout(output),
+            self.assertRaises(BUILD.EXEC.PlanError) as caught,
+        ):
+            self.finalize(prepared)
+        detail = str(caught.exception)
+        self.assertNotIn(secret, detail)
+        self.assertNotIn(inherited, detail)
+        self.assertNotIn('\x1b', detail)
+        self.assertNotIn('\r', detail)
+        self.assertIn('<redacted>', detail)
+        self.assertEqual(output.getvalue(), '')
+        self.assertFalse((self.output / 'final').exists())
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.assert_cleaned()
+
     def test_overlapping_supplied_patch(self):
         '''
         Overlapping edits need explicit parent-relative patches.

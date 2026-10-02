@@ -536,7 +536,28 @@ def finalize(
             cwd=root, env=safe_environment(), capture_output=True,
         )
         if preflight.returncode:
-            raise EXEC.PlanError('executor preflight failed')
+            detail = os.fsdecode(preflight.stderr)
+            lines = ['executor preflight failed']
+            secrets = set(EXEC.secret_values(os.environ))
+            for boundary in boundaries:
+                ordinal = boundary['ordinal']
+                for index, check in enumerate(
+                    boundary['project_checks'], 1,
+                ):
+                    secrets.update(EXEC.secret_values(check['env']))
+                    marker = (
+                        f'[boundary {ordinal} Micro CI '
+                        f'check {index}]'
+                    )
+                    if marker in detail:
+                        lines[0] += (
+                            f' (boundary {ordinal}, check {index})'
+                        )
+            EXEC.append_output(
+                lines, 'stderr', detail,
+                tuple(sorted(secrets, key=len, reverse=True)),
+            )
+            raise EXEC.PlanError('; '.join(lines))
         if render is not None:
             # Reuse spec validated above and by child preflight.
             # Runtime-only metadata belongs to a separate copy;

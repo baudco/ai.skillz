@@ -125,6 +125,8 @@ After prepare computes trees, `finalize --prior-pass <passes.json>`
 can attach attested PASS records to existing one-based boundary/check
 slots without rebuilding or changing prepared command definitions.
 The entry format and trust limits are documented in `SKILL.md`.
+Finalize failures retain sanitized executor preflight diagnostics,
+including boundary/check context for missing declared prerequisites.
 
 `--overview` generates shared Markdown context and numbered boundary
 subjects mapped to `--execute N`. Transfer it verbatim before the
