@@ -156,8 +156,8 @@ Store errors propagate rather than masquerading as a missing ID.
 
 OpenCode IDs are not UUIDs.
 
-The CLI orders columns as name, WKT, CWD, then harness. Pass
-`--did` to add the full dialog ID after the name when copying an ID
+The CLI orders columns as harness, name, WKT, then CWD. Pass
+`--did` to add the full dialog ID after WKT when copying an ID
 or resolving duplicate names. `ai.resume NAME` can use the name
 directly; JSON and Python records always include the ID.
 It shows `sort-by: "last-update-time" (newest first)` above the
