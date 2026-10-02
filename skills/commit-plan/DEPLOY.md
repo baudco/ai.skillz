@@ -121,6 +121,11 @@ evidence preserves v1 RUN behavior. Malformed evidence fails closed.
 Reused checks need no executable preflight, probe or temporary clone.
 This is local plan evidence, not a new CI configuration or cache system.
 
+After prepare computes trees, `finalize --prior-pass <passes.json>`
+can attach attested PASS records to existing one-based boundary/check
+slots without rebuilding or changing prepared command definitions.
+The entry format and trust limits are documented in `SKILL.md`.
+
 `--overview` generates shared Markdown context and numbered boundary
 subjects mapped to `--execute N`. Transfer it verbatim before the
 shell fence, never as executable text or duplicate subject comments.

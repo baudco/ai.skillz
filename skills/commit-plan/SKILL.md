@@ -174,6 +174,32 @@ Use its final pin directly for overview/render/preflight below;
 do not reverse-engineer `validate_spec` for the happy path. Maintain
 `commit_latest` separately under the `commit-msg` contract.
 
+When authorized checks run after prepare, attach their reusable PASS
+records with `finalize --prior-pass <passes.json>`. The JSON input is
+a list of entries; boundary and check indices are one-based:
+
+```json
+[
+  {
+    "boundary": 1,
+    "check": 1,
+    "tree": "<spec.boundaries[0].tree from prepared.json>",
+    "source": "<exact-tree verification log>",
+    "outcome": "<reported result>",
+    "exit": 0
+  }
+]
+```
+
+Attach evidence only for unchanged commands, environments, probes and
+boundary trees. Finalize validates targets, tree binding and status,
+refuses duplicates or replacement of existing PASS records, and pins
+the attached data in the final spec. The immutable prepared package
+and frozen check definitions remain unchanged. This is trusted
+attestation input, not independent verification of the referenced log;
+neither helper phase runs checks or probes. Omit the option to keep
+all newly tested-but-unrecorded checks pending.
+
 For a one-call final handoff, select the shell using section 6 before
 finalizing and append `--render xonsh` or `--render bash` to finalize.
 Optional `--comment-width N` uses the executor's default 69/minimum 40.

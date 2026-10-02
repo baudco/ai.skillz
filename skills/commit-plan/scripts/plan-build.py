@@ -418,9 +418,43 @@ def prepare(root, request, output, *, strict=False):
         raise
 
 
+def attach_passes(spec, evidence):
+    '''
+    Attach attested outcomes without changing prepared operations.
+
+    '''
+    if evidence is None:
+        return
+    if not isinstance(evidence, list):
+        raise EXEC.PlanError('prior-PASS evidence must be a list')
+    seen = set()
+    for entry in evidence:
+        if not isinstance(entry, dict) or set(entry) != {
+            'boundary', 'check', 'tree', 'source', 'outcome', 'exit',
+        }:
+            raise EXEC.PlanError('invalid prior-PASS evidence entry')
+        ordinal, index = entry['boundary'], entry['check']
+        if type(ordinal) is not int or not (
+            1 <= ordinal <= len(spec['boundaries'])
+        ):
+            raise EXEC.PlanError('invalid prior-PASS boundary')
+        boundary = spec['boundaries'][ordinal - 1]
+        checks = boundary['project_checks']
+        if type(index) is not int or not 1 <= index <= len(checks):
+            raise EXEC.PlanError('invalid prior-PASS check')
+        target = ordinal, index
+        if target in seen or 'prior_pass' in checks[index - 1]:
+            raise EXEC.PlanError('duplicate prior-PASS target')
+        seen.add(target)
+        checks[index - 1]['prior_pass'] = {
+            key: entry[key]
+            for key in ('tree', 'source', 'outcome', 'exit')
+        }
+
+
 def finalize(
     root, prepared, checksum, messages, *,
-    render=None, comment_width=69,
+    render=None, comment_width=69, prior_pass=None,
 ):
     '''
     Recheck trees and publish messages plus a pinned v1 spec.
@@ -492,6 +526,7 @@ def finalize(
                 boundary['message'] = store(
                     root, output / name, message.encode()
                 )
+        attach_passes(spec, prior_pass)
         EXEC.validate_spec(spec)
         receipt = store(root, output / 'plan.json', encode(spec))
         preflight = subprocess.run(
@@ -583,6 +618,7 @@ def main():
     second.add_argument('--prepared', type=Path, required=True)
     second.add_argument('--sha256', required=True)
     second.add_argument('--messages', type=Path, required=True)
+    second.add_argument('--prior-pass', type=Path)
     second.add_argument('--render', choices=('xonsh', 'bash'))
     second.add_argument('--comment-width', type=int, default=69)
     args = parser.parse_args()
@@ -604,6 +640,8 @@ def main():
                 args.sha256,
                 read_json(args.messages),
                 render=args.render, comment_width=args.comment_width,
+                prior_pass=(read_json(args.prior_pass)
+                            if args.prior_pass else None),
             )
         handoff = result.pop('handoff_markdown', None)
         receipt = json.dumps(result)

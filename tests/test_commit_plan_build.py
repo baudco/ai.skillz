@@ -467,6 +467,107 @@ class PlanBuildTests(unittest.TestCase):
         self.assertEqual(BUILD.snapshot(self.root)[0], initial)
         self.assert_cleaned()
 
+    def test_finalize_attaches_evidence_after_tree_preparation(self):
+        '''
+        Freezing checks before computing trees prevented callers from
+        attaching a newly obtained PASS without rebuilding the plan.
+        Prepare two checked boundaries, learn their pinned trees,
+        then attach evidence to only the first through the CLI.
+        Compare frozen command fields, untouched prepared bytes and
+        index/HEAD snapshots; raising check/probe commands and absent
+        markers prove finalization does not execute them.
+
+        '''
+        self.request['checks'] = {'pending': {
+            'argv': [sys.executable, '-c', 'raise RuntimeError'],
+            'env': {},
+            'resolution_argv': [
+                sys.executable, '-c', 'raise RuntimeError',
+            ],
+        }}
+        self.request['boundaries'] = [
+            {'paths': ['one'], 'checks': ['pending']},
+            {'paths': ['two'], 'checks': ['pending']},
+        ]
+        prepared = self.prepare()
+        source = self.root / prepared['path']
+        frozen = source.read_bytes()
+        original = json.loads(frozen)['spec']['boundaries']
+        evidence = self.runtime / 'passes.json'
+        evidence.write_text(json.dumps([{
+            'boundary': 1, 'check': 1, 'tree': original[0]['tree'],
+            'exit': 0, 'source': 'authorized exact-tree log',
+            'outcome': 'passed',
+        }]))
+        messages = self.runtime / 'messages.json'
+        messages.write_text(json.dumps(['One\n', 'Two\n']))
+        initial = BUILD.snapshot(self.root)[0]
+        result = subprocess.run([
+            sys.executable, '-B', str(SCRIPT),
+            '--repo', str(self.root),
+            'finalize', '--prepared', str(source),
+            '--sha256', prepared['sha256'],
+            '--messages', str(messages),
+            '--prior-pass', str(evidence),
+            '--render', 'xonsh',
+        ], check=True, capture_output=True, text=True)
+        receipt = json.loads(result.stdout.splitlines()[0])
+        spec = BUILD.EXEC.load_spec(
+            self.root / receipt['path'], receipt['sha256'],
+        )
+        first, second = spec['boundaries']
+        attached = dict(first['project_checks'][0])
+        passed = attached.pop('prior_pass')
+        self.assertEqual(attached, original[0]['project_checks'][0])
+        self.assertEqual(passed['tree'], first['tree'])
+        self.assertEqual(second['project_checks'],
+                         original[1]['project_checks'])
+        self.assertIn('SKIP-CHECK=> prior PASS', result.stdout)
+        self.assertEqual(source.read_bytes(), frozen)
+        self.assertEqual(BUILD.snapshot(self.root)[0], initial)
+        self.assert_cleaned()
+
+    def test_finalize_rejects_invalid_evidence_attachment(self):
+        '''
+        Attestations may add evidence, never redirect frozen checks.
+        Exercise wrong target indices, duplicate targets, command
+        injection, failed status and a wrong tree. Each must refuse
+        without final publication, prepared mutation or index drift;
+        the same prepared input must remain usable afterward.
+
+        '''
+        self.request['checks'] = {'pending': {
+            'argv': [sys.executable], 'env': {},
+            'resolution_argv': [sys.executable],
+        }}
+        self.request['boundaries'][0]['checks'] = ['pending']
+        prepared = self.prepare()
+        source = self.root / prepared['path']
+        frozen = source.read_bytes()
+        tree = json.loads(frozen)['spec']['boundaries'][0]['tree']
+        entry = {
+            'boundary': 1, 'check': 1, 'tree': tree,
+            'exit': 0, 'source': 'log', 'outcome': 'passed',
+        }
+        initial = BUILD.snapshot(self.root)[0]
+        for invalid in (
+            {}, [dict(entry, boundary=0)],
+            [dict(entry, boundary=True)], [dict(entry, check=0)],
+            [dict(entry, tree=self.git('rev-parse', 'HEAD^{tree}'))],
+            [dict(entry, exit=1)], [dict(entry, exit=False)],
+            [dict(entry, argv=['other'])], [entry, entry],
+        ):
+            with self.subTest(evidence=invalid):
+                with self.assertRaises(BUILD.EXEC.PlanError):
+                    self.finalize(prepared, prior_pass=invalid)
+                self.assertFalse((self.output / 'final').exists())
+                self.assertEqual(source.read_bytes(), frozen)
+                self.assertEqual(
+                    BUILD.snapshot(self.root)[0], initial,
+                )
+        self.finalize(prepared, prior_pass=[entry])
+        self.assert_cleaned()
+
     def test_overlapping_supplied_patch(self):
         '''
         Overlapping edits need explicit parent-relative patches.
