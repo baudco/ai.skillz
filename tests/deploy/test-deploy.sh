@@ -104,6 +104,9 @@ count_fixed() {
 prepare_source_repo() {
     SOURCE_WORK="$TMP_ROOT/source-work"
     git clone -q "$ROOT" "$SOURCE_WORK"
+    cp "$ROOT/scripts/workflow-state.py" "$SOURCE_WORK/scripts/"
+    mkdir -p "$SOURCE_WORK/docs"
+    cp "$ROOT/docs/runtime-state.md" "$SOURCE_WORK/docs/runtime-state.md"
     git -C "$SOURCE_WORK" config user.email fixture@example.com
     git -C "$SOURCE_WORK" config user.name Fixture
     mkdir -p "$SOURCE_WORK/providers/opencode/commands" "$SOURCE_WORK/tests/deploy"
@@ -146,6 +149,7 @@ prepare_source_repo() {
     done
     git -C "$SOURCE_WORK" add .gitignore deploy-manifest.conf gitignore-patterns.conf \
         scripts/deploy.sh scripts/validate-deployment.sh \
+        scripts/workflow-state.py docs/runtime-state.md \
         providers/opencode/commands skills/code-nav-refs \
         skills/code-review skills/commit-plan \
         skills/gish skills/git-mgmt \
@@ -154,6 +158,13 @@ prepare_source_repo() {
         skills/commit-msg/SKILL.md skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
+    # The committed fixture must include working-tree runtime updates.
+    local runtime_path
+    for runtime_path in scripts/workflow-state.py docs/runtime-state.md; do
+        git -C "$SOURCE_WORK" show "HEAD:$runtime_path" \
+            | cmp - "$ROOT/$runtime_path" \
+            || fail "committed runtime fixture differs: $runtime_path"
+    done
     SOURCE_URL="file://$SOURCE_WORK"
 }
 
@@ -1930,11 +1941,11 @@ test_commit_plan_contract() {
     assert_not_contains "$commit_plan_text" '/git-mgmt'
     assert_not_contains "$commit_plan_text" 'receipt'
     assert_not_contains "$commit_plan_text" 'active-task'
-    assert_not_contains "$commit_plan_text" 'discovery'
+    assert_not_contains "$commit_plan_text" 'git-mgmt discovery'
     assert_not_contains "$commit_msg_text" '/git-mgmt'
     assert_not_contains "$commit_msg_text" 'receipt'
     assert_not_contains "$commit_msg_text" 'active-task'
-    assert_not_contains "$commit_msg_text" 'discovery'
+    assert_not_contains "$commit_msg_text" 'git-mgmt discovery'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         "use \`/git-mgmt\`'s exact-key policy lookup"
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \

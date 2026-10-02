@@ -16,6 +16,13 @@ argument-hint: "[optional-scope-or-boundary-guidance]"
 
 # Commit Plan
 
+## Repository configuration and runtime paths
+
+Before accessing project guidance or workflow state, read and apply
+[the shared runtime contract](../../docs/runtime-state.md#workflow-integration).
+Resolve this link from the canonical `SKILL.md` location after
+following its symlink. Reuse the resolved paths across composed skills.
+
 Create a complete commit package by composing with the
 `commit-msg` skill.
 Use the current harness's skill invocation syntax: `$commit-plan` in
@@ -96,8 +103,8 @@ staged entries and user changes.
 
 Generate a deterministic cached patch for every boundary, including whole-file
 boundaries. Do not use an interactive patch console. Store patches and one
-JSON execution specification beneath the ignored `commit-msg/msgs/` runtime
-directory. Pin the specification and every patch and message artifact by
+JSON execution specification beneath the ignored `<commit_messages>/`
+runtime directory. Pin the specification and every patch and message by
 SHA-256. Use full canonical object IDs for the repository's object format.
 
 Use the deployed `scripts/plan-exec.py` executor; do not generate a competing
@@ -155,7 +162,7 @@ For each planned commit, in dependency order:
    checks in the execution sequence. Record a successful unchanged result and
    omit that check rather than running it twice.
 5. Generate a distinct project-style message from that exact boundary.
-6. Archive it beneath `.claude/skills/commit-msg/msgs/` using the
+6. Archive it beneath `<commit_messages>/` using the
    `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
    timestamp and unchanged HEAD would otherwise produce a duplicate path.
 7. Record the exact staging transition needed after the preceding commit.
@@ -322,8 +329,8 @@ must remain true after a partial run and when unrelated staged changes are
 added after full completion.
 
 Use each archived message path directly as its boundary's role-bound message.
-Never use `.claude/git_commit_msg_LATEST.md` in a multi-commit sequence because
-later message generation overwrites it. The executor authenticates that file
+Never use `<commit_latest>` in a multi-commit sequence because later message
+generation overwrites it. The executor authenticates the archived message
 once and passes an immutable snapshot to `git commit --edit --file`.
 
 Visually separate boundary executor calls inside the command fence. Emit

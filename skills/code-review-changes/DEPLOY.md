@@ -1,5 +1,12 @@
 # Deploying `/code-review-changes`
 
+Configuration and runtime paths follow the
+[shared runtime contract](../../docs/runtime-state.md).
+Use `--harness agents` for whole-directory shared
+discovery; legacy harness deployments below use provider-specific
+whole-directory discovery too.
+
+
 The skill content is generic and deploys as a whole-directory link. Its
 review handoff files are worktree-local runtime state.
 

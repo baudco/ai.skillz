@@ -1,5 +1,11 @@
 # Deploying `/commit-msg`
 
+Configuration and runtime paths follow the
+[shared runtime contract](../../docs/runtime-state.md).
+Use `--harness agents` for whole-directory shared
+discovery; legacy harness deployments below retain hybrid layouts.
+
+
 `commit-msg` is hybrid: canonical workflow content is shared, while its
 style guide and generated messages remain local
 to each consumer repository.
@@ -22,16 +28,11 @@ links; submodule mode uses trackable relative links through `.ai/ai.skillz`.
 It does not replace either directory, so existing local files survive
 migration and redeployment.
 
-The workflow's persisted runtime contract remains under `.claude/`:
-
-- `.claude/skills/commit-msg/style-guide-reference.md`
-- `.claude/skills/commit-msg/msgs/`
-- `.claude/git_commit_msg_LATEST.md`
-- `.claude/review_context.md`, `.claude/review_regression.md`, and
-  `.claude/review_replies/`
-
-This state remains local or ignored as appropriate. Source-anchor
-migration does not move, delete, or rewrite it.
+Fresh repositories use `.ai/commit-msg/style-guide-reference.md`,
+`.ai/state/commit-msg/msgs/`, and `.ai/state/commit-msg/LATEST.md`.
+Review handoff state lives in `.ai/state/review/`. Existing repositories
+retain legacy paths until explicitly migrated with `runtime migrate`.
+Source-anchor migration does not move this data.
 
 ## OpenCode command
 
@@ -75,8 +76,11 @@ Python stdlib):
 ```bash
 python <repo>/.ai/ai.skillz/scripts/generate-style-guide.py \
   <repo> --commits 500 \
-  --output .claude/skills/commit-msg/style-guide-reference.md
+  --output <resolved-commit-style-path>
 ```
+
+Run `runtime prepare <repo>` first and substitute its `commit_style`
+path, relative to that repository root, for the output above.
 
 This analyzes the repo's commit history and writes
 a complete `style-guide-reference.md` with quantified
