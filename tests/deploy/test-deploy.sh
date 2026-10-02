@@ -1882,13 +1882,13 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'project checks while planning unless the user requests it.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'omit that check rather than running it twice'
+        'Never omit a selected passed check.'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'harness-reported command parser metadata'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'undeclared Python names or one-shot `assert` preconditions'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
-        'startup files disabled where supported, parse every fence line'
+        'startup files disabled where supported, compile the complete block'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'required executables without running resolution or import probes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
@@ -1934,12 +1934,48 @@ test_commit_plan_contract() {
         'lightweight structural boundary checks and their outcomes'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'project checks are recorded as pending unless pre-executed'
+    # Pin layout guidance shipped to consumers, not just the renderer.
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'source-qualified `# >> ai.skillz/skills/commit-plan/scripts/plan-exec.py`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Separate `--- micro-ci ---` from `--- review/commit ---`,'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Put each invocation immediately after its final comment, then exactly'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'preflight, use `#` separator lines, never whitespace-only lines.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'the inline comment `# Stop on failure`.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        '`$XONSH_SUBPROC_CMD_RAISE_ERROR = True`'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'uses the generated Markdown overview followed by the same compact'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Use the optional finalize handoff when already returned; otherwise'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'first generate `--overview` with the same `--spec` and `--sha256`.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'first line as JSON; the whole stdout is deliberately not JSON.'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'fence verbatim. Do not add a dependent receipt read or separate'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'never split a Bash string or executable word.'
     local commit_plan_text
     local commit_msg_text
     commit_plan_text="$(<"$ROOT/skills/commit-plan/SKILL.md")"
     commit_msg_text="$(<"$ROOT/skills/commit-msg/SKILL.md")"
+    assert_not_contains "$commit_plan_text" 'cmds-summary'
+    assert_not_contains "$commit_plan_text" '$RAISE_SUBPROC_ERROR'
+    assert_not_contains "$commit_plan_text" 'every command on one physical line'
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Bind exactly `PYVM`, `PLAN_SCRIPT`, `PLAN_SPEC`, and `PLAN_SHA256`'
+    assert_file_contains "$ROOT/skills/commit-plan/DEPLOY.md" \
+        'generated block, not individual physical lines.'
+    assert_not_contains "$commit_plan_text" 'blank physical line before and after'
+    assert_not_contains "$commit_plan_text" 'legacy POSIX-style'
     assert_not_contains "$commit_plan_text" '/git-mgmt'
-    assert_not_contains "$commit_plan_text" 'receipt'
+    # Finalize now has an opt-in receipt plus native handoff contract.
+    assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
+        'Without `--render`, finalize still emits only its original JSON pin.'
     assert_not_contains "$commit_plan_text" 'active-task'
     assert_not_contains "$commit_plan_text" 'git-mgmt discovery'
     assert_not_contains "$commit_msg_text" '/git-mgmt'
@@ -2044,6 +2080,26 @@ test_commit_plan_contract() {
     bash "$DEPLOY" commit-plan "$REPO" --provider opencode >/dev/null
     [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-exec.py" ] \
         || fail 'commit-plan executor asset was not deployed'
+    [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-build.py" ] \
+        || fail 'commit-plan planner asset was not deployed'
+    local planner="$REPO/.opencode/skills/commit-plan/scripts/plan-build.py"
+    local planner_source source_probe source_before
+    planner_source="$(dirname "$(readlink -f "$planner")")"
+    source_probe='import hashlib,pathlib,sys; r=pathlib.Path(sys.argv[1]); print([(str(p),hashlib.sha256(p.read_bytes()).hexdigest(),p.stat().st_mtime_ns) for p in sorted(r.rglob("*")) if p.is_file()])'
+    source_before="$(python -B -c "$source_probe" "$planner_source")"
+    env -u PYTHONDONTWRITEBYTECODE python "$planner" --help >/dev/null
+    assert_eq "$(python -B -c "$source_probe" "$planner_source")" \
+        "$source_before"
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        'source-qualified `# >> ai.skillz/skills/commit-plan/scripts/plan-exec.py`'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        '`--comment-width` defaults to 69, with a minimum of 40.'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        'Put each invocation immediately after its final comment, then exactly'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        '`$XONSH_SUBPROC_CMD_RAISE_ERROR = True`'
+    assert_file_contains "$REPO/.opencode/skills/commit-plan/SKILL.md" \
+        'Bind exactly `PYVM`, `PLAN_SCRIPT`, `PLAN_SPEC`, and `PLAN_SHA256`'
     bash "$DEPLOY" command commit-plan "$REPO" \
         --provider opencode >/dev/null
     rm "$REPO/.opencode/skills/commit-msg/SKILL.md"
@@ -2074,7 +2130,7 @@ test_commit_plan_contract() {
         'skill dependency cycle includes'
     (
         cd "$ROOT"
-        python -m unittest tests.test_commit_plan_exec
+        python -m unittest tests.test_commit_plan_exec tests.test_commit_plan_build
     )
     pass 'commit-plan composes with commit-msg and run-tests safely'
 }

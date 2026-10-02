@@ -16,6 +16,9 @@ argument-hint: "[optional-scope-or-boundary-guidance]"
 
 # Commit Plan
 
+Repository experiment maintainers can use the optional
+[benchmark capture reference](BENCHMARK.md) for fixed instrumentation.
+
 ## Repository configuration and runtime paths
 
 Before accessing project guidance or workflow state, read and apply
@@ -82,60 +85,188 @@ test changes merely to increase the count.
 Ask one short question only when two materially different valid
 boundaries cannot be resolved from repository evidence.
 
+Default planning permits a human to rename or switch branches in the
+same worktree at the pinned HEAD, or at an exact completed boundary
+prefix when resuming. `/commit-plan --strict` instead requires the
+recorded branch ref: pass `--strict` to `plan-build.py prepare`.
+New specs explicitly persist boolean `strict_branch` (default false).
+Existing v1 specs without this field retain strict branch matching;
+generate a fresh plan to adopt flexible policy, never edit old pinned
+evidence. Executor `--strict` strengthens any invocation and is carried
+into rendered commands; it cannot weaken a persisted strict policy.
+Repository/worktree identity, parent/tree continuity and index checks
+are unchanged. Detached HEAD is refused under both policies.
+Branch flexibility is not execution authorization: planning never
+commits. `--auto` is not supported; autonomous commits remain forbidden.
+
 ## 3. Preserve The Starting Index
 
-Refuse to plan while the index has unmerged entries. Record the initial index
-tree, staged path set, `git ls-files --stage --debug` output and exact digest of
-the worktree-specific Git index. Record when the index file was initially
-absent. The index may be empty; unlike a normal `/commit-msg` invocation, that
-does not block planning when worktree changes exist.
+Use `scripts/plan-build.py` for the mechanical planning path below.
+It imports the adjacent executor rather than duplicating execution.
+The agent still chooses boundaries, resolves the check catalog once,
+reads every prepared diff and writes project-style messages. Do not
+generate run-specific Git/schema assembly helpers for supported cases.
 
-Never rewrite the user's real index while generating a plan. Materialize each
-boundary in a worktree-private temporary index initialized from its evidenced
-parent tree, then apply the exact cached boundary patch there. Run staged diff
-inspection with `GIT_INDEX_FILE` naming that temporary index. Remove temporary
-indexes only after their boundary evidence and message archives are complete,
-and verify the real index digest and stage metadata stayed unchanged.
+Create an input JSON file under the resolved ignored runtime:
 
-Never use `git reset --hard`, `git clean`, automatic stash, checkout-based
-discard, or any command that overwrites worktree content. Preserve unrelated
-staged entries and user changes.
+```json
+{
+  "checks": {
+    "targeted": {
+      "argv": ["python3", "tests/test_example.py"],
+      "required_executables": ["git"],
+      "env": {},
+      "resolution_argv": ["python3", "-c", "import pathlib; print(pathlib.Path.cwd())"]
+    }
+  },
+  "boundaries": [
+    {"paths": ["src/example.py", "tests/test_example.py"], "checks": ["targeted"]}
+  ]
+}
+```
 
-Generate a deterministic cached patch for every boundary, including whole-file
-boundaries. Do not use an interactive patch console. Store patches and one
-JSON execution specification beneath the ignored `<commit_messages>/`
-runtime directory. Pin the specification and every patch and message by
-SHA-256. Use full canonical object IDs for the repository's object format.
+Only `boundaries` and one non-empty `paths` list or supplied `patch`
+filename per boundary are required. `checks` is an agent-selected
+catalog of existing executor command objects, referenced by ordered
+names per boundary; omitted selections mean no checks. The example
+commands are illustrative, not a repository test recommendation.
+Use the loaded `run-tests` resolution probe for actual Python imports.
+Whole-file paths are literal repository-relative files, including
+deletions, never directories or pathspec expressions. For overlapping
+edits, supply a cached patch relative to that boundary's parent tree;
+the helper does not synthesize partial hunks. An explicit patch is
+frozen at prepare time; later edits to its original source are ignored.
 
-Use the deployed `scripts/plan-exec.py` executor; do not generate a competing
-state machine. The standalone specification records:
+Each check may declare `required_executables`: a list of distinct,
+non-empty process-safe argv0 strings, defaulting to `[]` for old v1
+specs. Include evidenced child tools from the `/run-tests` catalog:
+for example, `git` for Python tests spawning Git, or `cp` and `sed`
+for a shell script invoking those utilities. The selecting agent
+declares these dependencies; no arbitrary program is parsed to infer
+them. Prepare retains the normalized list in the pinned command.
 
-- canonical repository root, common Git directory, worktree Git directory,
-  branch ref, initial parent/tree and initial index tree;
-- consecutive boundaries with their subject, parent/result trees and expected
-  pre-staging index tree;
-- one role-bound patch and archived message with SHA-256 digests;
-- ordered project-check command objects selected through `/run-tests`, each
-  with an argument vector, explicit environment overlay and a source-resolution
-  probe executed under that same environment.
+Preflight resolves declared tools without running probes or checks,
+using the check's exact environment overlay and the same executable
+rules as its main argv and probe. Absolute tools may live outside the
+tree (including ignored environments); relative paths must name
+executable boundary-tree files. Bare names require absolute, non-empty
+`PATH` entries. The isolated runner repeats prerequisite validation
+before each pending probe/check against its boundary repository.
+Fully reused prior PASS checks require no tool lookup. Availability
+does not prove undeclared dependencies or dynamic child environment
+changes. Never rewrite `PATH` automatically to bypass a failure.
 
-The executor owns patch application, structural checks, exact-tree project
-check isolation, staged review, the editor-backed commit command, boundary
-ordering, completion detection and divergence refusal. Generated commands may
-not replace those operations.
+Run two helper calls, with diff analysis between them:
 
-Record relative project executables only when they are executable files in the
-boundary tree. Resolve ignored repository-local tools, including virtual
-environment entry points, to absolute paths. For Python projects, include the
-documented import-resolution probe with every distinct interpreter/environment
-and require exactly one reported import path beneath
-`AI_SKILLZ_BOUNDARY_ROOT`.
+```xsh
+python3 <source>/skills/commit-plan/scripts/plan-build.py prepare --input <input.json> --output <commit_messages>/<timestamp>_<hash>
+# Read every NNN.diff, NNN.stat and NNN.paths in that package.
+# Write messages.json as an ordered JSON array of complete messages.
+python3 <source>/skills/commit-plan/scripts/plan-build.py finalize --prepared <package>/prepared.json --sha256 <prepare-digest> --messages <messages.json>
+```
 
-Absolute helpers under the live repository are accepted only when ignored
-and absent from the recorded boundary trees. Record tracked executables as
-relative paths so execution resolves their pinned boundary-tree copies.
-The executor revalidates executable locations in the isolated checkout
-before running the probe or project check.
+Each call emits phase timings on stderr and a `{path, sha256}` pin
+on stdout. Finalize archives exact message bytes with boundary ordinals,
+privately rematerializes boundaries to check drift, then publishes
+`final/plan.json` and `final/verification.json` after executor preflight.
+It never stages the real index, runs project checks or commits.
+Use its final pin directly for overview/render/preflight below;
+do not reverse-engineer `validate_spec` for the happy path. Maintain
+`commit_latest` separately under the `commit-msg` contract.
+
+When authorized checks run after prepare, attach their reusable PASS
+records with `finalize --prior-pass <passes.json>`. The JSON input is
+a list of entries; boundary and check indices are one-based:
+
+```json
+[
+  {
+    "boundary": 1,
+    "check": 1,
+    "tree": "<spec.boundaries[0].tree from prepared.json>",
+    "source": "<exact-tree verification log>",
+    "outcome": "<reported result>",
+    "exit": 0
+  }
+]
+```
+
+Attach evidence only for unchanged commands, environments, probes and
+boundary trees. Finalize validates targets, tree binding and status,
+refuses duplicates or replacement of existing PASS records, and pins
+the attached data in the final spec. The immutable prepared package
+and frozen check definitions remain unchanged. This is trusted
+attestation input, not independent verification of the referenced log;
+neither helper phase runs checks or probes. Omit the option to keep
+all newly tested-but-unrecorded checks pending.
+
+For a one-call final handoff, select the shell using section 6 before
+finalizing and append `--render xonsh` or `--render bash` to finalize.
+Optional `--comment-width N` uses the executor's default 69/minimum 40.
+This mode emits one JSON receipt line, a blank line, then the complete
+native Markdown overview and fenced command block. Parse only the
+first line as JSON; the whole stdout is deliberately not JSON.
+The receipt retains the final spec `path`/`sha256` and adds `handoff`
+with `shell` and `{path, sha256}` pins for `overview` and `commands`.
+These are `final/overview.md` and `final/commands.xsh` or
+`final/commands.bash`. They are published without replacement; any
+render/publication failure removes the incomplete final package.
+The pinned spec is unchanged by rendering, including its branch policy.
+
+Keep stdout in the tool result and transfer the returned overview and
+fence verbatim. Do not add a dependent receipt read or separate
+overview/render calls solely to recover the final pin or handoff.
+The helper reuses its validated spec and existing executor preflight;
+it does not run a second preflight for rendering. Maintain
+`commit_latest` separately as above. Complete the existing no-startup
+compile, preflight and artifact acceptance steps in section 6 using
+the returned pins; this option does not replace those checks.
+Without `--render`, finalize still emits only its original JSON pin.
+
+Prepare records real index bytes/metadata, creates private indexes,
+verifies staging patch replay, and emits parent-relative evidence.
+Finalize checks HEAD, branch, index and selected whole-file trees for
+drift before publishing. Unrelated staged paths which the first
+transition would remove are refused, not silently unstaged. Resolve
+such boundaries with the human rather than rewriting their index.
+An initially absent index remains absent. Both phases remove private
+indexes and incomplete phase outputs on handled failures. Existing
+packages are never overwritten; use a fresh output directory after
+changing boundaries. Completed artifacts are SHA-256 pinned, not
+filesystem write-protected. Quiet-worktree assumptions still apply:
+fingerprint checks detect drift but do not lock concurrent writers.
+
+Every planner Git process, including executor preflight, disables
+hooks and fsmonitor through process-local configuration. Whole-file
+paths with active external clean/process filters are unsupported;
+supply an explicit cached patch instead. Conversion is never silently
+disabled to manufacture different blobs. Selected ancestor symlinks
+and symlinked output directory components are refused. Patch/evidence
+capture preserves bytes, including CRLF and non-UTF8 content; JSON
+snapshots escape undecodable filesystem bytes without data loss.
+Adjacent executor import does not write bytecode into deployed source.
+
+Never rewrite the user's real index, restore stale bytes, use an
+interactive patch console, stash, clean or overwrite worktree content.
+The helper refuses unmerged entries, records staged paths and
+`git ls-files --stage --debug`, and uses full canonical object IDs.
+Empty initial indexes are allowed. Do not repeat its Git operations.
+
+The shared `scripts/plan-exec.py` owns staging, structural checks,
+isolated project checks, staged review, editor-backed commits and
+history classification. Never generate a competing state machine.
+Record relative project executables only when they are executable
+files in the boundary tree. Resolve ignored repository-local tools,
+including virtual environment entry points, to absolute paths.
+For Python projects, include the documented import-resolution probe
+with every distinct interpreter/environment and require exactly one
+reported import path beneath `AI_SKILLZ_BOUNDARY_ROOT`.
+
+Absolute helpers under the live repository are accepted only when
+ignored and absent from the recorded boundary trees. Record tracked
+executables as relative paths so execution resolves their pinned
+boundary-tree copies. The executor revalidates executable locations
+in the isolated checkout before running the probe or project check.
 
 ## 4. Materialize Every Boundary
 
@@ -145,32 +276,40 @@ harness reference as authoritative. Use project or CI documentation only where
 that authority is silent. Do not rediscover, merge or broaden commands per
 boundary.
 
-For each planned commit, in dependency order:
+Prepare compares each temporary index with that boundary's recorded parent tree
+for whitespace checks and evidence. Read every resulting diff before
+finalizing its message with `/commit-msg`'s normal analysis. Never
+compare a later boundary with live `HEAD` or include earlier changes.
+Finalize only after every message is complete; a failed boundary blocks
+the whole plan, never a request to rerun `/commit-msg` after committing.
 
-1. Materialize that commit's exact boundary in its temporary index.
-2. Compare the temporary index with that boundary's recorded parent tree for
-   `git diff --cached --check`, statistics and name/status inspection. Never
-   compare a later boundary with live `HEAD` or include preceding boundaries.
-3. Read that same parent-relative staged diff and apply `/commit-msg`'s normal
-   analysis.
-4. Select required lint and targeted-test commands for that boundary. Assign
-   the broadest repository-documented safe regression sequence, when one
-   exists, once against the final boundary tree. A literal test-root run is
-   allowed only when `/run-tests` classifies it as safe; never synthesize one
-   or include authorization-required coverage implicitly. Do not execute
-   project checks while planning unless the user requests it. Include pending
-   checks in the execution sequence. Record a successful unchanged result and
-   omit that check rather than running it twice.
-5. Generate a distinct project-style message from that exact boundary.
-6. Archive it beneath `<commit_messages>/` using the
-   `commit-msg` naming convention. Add a zero-padded boundary ordinal when the
-   timestamp and unchanged HEAD would otherwise produce a duplicate path.
-7. Record the exact staging transition needed after the preceding commit.
-8. Add the boundary and its immutable evidence to the execution specification.
+Select targeted checks per boundary and assign the
+broadest repository-documented safe regression sequence once to the
+final tree. A literal test-root run is allowed only when `/run-tests`
+classifies it as safe; preserve authorization-required exclusions.
+Do not execute project checks while planning unless the user requests it.
+Keep all selected commands under Micro CI, including previous passes.
+Without exact reusable evidence, checks remain pending.
 
-Do not defer message generation or tell the human to rerun `/commit-msg` after
-each commit. If any boundary cannot be safely materialized or verified, stop
-and report the blocker instead of returning a partial plan.
+An optional `prior_pass` object inside each `project_checks` command
+records exactly `tree`, `source`, `outcome`, and integer `exit: 0`.
+The tree must equal the boundary tree. The attributable source and
+outcome summary must be non-empty, safe, non-secret strings. Embed
+evidence only after the exact boundary tree, argv, environment overlay
+and resolution probe, including declared prerequisites, in that same
+authenticated command object have
+passed unchanged. Archive raw outputs and provenance in local runtime.
+The specification digest binds that association; it is an attestation,
+not independent verification of external tools or ambient environment.
+Do not copy evidence when any of those inputs changes. No cache or
+journal is involved. Absent evidence preserves v1 execution behavior;
+malformed claimed reuse or a tree mismatch must fail closed. Failed or
+unproven checks remain pending, with observations in the verification
+report rather than claimed reuse. Never omit a selected passed check.
+Render SKIP prior PASS with outcome and exit status; retain source
+and tree evidence in the pinned specification/artifacts. Do not run
+its probe/check, require its executable in preflight, or create a clone
+solely for reused checks. Completed-boundary no-op behavior is unchanged.
 
 ## 5. Verify The Starting Index
 
@@ -198,22 +337,92 @@ Do not equate inherited login-shell metadata with the active parser. Report
 conflicting signals and which higher-priority evidence won. If equal-priority
 evidence remains ambiguous, ask which parser to target.
 
-Render every command on one physical line. Never use newline continuations,
-undeclared Python names or one-shot `assert` preconditions.
+Use shell-native bindings and continuations for the selected parser.
+Never use undeclared Python names or one-shot `assert` preconditions.
 
 Use one explicitly labelled fence and valid syntax for the selected parser.
 Never emit an unlabelled fence or hardcode syntax for another parser. With
-startup files disabled where supported, parse every fence line and validate
+startup files disabled where supported, compile the complete block and validate
 the specification without executing it. Then run only
 the selected Python interpreter with `plan-exec.py --preflight`.
-Preflight authenticates artifacts and inspects
-required executables without running resolution or import probes. Those
-probes run during `--execute` in the isolated boundary tree. Preflight must
-not stage, run project checks, invoke an editor or commit, access the
-network or enter normal execution.
+Preflight checks identities, history and pending artifacts, and inspects
+required executables without running resolution or import probes.
+Those run only during `--execute` in the isolated boundary tree.
+Preflight must not stage, run project checks, invoke an editor or
+commit, access the network or enter normal execution.
+
+Use the optional finalize handoff when already returned; otherwise
+first generate `--overview` with the same `--spec` and `--sha256`.
+Transfer its stdout verbatim as normal Markdown before the shell
+fence. It leads with planned/completed/remaining commit counts,
+lowercase `repo:`, `worktree:` and `branch:` fields, and exact subjects
+with completion status mapped to `--execute N`. Progress comes from
+verified Git history; context identifies the actual execution checkout
+and current branch. Its `mode: review` note describes editor-backed
+execution. Shared conditions, symbolic runtime path and diagnostic
+limits, evidence location and the legend remain in this Markdown
+overview, outside shell comments. Do not reconstruct these from source or
+duplicate boundary subjects in shell comments. This read-only mode
+authenticates the spec, identity and history without probes or checks.
+
+For Xonsh, use the returned handoff or generate the entire fence body
+with the deployed executor:
+`python3 <executor> --spec <spec> --sha256 <digest> --render xonsh`.
+Substitute shell-quoted absolute executor/spec paths and the pinned
+digest. Rendering authenticates the specification and validates
+identity/history, but does not perform preflight or run operations.
+Transfer stdout verbatim into an `xsh` fence. Do not reconstruct
+per-boundary comments, argv, invocations or spacing in agent prose.
+Bind exactly `PYVM`, `PLAN_SCRIPT`, `PLAN_SPEC`, and `PLAN_SHA256`
+as top-level Xonsh Python variables, not exported environment values.
+Use mechanically escaped ASCII string literals, including the digest.
+Keep each binding on one line; use short multiline executor calls
+with `@(PYVM) @(PLAN_SCRIPT)` and the bound spec and digest.
+Live headers use the bound script's basename, normally `plan-exec.py`.
+Do not add unused message or single-use root bindings. Keep diagnostic
+argv self-contained, independent of these variables. Comments-only
+and show output emit no bindings, setup or executable invocations.
+After the initial directory change, the generated block sets
+`$XONSH_SUBPROC_CMD_RAISE_ERROR = True` so a failed executor call
+stops the pasted block instead of continuing to later boundaries.
+This setting intentionally remains enabled in the user's shell;
+do not restore it or append a command after the final executor call.
+Comments-only output does not emit this Xonsh-specific setting.
+
+For Bash, use the returned handoff or `--render bash` and transfer
+stdout verbatim into a `bash` fence. This shares the same summaries
+and execution path, but uses native quoted bindings,
+`"$PYVM" "$PLAN_SCRIPT"` calls,
+and Bash diagnostic argv. Greedily pack complete quoted argv tokens
+to the comment width, breaking only between arguments with a
+backslash. Indivisible tokens may exceed this soft width limit;
+never split a Bash string or executable word. Controls use ANSI-C
+quotes. Setup
+sets `set -e` before `cd` so failures stop the generated Bash script.
+This is not a guarantee about every interactive or conditional shell
+context. The setting is not restored. Its show call explicitly uses
+`--show --show-shell bash`; plain `--show` remains Xonsh by default.
+
+For other shells, use the same command with `--render comments`.
+This emits only generated comments grouped under
+source-qualified `# >> ai.skillz/skills/commit-plan/scripts/plan-exec.py`
+headers for `--preflight`, `--show` and `--execute N`.
+Keep constructing the directory
+change and executor argv using the selected shell's correct syntax,
+then copy each complete comment group above its matching invocation.
+Do not reconstruct underlying operations or descriptions. Validate
+the resulting fence with that shell's parser as before; comments-only
+rendering does not restrict which shells can receive a commit plan.
+Underlying diagnostic argv in these comments is Xonsh-only, even when
+the surrounding executor invocations target another shell. Do not
+claim those diagnostic lines are copyable in another parser. `--show`
+uses the generated Markdown overview followed by the same compact
+operation comments, probe catalog and width-controlled Xonsh argv.
+It omits executor invocations and preflight/show instructions, and
+does not run checks or probes. Version 1 specifications remain valid.
 
 Never assume the user's shell is already in the repository or worktree being
-planned. The first command in the fence must change directory to the exact
+planned. Before any subprocess, change directory to the exact
 absolute root returned by `git rev-parse --show-toplevel`. Render it as a
 standalone shell-correct command, quoting the path when required; do not chain
 it to the first staging command. When a plan intentionally spans repositories
@@ -244,6 +453,71 @@ The command block must include, in execution order:
 - one interpreter-backed `--execute <ordinal>` invocation per
   boundary, naming the same specification and digest.
 
+Every Python invocation must have the executor's generated shell
+comments immediately above it. Preflight comments describe validation
+without execution; show comments describe display only. Each boundary
+preview includes its inputs and operations; the generated overview
+owns conditional no-op, patch skip, order refusal and fail-fast rules.
+Important argv, Git cwd, isolated-check cwd and source probes
+come from the same descriptions used by execution and `--show`.
+Keep common environment metadata once in the preflight group under
+`osenv:` using `|_PWD:`, `|_SHELL:`, `|_VIRTUAL_ENV:` and `|_env:`.
+Show differing check environments at their uses with values hidden.
+Keep preflight/show summaries short under `ops-summary:`. Use one
+`# >> plan-exec.py --execute N` header per boundary.
+Group patch/message paths under `inputs:` with `|_patch:` and
+`|_message:` tags, then staging/structural operations under
+`--- staging/checks ---` immediately followed by `cmds:`.
+Separate `--- micro-ci ---` from `--- review/commit ---`,
+each with `cmds:`.
+Omit Micro-CI entirely when no checks are selected. Show every selected
+check, including prior PASS skips with evidence, but omit redundant
+`=> RUN pending` and `=> RUN resolution probe` annotations.
+Separate subsection chunks with actual empty lines. Within
+preflight, use `#` separator lines, never whitespace-only lines.
+Describe preflight validation and show display positively; reserve
+execution commands for execute headers. Use aligned `|_PATCH>`,
+`|_CHECK>`, `|_PROBE>`, `|_REVIEW>`, and `|_COMMIT>` tags.
+Pending probes use `|_PROBE> probe-N` without redundant RUN prose.
+Skipped probes use `|_SKIP-PROBE=> prior PASS`; skipped checks use
+`|_SKIP-CHECK=> prior PASS exit=0: <outcome>`. Always place their
+raw command or catalog reference on the next line, even when short.
+Retain every Micro CI argv, including skips; do not display source
+hashes or trees beside skips. Those remain pinned in the spec.
+Catalog repeated probes by raw argv plus environment identity; print
+each catalog argv once under `probe-catalog:` using `|_PROBE-N>`
+and reference its run/skip semantics at uses.
+Unique probes may stay inline. Probes still execute before each pending
+check, never once per plan; retained prior PASS probes are skipped.
+Keep shared overview prose concise rather than listing every internal
+subprocess. Runtime-created paths remain placeholders;
+environment values stay hidden. Show accurate PWD and explicitly label
+Xonsh diagnostic syntax, including comments-only mode. VIRTUAL_ENV may
+disclose only a
+safe validated selection from the spec or resolved interpreter;
+otherwise use `not selected` or redact uncertain configured values.
+Never infer selection from an unrelated inherited environment or run
+probes just to render. Escape controls and prefix every
+physical comment line with `#` so specification text cannot inject
+shell commands. Generated Xonsh invocations inject the assigned Python
+variables, not POSIX shell quoting. Diagnostic argv and navigation
+keep conservative safe tokens bare and inject escaped Python string
+literals for other tokens.
+`--comment-width` defaults to 69, with a minimum of 40. It bounds
+Xonsh command previews including the comment prefix, not metadata
+or actual executor invocations. Keep short commands inline after their
+tag; otherwise put the tag on its own line and align comment
+continuations with `#   ` and shell-safe wrapping. Xonsh long arguments
+and executable paths use adjacent escaped string literals inside `@()` without
+truncation, expansion or alteration of raw argv.
+Use those same lossless tokens for underlying Xonsh comment commands
+before control-safe comment prefixing. Diagnostic check argv is copyable
+from the repository root, but uses the current checkout without the
+hidden environment overlay, not exact isolated execution. Clearly label
+staging and commit placeholders as symbolic runtime paths in one
+generated overview, alongside the diagnostic argv context, rather
+than repeating caveats for every check.
+
 The executor applies the authenticated patch, then runs staged whitespace,
 statistics and path checks before every commit. Only Git's internal diff
 implementation is used for index comparisons,
@@ -258,8 +532,8 @@ constructing the only permitted commit form:
 `git commit --edit --file <authenticated-message-snapshot>`.
 
 Preview and execution must use the same command descriptions. `--show`
-renders the exact argv and an isolated-tree cwd placeholder before anything
-executes. It may show authenticated environment variable names, but must hide
+renders the diagnostic argv and describes exact-tree isolation before
+anything executes. It may show environment variable names, but must hide
 their values and the inherited environment. `--execute` announces each
 boundary phase, cwd and command immediately before running it, then reports
 `PASS`, `SKIP` or `FAIL exit=<status>`. For captured automated operations,
@@ -279,8 +553,8 @@ Preserve every documented environment wrapper and fresh-process boundary in
 the specification; exclude separately tested or state-leaking tiers from a
 later broad process. The executor clears ambient Python path overrides, and
 the import check must reject an editable install resolving outside the
-temporary root. The executor removes the root afterward. Do not include checks
-already passed against unchanged boundary evidence.
+temporary root. The executor removes the root afterward. Retain checks
+already passed against unchanged boundary evidence with `prior_pass`.
 
 For each `--execute` call, the canonical executor walks backward from `HEAD`
 to the recorded initial parent. Each intervening commit must have exactly one
@@ -333,10 +607,15 @@ Never use `<commit_latest>` in a multi-commit sequence because later message
 generation overwrites it. The executor authenticates the archived message
 once and passes an immutable snapshot to `git commit --edit --file`.
 
-Visually separate boundary executor calls inside the command fence. Emit
-exactly one blank line after every non-final `--execute` command. The final
-executor call normally terminates the fence, so do not require or add a
-trailing blank line after it.
+After bindings and a blank line, use `cd ROOT  # nav to git wkt`,
+then the fail-stop setting with
+the inline comment `# Stop on failure`. Emit one
+blank line after setup. Follow the preflight header immediately with
+`# ops-summary:`; use `#` between its summary, osenv and catalog.
+Put each invocation immediately after its final comment, then exactly
+one blank line between invocation groups. End at the final command
+without an extra trailing blank line before the closing fence.
+Comments-only output permits empty lines but no executable invocations.
 
 Keep `git diff --staged` as an intentional human review gate even when the
 earlier summary and path checks passed. The executor displays its sanitized
@@ -368,11 +647,15 @@ Before returning a finished plan, verify:
   exists;
 - project checks are recorded as pending unless pre-executed against unchanged
   boundary evidence, in which case their outcomes are recorded and they are
-  not rendered again;
+   rendered as SKIP prior PASS with their commands and evidence;
 - the index matches its initial tree;
 - one shell-correct command block covers the complete sequence;
+- the Xonsh/Bash block is transferred from its native renderer,
+  or another
+  shell's validated commands include matching `--render comments`
+  groups above every Python invocation without reconstructing previews;
 - parser evidence follows the documented hierarchy and conflicts are reported;
-- every fence line and specification passes no-startup validation, and
+- the complete block and specification pass no-startup validation, and
   preflight is read-only and cannot enter normal execution;
 - the command block starts in the exact absolute repository/worktree root;
 - every boundary binds one archived message and the executor constructs only
@@ -380,8 +663,9 @@ Before returning a finished plan, verify:
 - the executor runs `git diff --staged` immediately before that commit;
 - the complete sequence succeeds after partial or complete execution without
   rerunning completed checks, editors, hooks or commits;
-- every non-final executor call is followed by exactly one blank line, while
-  the final call has no required trailing blank line;
+- every Python invocation immediately follows its final comment;
+- exactly one blank line separates invocation groups, with no extra
+  trailing blank after the final command;
 - no command commits automatically before the editor opens;
 - no push appears unless the human separately requests a push plan.
 
