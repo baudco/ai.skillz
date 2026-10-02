@@ -1,0 +1,12 @@
+prune tests
+include tests/test_dlogs.py
+include tests/test_harness_stores.py
+include tests/test_dialog_timestamps.py
+include tests/test_worktree_dialogs.py
+include tests/test_dialog_index.py
+include tests/test_git_discovery.py
+include tests/test_aiskillz_layers.py
+include aliases.xsh
+include docs/aiskillz.md
+include aiskillz/README.md
+include LICENSING.md
