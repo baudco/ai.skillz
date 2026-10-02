@@ -244,7 +244,7 @@ class DlogsTests(unittest.TestCase):
         Long session names previously pushed cwd far off screen.
 
         Render a long name alongside an exact-boundary name. Check
-        ellipsis truncation and name/WKT order by default, then
+        ellipsis truncation and harness/name/WKT order, then
         stable ID alignment when requested. Preserve the original
         name in the caller's records.
         The shared cwd moves above the header instead of repeating.
@@ -269,20 +269,22 @@ class DlogsTests(unittest.TestCase):
         self.assertEqual(lines[2], '')
         self.assertEqual(
             lines[3].split(),
-            ['NAME', 'WKT', 'HARNESS'],
+            ['HARNESS', 'NAME', 'WKT'],
         )
-        self.assertTrue(lines[4].startswith(name[:35] + '…'))
-        self.assertTrue(lines[5].startswith('x' * 36))
+        self.assertTrue(lines[4].startswith('claude   '))
+        self.assertTrue(lines[5].startswith('codex    '))
+        self.assertIn(name[:35] + '…', lines[4])
+        self.assertIn('x' * 36, lines[5])
         self.assertNotIn('dialog-one', lines[4])
         with_ids: list[str] = table(
             sessions, show_did=True,
         ).splitlines()
         self.assertEqual(
             with_ids[3].split(),
-            ['NAME', 'DIALOG', 'ID', 'WKT', 'HARNESS'],
+            ['HARNESS', 'NAME', 'WKT', 'DIALOG', 'ID'],
         )
-        self.assertEqual(with_ids[4].index('dialog-one'), 38)
-        self.assertEqual(with_ids[5].index('dialog-two'), 38)
+        self.assertEqual(with_ids[4].index('dialog-one'), 52)
+        self.assertEqual(with_ids[5].index('dialog-two'), 52)
         self.assertEqual(sessions[0]['name'], name)
 
     def test_uniform_harness_moves_above_table(self) -> None:

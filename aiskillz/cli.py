@@ -181,12 +181,15 @@ def format_dialog_table(
     if uniform_harness:
         context.append('HARNESS=' + next(iter(harness_values)))
 
-    columns: list[tuple[str, str]] = [
+    columns: list[tuple[str, str]] = []
+    if not uniform_harness:
+        columns.append(('harness', 'HARNESS'))
+    columns.extend([
         ('name', 'NAME'),
-    ]
+        ('wkt', 'WKT'),
+    ])
     if show_did:
         columns.append(('id', 'DIALOG ID'))
-    columns.append(('wkt', 'WKT'))
     if show_timestamps:
         columns.append(('updated', 'UPDATED (UTC)'))
     if (
@@ -195,8 +198,6 @@ def format_dialog_table(
         not uniform_cwd
     ):
         columns.append(('cwd', 'CWD'))
-    if not uniform_harness:
-        columns.append(('harness', 'HARNESS'))
     keys: list[str] = [key for key, _ in columns]
     rows: list[list[str]] = [
         [label for _, label in columns]
