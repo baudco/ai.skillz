@@ -257,6 +257,11 @@ def prepare(root, request, output, *, strict=False):
 
     '''
     started = time.perf_counter()
+    if not isinstance(request, dict):
+        raise EXEC.PlanError('input must be an object')
+    requested_checks = request.get('checks', {})
+    if not isinstance(requested_checks, dict):
+        raise EXEC.PlanError('checks must be an object')
     initial, payload = snapshot(root)
     runtime = EXEC.runtime_root(root, output)
     directory = runtime
@@ -299,7 +304,7 @@ def prepare(root, request, output, *, strict=False):
                 spec[field] = EXEC.normalize_git_path(root, value)
             catalog = {
                 key: EXEC.command(value, key)
-                for key, value in request.get('checks', {}).items()
+                for key, value in requested_checks.items()
             }
             recipes = []
             evidence = []
@@ -308,6 +313,10 @@ def prepare(root, request, output, *, strict=False):
                 raise EXEC.PlanError('boundaries must be non-empty')
             for ordinal, item in enumerate(boundaries, 1):
                 phase = time.perf_counter()
+                if not isinstance(item, dict):
+                    raise EXEC.PlanError(
+                        f'boundary {ordinal} must be an object'
+                    )
                 recipe = {
                     k: v for k, v in item.items() if k != 'checks'
                 }

@@ -143,6 +143,45 @@ class PlanBuildTests(unittest.TestCase):
         self.assertEqual((self.root / 'one').read_bytes(), live)
         self.assert_cleaned()
 
+    def test_cli_rejects_non_object_planner_inputs(self):
+        '''
+        Catalog and boundary `.items()` calls let malformed JSON
+        escape as AttributeError tracebacks; the same applied to a
+        non-object request. Send invalid shapes through the real CLI
+        and require a planner diagnostic, no receipt/package, and
+        unchanged index/HEAD. A later valid retry must remain usable.
+
+        '''
+        request = self.runtime / 'invalid.json'
+        initial = BUILD.snapshot(self.root)[0]
+        cases = [(value, 'input must be an object')
+                 for value in (None, [], 'text', 1)]
+        cases += [(dict(self.request, checks=value),
+                   'checks must be an object')
+                  for value in (None, [], 'text', 1)]
+        cases += [(dict(self.request, boundaries=[value]),
+                   'boundary 1 must be an object')
+                  for value in (None, [], 'text', 1)]
+        for payload, expected in cases:
+            with self.subTest(payload=payload):
+                request.write_text(json.dumps(payload))
+                result = subprocess.run([
+                    sys.executable, '-B', str(SCRIPT),
+                    '--repo', str(self.root), 'prepare',
+                    '--input', str(request),
+                    '--output', str(self.output),
+                ], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(expected, result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertEqual(result.stdout, '')
+                self.assertFalse(self.output.exists())
+                self.assertEqual(
+                    BUILD.snapshot(self.root)[0], initial,
+                )
+        self.prepare()
+        self.assert_cleaned()
+
     def test_cli_persists_branch_policy(self):
         '''
         New plans need explicit policy, not legacy strict defaults.
