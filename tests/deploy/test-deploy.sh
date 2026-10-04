@@ -37,6 +37,16 @@ assert_file_contains() {
     grep -qF -- "$2" "$1" || fail "$1 does not contain: $2"
 }
 
+assert_file_order() {
+    local file="$1" first="$2" second="$3" first_match second_match
+    first_match="$(grep -nF -m1 -- "$first" "$file")" \
+        || fail "$file does not contain: $first"
+    second_match="$(grep -nF -m1 -- "$second" "$file")" \
+        || fail "$file does not contain: $second"
+    [ "${first_match%%:*}" -lt "${second_match%%:*}" ] \
+        || fail "$file does not order '$first' before '$second'"
+}
+
 assert_fails() {
     if "$@" >"$TMP_ROOT/failure.out" 2>&1; then
         fail "command unexpectedly succeeded: $*"
@@ -2012,6 +2022,9 @@ test_commit_plan_contract() {
         'null-write-republish sequence'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         '--recover-discovery-guard <writer-token>'
+    local deferred="$ROOT/ai/plans/deferred-commit-plan-index-experiment.md"
+    assert_file_contains "$deferred" \
+        'exact writer may resume its own interrupted transaction'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'or declined policy permits the commit workflow'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
@@ -2020,6 +2033,22 @@ test_commit_plan_contract() {
         'does not opt in and must not trigger any pointer or receipt lookup'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'null` remains pending'
+    assert_file_contains "$deferred" \
+        'Every mirror creation or mutation'
+    assert_file_contains "$deferred" \
+        'standalone plan state authoritative'
+    assert_file_contains "$deferred" \
+        '`GIT_WORK_TREE` naming the isolated root'
+    assert_file_contains "$deferred" \
+        'snapshot review and regression context'
+    assert_file_contains "$deferred" \
+        'durable finalization phase'
+    assert_file_contains "$deferred" \
+        'not be repaired by inventing `scan_policy`'
+    assert_file_contains "$deferred" \
+        'resumes any incomplete candidate'
+    local deferred_resources="$ROOT/ai/plans/deferred-commit-plan-resources"
+    python "$deferred_resources/test_commit_plan_receipt_schema.py" >/dev/null
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         'permits creation without discovery.'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
@@ -2046,6 +2075,72 @@ test_commit_plan_contract() {
         'receipt per repository root'
     assert_file_contains "$ROOT/skills/git-mgmt/SKILL.md" \
         'point-in-time discovery plus'
+    assert_file_contains "$deferred" \
+        'must never depend on the user'
+    assert_file_contains "$deferred" \
+        'idempotent `ensure` and `run -- <command>`'
+    assert_file_contains "$deferred" \
+        '`GIT_INDEX_FILE` naming the private index'
+    assert_file_contains "$deferred" \
+        'must never create a second commit'
+    assert_file_contains "$deferred" \
+        'durably journal the boundary ID'
+    assert_file_contains "$deferred" \
+        'temporary three-way transition'
+    assert_file_contains "$deferred" \
+        'record `diverged-after-commit`'
+    assert_file_contains "$deferred" \
+        'full command block can'
+    assert_file_contains "$deferred" \
+        'Do not render raw `git add`'
+    assert_file_contains "$deferred" 'not current operational policy'
+    assert_file_contains "$deferred" \
+        'harness-reported command parser metadata'
+    assert_file_contains "$deferred" \
+        'the basename of `$SHELL`, only as a last-resort hint'
+    assert_file_contains "$deferred" \
+        'Report every conflicting signal'
+    assert_file_contains "$deferred" \
+        'every command on one physical line for every parser'
+    assert_file_contains "$deferred" \
+        'env KEY=value command'
+    assert_file_contains "$deferred" \
+        'Never emit a leading `KEY=value command`'
+    assert_not_contains "$(<"$deferred")" \
+        'Determine the configured `$SHELL`'
+    assert_file_order "$deferred" \
+        'an explicit parser or shell selected' \
+        'harness-reported command parser metadata'
+    assert_file_order "$deferred" \
+        'harness-reported command parser metadata' \
+        'parser semantics already demonstrated'
+    assert_file_order "$deferred" \
+        'parser semantics already demonstrated' \
+        'actual parent/ancestor command interpreter'
+    assert_file_order "$deferred" \
+        'actual parent/ancestor command interpreter' \
+        'the basename of `$SHELL`, only as a last-resort hint'
+    assert_file_contains "$deferred" \
+        'When composed by `/commit-plan`, do not render'
+    assert_file_contains "$deferred" \
+        'archived message path and helper-wrapped'
+    assert_file_contains "$deferred" \
+        'command for the exact boundary index'
+    assert_file_contains "$deferred" \
+        'processes only replies assigned to the exact boundary'
+    assert_file_contains "$deferred" \
+        'Assign each pending reply to exactly one stable boundary'
+    assert_file_contains "$deferred" \
+        'another boundary must not consume them.'
+    assert_not_contains "$(<"$deferred")" \
+        'git commit --edit --file \'
+    local parser
+    for parser in sh bash zsh fish xonsh; do
+        command -v "$parser" >/dev/null 2>&1 || continue
+        assert_eq \
+            "$("$parser" -c 'env AI_SKILLZ_OVERLAY=ok printenv AI_SKILLZ_OVERLAY')" \
+            'ok'
+    done
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
         'transfer is independent'
     assert_file_contains "$ROOT/skills/open-wkt/SKILL.md" \
