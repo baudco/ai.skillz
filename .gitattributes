@@ -1,0 +1,2 @@
+# Org headline subtrees retain a blank separator at EOF.
+.taken/current.org whitespace=-blank-at-eof

@@ -1,0 +1,216 @@
+# vim: et sw=2 ts=2
+#+TITLE: ai.skillz project store
+#+TODO: TODO(t) WIP(w!) WAIT(a@) | DONE(d!) NOPE(n@)
+
+# Checkbox states: [ ] open, [-] partial, [x] complete
+
+* ai.skillz
+:PROPERTIES:
+:CATEGORY: ai.skillz
+:REPO: ai.skillz/
+:END:
+** Cross-provider deployment foundation
+:PROPERTIES:
+:CATEGORY: ai.skillz
+:REPO: ai.skillz/
+:AI_DIALOG: opencode -s ses_070081268ffeese0NkiGPL96PV
+:END:
+- [ ] harness/provider generalize the plans/claude/ set.
+  * [ ] remove and relink claude/ parts to ai.skillz/ sources files
+- [ ] refine/rework the `script/` set?
+- [ ] deploy /commit-msg (with plan snippet adendum) to taken/
+*** WIP deploy in local repos
+:PROPERTIES:
+:CREATED: [2026-05-21]
+:CARRIED: 33
+:END:
+- [ ] move away from .claude/ specific, adopt for oc and codex?
+  * [ ] .agents/AGENTS.md?
+  * [ ] generic .agents/skills/ ??
+  * [ ] .agents/commands/ ?? re-expose via `xontrib` with various
+  * [ ] `ai.<command>` also including cross harness/provider-model
+    support?
+- [ ] piker deploy and land in ruff-conf + moar_ai_skillz
+- [x] ai.reply/ deploy so i can actually commit shit!
+- [x] dotrc/ deploy so again i can /commit-msg from oc!
+- [x] deploy to ai.skillz/ ITSELF proper, ensure meta/cyclic linking
+  mks sense.
+- [x] trowsers/taken deploy for oc
+- [x] finish rebasing out old skills files no longer needed
+*** TODO piker deploy
+:PROPERTIES:
+:CREATED: [2026-08-25]
+:CARRIED: 3
+:REPO: piker/wkts/moar_ai_skillz
+:END:
+- [ ] land wkt branch wkts/moar_ai_skillz
+*** Multi-repo skill rollout
+- [ ] manage deployment other truly multi-repo skillz,
+  * [ ] rework all (skills?) `templates/` for multi-provider
+  * [ ] /pr-msg
+  * [ ] /py-codestyle
+  * [ ] /open|close-wkt
+  * [ ] /code-review-changes
+  * [ ] /run-tests
+  * [ ] /inter-skill-review
+  * [ ] /plan-io
+  * [ ] /prompt-io
+  * [ ] /resolve-conflicts (git specific?)
+  * [ ] /task-state-ownership (wut even is this?)
+  * [ ] /yt-url-lookup (should be moved elsewhere maybe?)
+*** TODO Legacy cleanups
+:PROPERTIES:
+:CREATED: [2026-07-24]
+:CARRIED: 22
+:END:
+- [ ] fully remove commands/claude-reply now replaced by ai.reply/
+  repo?
+
+** TODO add a /commit-plan skill?
+:PROPERTIES:
+:CREATED: [2026-07-27]
+:CARRIED: 18
+:END:
+- [ ] depends on /commit-msg obvi
+- [ ] used to mult-commit batched changes
+
+** WIP supervisor dialog
+:PROPERTIES:
+:CREATED: [2026-07-16]
+:CARRIED: 27
+:REPO: ai.skillz/
+:AI_DIALOG: opencode -s ses_092a25886ffeT0nrIrdkMEcgJK
+:END:
+- [ ] breakup this mountain of subs into separate ***hl3s Bp
+- [X] enable /commit-msg natively in opencode dialog
+  * [ ] deploy to all subrepos..
+- [X] stick :AI_DIALOG: in dev_ai.skillz wksmod
+- [X] commit oustanding index using ^
+  * [X] /pr-msg specialization adendum
+  * [X] update commands/README.md from ai.reply/ repo with latest
+    rename, WIP state, integration with harnesses
+    * can likely remove the claude_reply/ cmd entirely right?
+  * [X] /commit-msg "commit plan" adendum
+
+** WIP factor our xonshrc ai.skillz/ related aliases
+:PROPERTIES:
+:CREATED: [2026-07-16]
+:CARRIED: 27
+:END:
+- [x] git.commit_from_ai (was git.commit_from_claude)
+  * dotrc/144c0a6
+- [ ] start agent dialog on this,
+  * [ ] factoring our xonshrc aliases-machinery to ai.skillz/?
+- [ ] ai.commit (was claude.commit)
+- [ ] rewrap `claude.commit` -> `ai.commit` with flags for,
+  * [ ] harness + provider-model
+
+** TODO `gish` where?
+:PROPERTIES:
+:CREATED: [2026-05-21]
+:CARRIED: 33
+:END:
+- [ ] where the skill/gish?
+  * [ ] into standalone repo?
+  * [ ] submod in ai.skillz?
+
+** TODO Commit-plan refinement
+:PROPERTIES:
+:ID: 82626558-865b-42c4-9330-875f0aa2f1c2
+:CREATED: [2026-10-04]
+:CARRIED: 0
+:REPO: ai.skillz/
+:PR: https://github.com/baudco/ai.skillz/pull/24
+:ISSUE: https://github.com/baudco/ai.skillz/issues/22
+:AI_HARNESS: opencode
+:END:
+- [ ] Track accepted-plan latency and delegation/supervisor follow-ups
+  in [[https://github.com/baudco/ai.skillz/pull/24][PR #24]], keeping
+  historical measurements distinct from verified speedups.
+- [ ] Reassess stricter/autonomous execution policy through
+  [[https://github.com/baudco/ai.skillz/issues/22][issue #22]], including
+  deferred final branch-identity reporting; do not duplicate its
+  complete outstanding-review checklist here.
+
+*** TODO Revise pending commit-plan tails after review
+:PROPERTIES:
+:ID: 2ff08348-4dea-48dd-a015-b0df73b70f87
+:CREATED: [2026-10-04]
+:CARRIED: 0
+:REPO: ai.skillz/
+:PR: https://github.com/baudco/ai.skillz/pull/24
+:AI_HARNESS: opencode
+:END:
+- [ ] Implement as a follow-up to #24 in the builder, reusing executor
+  authentication/history classification and native rendering rather
+  than adding a second staging/history/execution state machine.
+- [ ] Authenticate the original spec/artifacts and exact completed
+  prefix; preview a revised first-pending boundary and affected tail.
+  * [ ] Recognize an already-completed package as new-plan work, not
+    a pending-tail revision.
+- [ ] Preserve real index bytes/metadata, staged pending work, old
+  packages and messages; reject unrelated staged changes or history
+  divergence without committing, resetting, stashing or overwriting
+  human edits.
+  * [ ] Record original spec digest, completed prefix and original
+    to replacement ordinal mapping in package provenance.
+- [ ] Recompute affected parent/tree identities and artifact digests.
+  * [ ] Replay retained patches against new parents and review every
+    changed parent-relative diff; surface replay conflicts.
+  * [ ] Retain message bytes/check definitions only where valid;
+    reuse PASS only with unchanged full identity and exact tree,
+    accounting for changed history when checks depend on it.
+- [ ] Define explicit supersession activation and refusal, preserving
+  original artifacts; a rejected proposal must not silently disable
+  the original. Require diff review and editor-backed commits.
+- [ ] Cover staged-first revision, completed-prefix revision, editor
+  abort/resume, unchanged later definitions, conflicting revisions,
+  stale history/index refusal and completed replacement no-ops.
+
+** TODO Code-style / format review
+:PROPERTIES:
+:ID: 7c3270f5-b9a5-4d8b-97a7-19101c403664
+:CREATED: [2026-10-04]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+*** TODO Full Python style review before landing #18
+:PROPERTIES:
+:ID: dc775e3f-1bd6-48af-bc67-f652b6023a8d
+:CREATED: [2026-10-04]
+:CARRIED: 0
+:REPO: ai.skillz/
+:PR: https://github.com/baudco/ai.skillz/pull/18
+:AI_HARNESS: opencode
+:END:
+- [ ] Run a complete canonical /py-codestyle pass across project-owned
+  Python: package modules, skill-embedded scripts, utilities and tests.
+  * [ ] Review naming, qualified technical prose, 69-column layout,
+    strings/docstrings, regression-test rationale, layering and
+    preservation of maintainer comments; Ruff alone is insufficient.
+- [ ] Rigorously review the pyskillz branch before landing
+  [[https://github.com/baudco/ai.skillz/pull/18][PR #18]]; keep this as
+  a human-reviewed pre-landing requirement.
+- [ ] Verify formatting/style changes preserve behavior with relevant
+  tests and repository checks; leave task acceptance to the human.
+
+*** TODO Prepend license headers to project-owned Python
+:PROPERTIES:
+:ID: 89e286d3-fb4a-4856-af06-e4dfaf74408c
+:CREATED: [2026-10-04]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+- [ ] Confirm the repository's intended copyright/SPDX notice and
+  license variant against LICENSE and established project conventions.
+- [ ] Sweep at least Python modules embedded in skills, starting with
+  /commit-plan, and inventory other project-owned Python for gaps.
+  * [ ] Preserve applicable ownership years and existing third-party
+    notices; do not relabel vendored code or change the license.
+- [ ] Preserve shebang/encoding placement, module-docstring and
+  future-import ordering; verify headers do not affect CLI/deployment
+  behavior or source-preservation checks.
+

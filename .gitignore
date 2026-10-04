@@ -152,3 +152,6 @@ claude_wkts
 /build/
 /dist/
 /.venv/
+
+# Local worktrees and taken runtime artifacts
+.*.taken.lock
