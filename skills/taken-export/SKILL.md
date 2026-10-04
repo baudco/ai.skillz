@@ -101,6 +101,36 @@ and all validation below.
 If the repository supervisor cannot access the target safely, stop
 after export and report the artifact paths for the Taken orchestrator.
 
+## Local store and guarded-write routing
+
+Read the repository-local `taken` skill when deployed at
+`.agents/skills/taken/SKILL.md`. It owns the current Taken CLI recipes
+and identity vocabulary. This skill owns outbound work rendering.
+
+Resolve the active worktree's `.taken/sources.toml` before considering
+an ambient/global LNS manifest; LNS uses `taken/sources.toml` instead.
+An explicit human-selected manifest takes precedence. Resolve the
+registered source path and snapshot through `tkns`. Multiple worktree
+stores in one repository are distinct; never guess a target from the
+repository name or silently fall back to the root corpus.
+
+For authorized apply, use Taken's guarded append/write interface.
+A separate hash check followed by direct file editing is not safe
+against a competing writer. Never implement apply through redirection,
+`write_text`, or ad-hoc file replacement. If no compatible guarded
+writer is available, retain/export a proposal instead of saving it.
+Honor existing scoped authorization without asking for it again.
+
+For durable agent hints, use the local taken vocabulary:
+`AI_RUN`, `AI_PARENT_RUN`, `AI_HARNESS`, `AI_DIALOG_ID`, `AI_WORKTREE`,
+`AI_BRANCH`, and an actual observed `AI_NODE` multiaddr when known.
+Do not invent unknown fields or overwrite another run's provenance.
+Use aiskillz for verified worktree/dialog recording and resume argv.
+Do not execute arbitrary drawer strings. Heartbeats and live phases
+belong to runtime observations, not human task states. Current saves
+are observed by storespace freshness polling; an actor activity stream
+and revocable supervisor capabilities are planned, not deployed APIs.
+
 ## Workflow
 
 ### 1. Establish Source Context
@@ -114,7 +144,8 @@ Determine:
 - the intended Taken target headline or category.
 
 Use repository-relative paths in prose. Keep volatile execution details
-in the manifest, not in Org properties.
+in the manifest; authorized durable agent hints follow the local taken
+skill. Unknown dialog/worktree/node identity must remain omitted.
 
 For a Git repository, record `git status --short`, `HEAD`, and remotes
 read-only. A dirty worktree is valid source context; it must be reported,
@@ -199,7 +230,14 @@ Follow these rules:
 - Do not export list content deeper than depth two. Promote a complex
   branch to a task headline instead of creating a fourth list level.
 - Wrap prose consistently with the target corpus when available.
-- Include a property drawer for each exported task.
+- End each new headline subtree with a blank line, including at EOF:
+  use two newline characters after its last nonempty line. Preserve
+  existing human spacing and separate sibling headlines with at least
+  one blank line. Verify that guarded apply preserves this formatting;
+  follow the local taken skill if append normalizes trailing whitespace.
+  This readability rule does not replace fixes for fold/movement bugs.
+- Include a property drawer and unique stable `ID` for each new task.
+  Retain that ID when retrying the same proposal.
 - Set `CREATED` to the target corpus's local export date and `CARRIED`
   to `0`. If the target timezone is unknown, use the UTC date and record
   that choice in the manifest.
@@ -210,8 +248,8 @@ Follow these rules:
 - Use at most one primary URL for each forge property. Put additional
   canonical links in checkbox prose and the manifest.
 - Include `WKS` only when the logical workspace is known.
-- Omit transient worker phase, retry, lease, heartbeat, and session
-  details unless the human explicitly wants a durable dialog hint.
+- Omit transient worker phase, retry, lease and heartbeat details.
+  Include verified durable agent hints only within authorized scope.
 - Do not add `DONE_REF` or `DONE_SRC` to proposed work.
 
 Keep source provenance, dedupe keys, and snapshot metadata in the JSON
@@ -257,7 +295,8 @@ Before editing `current.org`:
 1. Confirm authorization names the exact fragment, corpus path, and target.
    An affirmative auto-update answer authorizes only the fragment shown in
    the immediately preceding copy/paste handoff. Re-rendered or changed
-   content requires a new answer.
+   content outside that authorization requires a new answer. An explicit
+   standing project-update scope remains valid without repeat prompts.
 2. Re-read the target file immediately before mutation.
 3. Verify the target `ID` or full ancestor path resolves exactly once.
 4. For an artifact apply, verify the exact Org fragment bytes match
@@ -271,10 +310,19 @@ Before editing `current.org`:
 6. Search the target subtree for matching forge URLs, dedupe keys, and
    semantically equivalent tasks.
 7. Present or inspect the exact additions; do not replace the subtree.
-8. Insert only approved new headlines and checkbox items.
+8. Append only approved content through the guarded writer. For one
+   identified headline, use `tkns append` with `--base`, `--id`, a stable
+   `--operation` token, and `--parent` or `--root`. If the parent has no
+   ID, retain a fully reviewed document candidate and use `tkns write`
+   with the original base digest after unambiguous path resolution.
+   Never silently assign an ID to an existing parent. Multi-headline
+   proposals use one reviewed full-document write or explicit separately
+   guarded operations; do not claim multi-file atomicity.
 9. Preserve every existing headline state, checkbox marker, property,
    ordering choice, and unrelated edit.
-10. Run non-writing `tkn lint` when available.
+10. Inspect the save result and run read-only `tkns lint` for that source.
+    On a stale base or contention, retain the proposal and reconcile;
+    never overwrite with a newly read digest and an old candidate.
 11. Run `git diff --check` and report the target diff.
 
 Do not mutate the export manifest during apply. A future receipt format

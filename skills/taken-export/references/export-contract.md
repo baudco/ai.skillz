@@ -40,6 +40,7 @@ Given target `modden/PR LANDING` at level 2:
 ```org
 *** TODO example_branch
 :PROPERTIES:
+:ID: modden-example-branch-followups
 :CREATED: [2026-07-21]
 :CARRIED: 0
 :REPO: modden/
@@ -52,6 +53,8 @@ Given target `modden/PR LANDING` at level 2:
 
 Required task properties:
 
+- `ID`: unique stable headline identity, retained on retries.
+
 - `CREATED`: bracketed ISO date.
 - `CARRIED`: `0` for new proposals.
 - `REPO`: repository alias or path when repository work is involved.
@@ -62,8 +65,11 @@ Optional established properties:
 - `PR`: canonical pull-request URL.
 - `ISSUE`: canonical issue URL.
 - `REVIEW`: canonical review URL.
-- `AI_DIALOG` or `AI_SESSION`: only when the human wants a durable resume
-  hint and the target corpus already uses that convention.
+- Preserve existing `AI_DIALOG` or `AI_SESSION` hints. New authorized
+  provenance uses the local taken skill fields: `AI_RUN`,
+  `AI_PARENT_RUN`, `AI_HARNESS`, `AI_DIALOG_ID`, `AI_WORKTREE`,
+  `AI_BRANCH`, and an observed `AI_NODE` multiaddr. Omit unknown fields;
+  runtime liveness is not encoded in task states.
 
 The Org fragment must not contain export-envelope metadata, content
 hashes, worker state, or forge response payloads.
