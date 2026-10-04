@@ -5,6 +5,7 @@ import io
 import json
 import os
 import pty
+import re
 import select
 import shutil
 import shlex
@@ -884,14 +885,23 @@ class CommitPlanExecTests(unittest.TestCase):
         path. NUL-delimited Git metadata must preserve the path while
         rendering escapes it. The main repository, relative worktree
         and actual branch stay distinct without dialog-store access.
+        Use an underscore in the main name deterministically: raw
+        path assertions previously failed only for some temp names.
 
         '''
+        spec = json.loads(self.spec_path.read_text())
+        main = self.root.with_name('repo_context')
+        self.root.rename(main)
+        self.root = main
         linked = self.root / 'wkts' / 'feature\n[context]'
         self.git('worktree', 'add', '-b', 'feature', str(linked))
-        spec = json.loads(self.spec_path.read_text())
         spec['repo_root'] = str(linked)
         text = PLAN_EXEC.overview(spec)
-        self.assertIn('repo: ' + str(self.root), text)
+        label = next(line for line in text.splitlines()
+                     if line.startswith('repo: '))
+        self.assertIn(r'repo\_context', label)
+        decoded = re.sub(r'\\(.)', r'\1', label[6:].rstrip())
+        self.assertEqual(decoded, str(self.root))
         self.assertIn(
             r'worktree: wkts/feature\\x0a\[context\]', text,
         )
