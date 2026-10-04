@@ -589,6 +589,16 @@ def command(value: Any, field: str) -> dict[str, Any]:
         required_string(item, f'{field}.resolution_argv[{index}]')
         for index, item in enumerate(resolution_value)
     ]
+    required_value = value.get('required_executables', [])
+    required_field = f'{field}.required_executables'
+    if not isinstance(required_value, list):
+        raise PlanError(f'{required_field} must be a list')
+    required_executables = [
+        required_string(item, f'{required_field}[{index}]')
+        for index, item in enumerate(required_value)
+    ]
+    if len(set(required_executables)) != len(required_executables):
+        raise PlanError(f'{required_field} contains duplicates')
     env_value = value.get('env', {})
     if not isinstance(env_value, dict):
         raise PlanError(f'{field}.env must be an object')
@@ -610,11 +620,24 @@ def command(value: Any, field: str) -> dict[str, Any]:
         if safe_name in forbidden:
             raise PlanError(f'{field}.env redirects execution')
         environment[safe_name] = item
-    return {
+    result = {
         'argv': argv,
         'env': environment,
         'resolution_argv': resolution_argv,
+        'required_executables': required_executables,
     }
+    if 'prior_pass' in value:
+        evidence = value['prior_pass']
+        fields = {'tree', 'source', 'outcome', 'exit'}
+        if not isinstance(evidence, dict) or set(evidence) != fields:
+            raise PlanError(f'{field}.prior_pass is malformed')
+        exit_code = evidence['exit']
+        if type(exit_code) is not int or exit_code != 0:
+            raise PlanError(f'{field}.prior_pass requires exit=0')
+        for name in ('tree', 'source', 'outcome'):
+            required_string(evidence[name], f'{field}.prior_pass')
+        result['prior_pass'] = evidence.copy()
+    return result
 
 
 def commands(value: Any, field: str) -> list[dict[str, Any]]:
@@ -788,6 +811,8 @@ def validate_spec(data: Any) -> dict[str, Any]:
     '''
     if not isinstance(data, dict) or data.get('version') != 1:
         raise PlanError('unsupported plan specification version')
+    if type(data.get('strict_branch', True)) is not bool:
+        raise PlanError('strict_branch must be a boolean')
     root = canonical_root(data.get('repo_root'))
     data['repo_root'] = str(root)
     for field in (
@@ -836,6 +861,10 @@ def validate_spec(data: Any) -> dict[str, Any]:
             boundary.get('project_checks'),
             'project_checks',
         )
+        for description in boundary['project_checks']:
+            evidence = description.get('prior_pass')
+            if evidence and evidence['tree'] != boundary['tree']:
+                raise PlanError('prior_pass boundary tree mismatch')
     return data
 
 
@@ -893,12 +922,18 @@ def validate_identity(spec: dict[str, Any]) -> Path:
     if normalize_git_path(root, git_dir) != spec['git_dir']:
         raise PlanError('worktree Git directory changed')
     branch = git(root, 'symbolic-ref', '-q', 'HEAD', check=False)
-    branch_changed = (
-        branch.returncode
-        or branch.stdout.strip() != spec['branch_ref']
-    )
-    if branch_changed:
-        raise PlanError('checked-out branch changed')
+    if branch.returncode:
+        raise PlanError('detached HEAD refused; switch to a branch')
+    if (
+        spec.get('strict_branch', True)
+        and branch.stdout.strip() != spec['branch_ref']
+    ):
+        expected = visible_text(spec['branch_ref'])
+        raise PlanError(
+            f'checked-out branch changed; strict policy requires '
+            f'{expected}. Switch back or generate a fresh plan '
+            f'without --strict; do not edit pinned evidence.'
+        )
     validate_objects(spec, root)
     initial_tree = git(
         root,
@@ -1152,6 +1187,34 @@ def command_executable(
         return False
     found = shutil.which(value, path=search_path)
     return found is not None and external_tool_allowed(spec, found)
+
+
+def check_prerequisites(
+    spec: dict[str, Any],
+    description: dict[str, Any],
+    root: Path,
+    boundary: dict[str, Any],
+    index: int,
+) -> None:
+    '''
+    Resolve declared child tools with the command executable rules.
+
+    '''
+    for name in description.get('required_executables', []):
+        candidate = {'argv': [name], 'env': description['env']}
+        try:
+            available = command_executable(
+                candidate, root, boundary['tree'], 'argv', spec,
+            )
+        except OSError:
+            available = False
+        if not available:
+            ordinal = boundary['ordinal']
+            safe_name = visible_text(name)
+            raise PlanError(
+                f'[boundary {ordinal} Micro CI check {index}] '
+                f'required prerequisite unavailable: {safe_name}'
+            )
 
 
 def validate_index_file(
@@ -1552,14 +1615,21 @@ def run_project_checks(
     descriptions = boundary['project_checks']
     if not descriptions:
         return 0
-    total = len(descriptions)
-    for index, description in enumerate(descriptions, start=1):
-        with isolated_tree(
-            spec,
-            boundary['tree'],
-            parent_oid,
-        ) as checked:
-            root, environment, commit_oid = checked
+    with contextlib.ExitStack() as stack:
+        total = len(descriptions)
+        for index, description in enumerate(descriptions, start=1):
+            stack.close()
+            evidence = description.get('prior_pass')
+            if evidence:
+                reason = prior_pass_reason(evidence)
+                print(
+                    f'[micro CI {index}/{total}] SKIP {reason}',
+                    flush=True,
+                )
+                continue
+            root, environment, commit_oid = stack.enter_context(
+                isolated_tree(spec, boundary['tree'], parent_oid)
+            )
             ensure_isolated_tree(
                 root, environment, commit_oid, boundary['tree'],
             )
@@ -1574,6 +1644,10 @@ def run_project_checks(
                     raise PlanError(
                         f'required executable unavailable: {name}'
                     )
+            check_prerequisites(
+                spec, dict(description, env=check_env),
+                root, boundary, index,
+            )
             secrets = secret_values(
                 check_env,
             )
@@ -1697,7 +1771,14 @@ def preflight(spec: dict[str, Any], root: Path) -> None:
             boundary['message'],
             'commit message',
         )
-        for description in boundary['project_checks']:
+        for index, description in enumerate(
+            boundary['project_checks'], start=1,
+        ):
+            if description.get('prior_pass'):
+                continue
+            check_prerequisites(
+                spec, description, root, boundary, index,
+            )
             for key in ('resolution_argv', 'argv'):
                 if not command_executable(
                     description,
@@ -1950,6 +2031,9 @@ def execute(
         return 0
     if ordinal != completed + 1:
         raise PlanError('an earlier boundary is still pending')
+    branch_ref = git(
+        root, 'symbolic-ref', '-q', 'HEAD',
+    ).stdout.strip()
     boundary = spec['boundaries'][ordinal - 1]
     subject = visible_text(boundary['subject'])
     print(
@@ -2040,9 +2124,9 @@ def execute(
                 checkout_state['retain'] = True
                 raise PlanError('branch changed before publication')
             try:
-                with protected_branch(root, spec['branch_ref']):
+                with protected_branch(root, branch_ref):
                     git(
-                        checkout, 'update-ref', spec['branch_ref'],
+                        checkout, 'update-ref', branch_ref,
                         head_after, parent_oid,
                     )
             except PlanError as error:
@@ -2058,74 +2142,488 @@ def execute(
     return 0
 
 
-def show(spec: dict[str, Any]) -> None:
+def prior_pass_reason(evidence: dict[str, Any]) -> str:
     '''
-    Print every pinned boundary operation for human review.
+    Describe the authenticated success without terminal controls.
+
+    '''
+    outcome = visible_text(evidence['outcome'])
+    source = visible_text(evidence['source'])
+    tree = evidence['tree']
+    return (
+        f'prior PASS exit=0: {outcome}; '
+        f'source: {source}; tree: {tree}'
+    )
+
+
+def show_lines(
+    spec: dict[str, Any],
+    *,
+    width: int = 69,
+    probes: dict | None = None,
+    shared_environment: dict | None = None,
+    shell: str = 'xonsh',
+) -> list[str]:
+    '''
+    Describe every pinned boundary operation for human review.
 
     '''
     lines = []
     for boundary in spec['boundaries']:
         if lines:
             lines.append('')
-        ordinal = boundary['ordinal']
-        subject = visible_text(boundary['subject'])
         patch = visible_text(boundary['patch']['path'])
-        lines.extend(
-            (
-                f'Boundary {ordinal}: {subject}',
-                '  Stage:',
-                f'    patch: {patch}',
-            )
-        )
-        stage = render_command(git_command(*patch_operation()))
-        lines.append(f'    $ {stage} < authenticated patch')
-        lines.append('  Structural checks:')
-        for operation in structural_operations():
-            command_text = render_command(git_command(*operation))
-            lines.append(f'    $ {command_text}')
-        lines.append('  Project checks:')
-        checks = boundary['project_checks']
-        if not checks:
-            lines.append('    (none)')
-        for index, description in enumerate(checks, start=1):
-            lines.append(f'    Check {index}/{len(checks)}:')
-            lines.append('      cwd: <isolated boundary tree>')
-            if description['env']:
-                names = ', '.join(
-                    visible_text(name)
-                    for name in sorted(description['env'])
-                )
-                lines.append(
-                    f'      env: {names} '
-                    '(authenticated values hidden)'
-                )
-            resolution = render_command(
-                description['resolution_argv']
-            )
-            project_check = render_command(description['argv'])
-            lines.extend(
-                (
-                    f'      resolve $ {resolution}',
-                    f'      run     $ {project_check}',
-                )
-            )
-        review = render_command(git_command(*review_operation()))
+        lines.append('inputs:')
+        lines.append(f'|_patch: {patch}')
         message = visible_text(boundary['message']['path'])
-        commit = render_command(
-            git_command(
-                *commit_operation('AUTHENTICATED_MESSAGE_SNAPSHOT')
+        lines.append(f'|_message: {message}')
+        lines.extend(('#', '--- staging/checks ---', 'cmds:'))
+        operations = [
+            ('PATCH', git_command(*patch_operation())),
+            *[
+                ('CHECK', git_command(*operation))
+                for operation in structural_operations()
+            ],
+        ]
+        for tag, argv in operations:
+            suffix = ' < AUTHENTICATED_PATCH' if (
+                tag == 'PATCH'
+            ) else ''
+            lines.extend(comment_command(
+                tag, argv, width, suffix, shell=shell,
+            ))
+        checks = boundary['project_checks']
+        if checks:
+            lines.extend(('', '--- micro-ci ---', 'cmds:'))
+        for description in checks:
+            evidence = description.get('prior_pass')
+            key = probe_identity(description)
+            name = (probes or {}).get(key)
+            if description['env'] != shared_environment:
+                lines.extend(environment_lines(description))
+            if name:
+                if evidence:
+                    lines.extend((
+                        '|_SKIP-PROBE=> prior PASS', f'  {name}',
+                    ))
+                else:
+                    lines.append(f'|_PROBE> {name}')
+            else:
+                lines.extend(comment_command(
+                    'PROBE', description['resolution_argv'], width,
+                    shell=shell,
+                    status='prior PASS' if evidence else None,
+                ))
+            status = None
+            if evidence:
+                outcome = visible_text(evidence['outcome'])
+                status = f'prior PASS exit=0: {outcome}'
+            lines.extend(comment_command(
+                'CHECK', description['argv'], width,
+                shell=shell, status=status,
+            ))
+        lines.extend(('', '--- review/commit ---', 'cmds:'))
+        for tag, operation in (
+            ('REVIEW', review_operation()),
+            ('COMMIT', commit_operation(
+                'AUTHENTICATED_MESSAGE_SNAPSHOT',
+            )),
+        ):
+            lines.extend(comment_command(
+                tag, git_command(*operation), width,
+                shell=shell,
+            ))
+    return lines
+
+
+def xonsh_token(value: str) -> str:
+    '''
+    Keep conservative subprocess tokens bare; inject other literals.
+
+    '''
+    if re.fullmatch(r'[/a-zA-Z0-9_.-]+', value):
+        return value
+    literal = ascii(value)
+    return f'@({literal})'
+
+
+def xonsh_command(arguments: list[str]) -> str:
+    '''
+    Preserve raw argv before comment control escaping.
+
+    '''
+    return ' '.join(xonsh_token(item) for item in arguments)
+
+
+def bash_token(value: str, *, quoted: bool = False) -> str:
+    '''
+    Quote raw Bash argv, escaping controls with ANSI-C literals.
+
+    '''
+    if all(character.isprintable() for character in value):
+        token = shlex.quote(value)
+        if quoted and token == value:
+            return "'" + value + "'"
+        return token
+    escaped = []
+    for character in value:
+        if character in "\\'":
+            escaped.append('\\' + character)
+        elif not character.isprintable() and ord(character) >= 128:
+            codepoint = ord(character)
+            escaped.append(
+                f'\\u{codepoint:04x}' if codepoint <= 0xffff
+                else f'\\U{codepoint:08x}'
             )
+        else:
+            escaped.append(visible_text(character))
+    return "$'" + ''.join(escaped) + "'"
+
+
+def comment_command(
+    tag: str,
+    arguments: list[str],
+    width: int,
+    suffix: str = '',
+    *,
+    shell: str = 'xonsh',
+    status: str | None = None,
+) -> list[str]:
+    '''
+    Wrap diagnostic argv using the selected shell's literals.
+
+    Bash keeps complete tokens (a soft width limit); Xonsh splits
+    raw characters before quoting, keeping escapes indivisible.
+
+    '''
+    quote = bash_token if shell == 'bash' else xonsh_token
+    command_text = (
+        ' '.join(quote(item) for item in arguments)
+        if shell == 'bash' else xonsh_command(arguments)
+    )
+    header = f'|_{tag}>' if status is None else (
+        f'|_SKIP-{tag}=> {status}'
+    )
+    inline = header + ' ' + command_text + suffix
+    if status is None and len(inline) + 2 <= width:
+        return [inline]
+    if shell == 'bash':
+        tokens = [bash_token(argument) for argument in arguments]
+        tokens.extend(suffix.split())
+        lines = [header]
+        current = '  '
+        for index, token in enumerate(tokens):
+            separator = '' if current == '  ' else ' '
+            reserve = 4 if index < len(tokens) - 1 else 2
+            length = len(current + separator + token) + reserve
+            if (
+                current != '  '
+                and length > width
+            ):
+                lines.append(current + ' \\')
+                current = '  '
+                separator = ''
+            current += separator + token
+        return [*lines, current]
+    tokens = []
+    budget = width - 8
+    for argument in arguments:
+        token = xonsh_token(argument)
+        if len(token) <= budget:
+            tokens.append(token)
+            continue
+        chunks = []
+        chunk = ''
+        for character in argument:
+            if len(ascii(chunk + character)) + 3 > budget:
+                chunks.append(ascii(chunk))
+                chunk = ''
+            chunk += character
+        chunks.append(ascii(chunk))
+        tokens.extend(['@(' + chunks[0], *chunks[1:-1]])
+        if len(chunks) == 1:
+            tokens[-1] += ')'
+        else:
+            tokens.append(chunks[-1] + ')')
+    tokens.extend(suffix.split())
+    lines = [header]
+    current = '  '
+    for token in tokens:
+        separator = '' if current == '  ' else ' '
+        if len(current + separator + token) + 4 > width:
+            lines.append(current + ' \\')
+            current = '  '
+            separator = ''
+        current += separator + token
+    lines.append(current)
+    return lines
+
+
+def probe_identity(description: dict) -> tuple:
+    '''
+    Identify display sharing without deduplicating execution.
+
+    '''
+    return (
+        tuple(description['resolution_argv']),
+        tuple(sorted(description['env'].items())),
+    )
+
+
+def environment_lines(description: dict) -> list[str]:
+    '''
+    Describe only selected overlay names, never their values.
+
+    '''
+    names = ', '.join(
+        visible_text(name) for name in sorted(description['env'])
+    )
+    return [f'|_env: {names or "none"} (values hidden)']
+
+
+def overview(spec: dict[str, Any], completed: int = 0) -> str:
+    '''
+    Summarize the checkout and verified progress before shared notes.
+
+    The caller supplies `classify()`'s completed prefix after
+    identity validation. Newly finalized plans have zero completed.
+    Git supplies checkout context, including the current branch.
+
+    '''
+    root = Path(spec['repo_root'])
+    listing = git(
+        root, 'worktree', 'list', '--porcelain', '-z',
+    ).stdout
+    main_record = listing.split('\0\0', 1)[0].split('\0')
+    main = Path(next(
+        field[9:] for field in main_record
+        if field.startswith('worktree ')
+    ))
+    branch = git(
+        root, 'symbolic-ref', '--short', 'HEAD',
+    ).stdout.strip()
+    location = (
+        str(root.relative_to(main)) if root.is_relative_to(main)
+        else str(root)
+    )
+    if root == main and 'bare' not in main_record:
+        location = '(main checkout)'
+
+    def escape(value: str) -> str:
+        '''
+        Escape Markdown syntax as well as terminal controls.
+
+        '''
+        return re.sub(
+            r'([\\`*_{}\[\]()<>#!|])', r'\\\1', visible_text(value),
         )
+
+    total = len(spec['boundaries'])
+    remaining = total - completed
+    lines = [
+        f'**{total} planned commits · {completed} completed · '
+        f'{remaining} remaining**',
+        '',
+        'repo: ' + escape(str(main)) + '  ',
+        'worktree: ' + escape(location) + '  ',
+        'branch: ' + escape(branch),
+        '',
+    ]
+    for boundary in spec['boundaries']:
+        ordinal = boundary['ordinal']
+        status = 'completed' if ordinal <= completed else 'pending'
+        subject = escape(boundary['subject'])
+        lines.append(
+            f'{ordinal}. **{status}:** {subject} '
+            f'(`--execute {ordinal}`)'
+        )
+    lines.extend((
+        '',
+        'mode: review — each pending step stages its patch, runs',
+        'checks, shows the diff, and opens the message editor.',
+        'Stops on failure; completed commits are skipped.',
+        '',
+    ))
+    policy = (
+        'Branch policy: strict; require the recorded branch ref.'
+        if spec.get('strict_branch', True) else
+        'Branch policy: flexible; allow a renamed/switched branch '
+        'at the pinned HEAD or an exact completed boundary prefix.'
+    )
+    lines.extend((
+        policy + ' Detached HEAD is refused.',
+        'Authenticate artifacts and identity/history/index; '
+        'check, review, commit, then verify the tree.',
+        'Refuse order/history/index divergence; stop on failures. '
+        'Skip completed boundaries and already-staged patches.',
+        'Prior PASS skips unchanged checks/probes; full evidence '
+        'and provenance remain in the pinned spec/artifacts.',
+        'Pending checks use temporary exact-tree clones with '
+        'independent Git metadata, sanitized Python paths '
+        'and cleanup.',
+        '`AUTHENTICATED_PATCH` / `AUTHENTICATED_MESSAGE_SNAPSHOT` '
+        'are symbolic runtime paths.',
+        'Diagnostic argv uses the current checkout without hidden '
+        'env values; probe-N references the catalog, not execution.',
+    ))
+    return '\n'.join(lines)
+
+
+def render(
+    spec: dict[str, Any],
+    args: argparse.Namespace,
+    completed: int = 0,
+) -> None:
+    '''
+    Generate grouped comments or a complete native command block.
+
+    Unsafe Xonsh tokens use Python string injection, not shell
+    quoting. Comments escape controls before prefixing each physical
+    line; no specification text can become executable code.
+
+    '''
+    root = spec['repo_root']
+    display_only = args.show
+    comments_only = display_only or args.render == 'comments'
+    shell = args.show_shell if display_only else args.render
+    shell_name = 'Bash' if shell == 'bash' else 'Xonsh'
+    root_token = xonsh_token(root)
+    script = Path(__file__).resolve()
+    lines = [] if comments_only else [
+        f'PYVM = {ascii(sys.executable)}',
+        f'PLAN_SCRIPT = {ascii(str(script))}',
+        f'PLAN_SPEC = {ascii(str(args.spec.resolve()))}',
+        f'PLAN_SHA256 = {ascii(args.sha256)}',
+        '',
+        f'cd {root_token}  # nav to git wkt',
+    ]
+    if not comments_only and shell == 'bash':
+        bindings = (
+            ('PYVM', sys.executable),
+            ('PLAN_SCRIPT', str(script)),
+            ('PLAN_SPEC', str(args.spec.resolve())),
+            ('PLAN_SHA256', args.sha256),
+        )
+        lines = [
+            name + '=' + bash_token(value, quoted=True)
+            for name, value in bindings
+        ]
+        lines.extend((
+            '', 'set -e  # Stop this script on failure',
+            'cd ' + bash_token(root) + '  # nav to git wkt', '',
+        ))
+    elif not comments_only:
         lines.extend(
             (
-                '  Review:',
-                f'    $ {review}',
-                '  Commit:',
-                f'    message: {message}',
-                f'    $ {commit}',
+                '$XONSH_SUBPROC_CMD_RAISE_ERROR = True'
+                '  # Stop on failure',
+                '',
             )
         )
-    print('\n'.join(lines))
+    source = visible_text(script.name)
+    if comments_only:
+        source = f'ai.skillz/skills/commit-plan/scripts/{source}'
+    invocations = [
+        (
+            ['--preflight'],
+            [
+                'ops-summary:',
+                ' * validate identity/history, pending '
+                'artifacts and executable availability',
+            ],
+        ),
+        (
+            ['--show', '--show-shell', 'bash'] if shell == 'bash'
+            else ['--show'],
+            [
+                'ops-summary:',
+                ' * display pinned operations (to console)',
+            ],
+        ),
+    ]
+    checks = [
+        item for boundary in spec['boundaries']
+        for item in boundary['project_checks']
+    ]
+    identities = [probe_identity(item) for item in checks]
+    probes = {}
+    for key in identities:
+        if identities.count(key) > 1 and key not in probes:
+            probes[key] = f'probe-{len(probes) + 1}'
+    shared = [
+        'osenv:',
+        f'|_PWD: {root}',
+        f'|_SHELL: {shell_name} diagnostic syntax',
+    ]
+    selected = {
+        item['env'].get('VIRTUAL_ENV') for item in checks
+    }
+    venv = (
+        'not selected' if selected <= {None, ''}
+        else '<redacted; see configured environment>'
+    )
+    shared.append(f'|_VIRTUAL_ENV: {venv}')
+    shared_environment = checks[0]['env'] if checks else {}
+    shared.extend(environment_lines({'env': shared_environment}))
+    if probes:
+        shared.extend(('', 'probe-catalog:'))
+        for key, name in probes.items():
+            environment = dict(key[1])
+            if environment != shared_environment:
+                shared.extend(environment_lines({
+                    'env': environment,
+                }))
+            shared.extend(comment_command(
+                name.upper(), list(key[0]), args.comment_width,
+                shell=shell,
+            ))
+    invocations[0][1].extend(['', *shared])
+    if display_only:
+        invocations = [([], shared)]
+    for boundary in spec['boundaries']:
+        ordinal = boundary['ordinal']
+        details = []
+        details.extend(show_lines(
+            {'boundaries': [boundary]},
+            width=args.comment_width, probes=probes,
+            shared_environment=shared_environment,
+            shell=shell,
+        ))
+        invocations.append((['--execute', str(ordinal)], details))
+    for mode, details in invocations:
+        invocation = ' '.join(mode)
+        if not display_only:
+            lines.append(f'# >> {source} {invocation}')
+        lines.extend(
+            f'# {visible_text(line)}' if line and line != '#'
+            else (
+                '#' if mode == ['--preflight'] or not mode else line
+            )
+            for line in details
+        )
+        if comments_only:
+            lines.append('')
+            continue
+        call = (
+            '"$PYVM" "$PLAN_SCRIPT" --spec "$PLAN_SPEC" \\'
+            if shell == 'bash' else
+            '@(PYVM) @(PLAN_SCRIPT) --spec @(PLAN_SPEC) \\'
+        )
+        checksum = (
+            '"$PLAN_SHA256"' if shell == 'bash'
+            else '@(PLAN_SHA256)'
+        )
+        if args.strict:
+            invocation += ' --strict'
+        lines.extend((
+            call,
+            f'    --sha256 {checksum} {invocation}',
+            '',
+        ))
+    output = '\n'.join(lines).rstrip('\n')
+    if display_only:
+        output = overview(spec, completed) + '\n\n' + output
+    print(output)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -2136,12 +2634,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('--spec', required=True, type=Path)
     parser.add_argument('--sha256', required=True)
+    parser.add_argument(
+        '--strict', action='store_true',
+        help='strengthen this invocation to exact branch matching',
+    )
+    parser.add_argument('--comment-width', type=int, default=69)
+    parser.add_argument(
+        '--show-shell', choices=('xonsh', 'bash'), default='xonsh',
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--preflight', action='store_true')
     mode.add_argument('--show', action='store_true')
+    mode.add_argument('--overview', action='store_true')
+    mode.add_argument(
+        '--render', choices=('xonsh', 'bash', 'comments'),
+    )
     mode.add_argument('--execute', type=int, metavar='ORDINAL')
     parser.add_argument('--no-pager', action='store_true')
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.show_shell != 'xonsh' and not args.show:
+        parser.error('--show-shell requires --show')
+    if args.comment_width < 40:
+        parser.error('--comment-width must be at least 40')
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2153,14 +2668,23 @@ def main(argv: list[str] | None = None) -> int:
     try:
         git_environment()
         spec = load_spec(args.spec, args.sha256)
+        if args.strict:
+            spec['strict_branch'] = True
         root = validate_identity(spec)
         validate_index_file(root)
         if args.no_pager and args.execute is None:
             raise PlanError('--no-pager requires --execute')
+        completed = 0
+        if args.overview or args.show or args.render:
+            completed = classify(spec, root)
         if args.preflight:
             preflight(spec, root)
+        elif args.overview:
+            print(overview(spec, completed))
         elif args.show:
-            show(spec)
+            render(spec, args, completed)
+        elif args.render:
+            render(spec, args, completed)
         else:
             if args.execute < 1:
                 raise PlanError('boundary ordinal must be positive')

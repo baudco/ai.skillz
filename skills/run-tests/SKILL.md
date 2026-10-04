@@ -113,6 +113,18 @@ project files and report the inferred command before running it.
 
 ## 4. Build The Test Command
 
+Record evidenced child executables alongside each catalog command:
+for example, `git` for Python tests spawning Git, or `cp` and `sed`
+for shell checks invoking those utilities. When composing a commit
+plan, include these in the command's `required_executables` list.
+Validate availability under the exact selected environment overlay;
+an absolute Python executable and successful import probe do not
+establish that child tools exist on that check's `PATH`. The local
+reference owns documented helpers; the selecting agent declares the
+evidenced ones. This is not discovery of every dynamic dependency or
+proof against child environment changes. Do not automatically alter
+`PATH` to bypass missing prerequisites.
+
 Start with the override's base command and environment wrapper. Add, in
 order:
 
