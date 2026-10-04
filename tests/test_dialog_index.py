@@ -7,7 +7,7 @@ Backfill synthetic harness history without claiming worktree owners.
 
 '''
 
-from contextlib import closing, redirect_stdout
+from contextlib import closing, redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 import os
@@ -44,6 +44,140 @@ class DialogIndexTests(unittest.TestCase):
     Test preview/apply against isolated stores and real Git metadata.
 
     '''
+
+    def test_record_wrong_harness_refuses_before_writing(self) -> None:
+        '''
+        A name under the wrong harness was saved as a literal ID.
+
+        Return no OpenCode match for a Codex name selected via `oc`.
+        The CLI must report the missing name and harness, fail, and
+        leave the existing relation bytes unchanged. This includes
+        the old misleading zero-write case for a bogus saved pair.
+
+        '''
+        name: str = 'config_schema_mngr'
+        record(str(self.repo), 'oc', name, str(self.first))
+        path: Path = (
+            self.repo / '.ai/state/dialogs/relations.json'
+        )
+        before: bytes = path.read_bytes()
+        error: StringIO = StringIO()
+        with (
+            patch('aiskillz.cli.dialogs.list_dialogs',
+                  return_value=[]) as reader,
+            redirect_stderr(error),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main([
+                'index', str(self.repo), '--record', 'oc', name,
+                '--worktree', str(self.first),
+            ])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn(repr(name), error.getvalue())
+        self.assertIn(
+            "for harness 'oc' (opencode)\n"
+            'Check --record HARNESS and the dialog name or ID\n',
+            error.getvalue(),
+        )
+        self.assertEqual(path.read_bytes(), before)
+        reader.assert_called_once_with(
+            path=None, harness='oc', all_sources=True,
+        )
+
+    def test_record_resolves_name_to_real_id(self) -> None:
+        '''
+        Manual recording formerly used a saved name as the ID.
+
+        Supply a name and an alias with metadata rooted elsewhere.
+        Assert the real ID and canonical harness are persisted, then
+        repeat using the ID to prove unchanged relations return zero.
+        The lookup must include all directories and archive sources.
+
+        '''
+        row: dict = {
+            'name': 'config_schema_mngr', 'id': self.cx_id,
+            'harness': 'codex', 'cwd': str(self.second),
+        }
+        selector: str
+        for selector in (row['name'], row['id']):
+            output: StringIO = StringIO()
+            with (
+                patch('aiskillz.cli.dialogs.list_dialogs',
+                      return_value=[row]) as reader,
+                redirect_stdout(output),
+            ):
+                self.assertEqual(main([
+                    'index', str(self.repo), '--record', 'cx',
+                    selector, '--worktree', str(self.first),
+                ]), 0)
+            reader.assert_called_once_with(
+                path=None, harness='cx', all_sources=True,
+            )
+        self.assertIn('WKT relations written: 0', output.getvalue())
+        relations: list[dict] = list_wkt_relations(str(self.repo))
+        self.assertEqual(len(relations), 1)
+        self.assertEqual(relations[0]['id'], self.cx_id)
+        self.assertEqual(relations[0]['harness'], 'codex')
+
+    def test_record_duplicate_names_refuses(self) -> None:
+        '''
+        Two saved dialogs can have the same name in one harness.
+
+        Return two distinct IDs for a name. Verify the CLI offers
+        both exact IDs and fails without creating relations.json,
+        rather than silently choosing one dialog or saving its name.
+
+        '''
+        rows: list[dict] = [
+            {'name': 'duplicate', 'id': 'one', 'harness': 'codex'},
+            {'name': 'duplicate', 'id': 'two', 'harness': 'codex'},
+        ]
+        error: StringIO = StringIO()
+        with (
+            patch('aiskillz.cli.dialogs.list_dialogs',
+                  return_value=rows),
+            redirect_stderr(error),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main([
+                'index', str(self.repo), '--record', 'cx',
+                'duplicate', '--worktree', str(self.first),
+            ])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn(
+            "for harness 'cx' (codex)\n"
+            'Pass an exact ID: one, two\n',
+            error.getvalue(),
+        )
+        self.assertFalse((
+            self.repo / '.ai/state/dialogs/relations.json'
+        ).exists())
+
+    def test_record_id_precedes_colliding_name(self) -> None:
+        '''
+        One dialog's name can equal another dialog's opaque ID.
+
+        Put the name match first in discovery results. Recording
+        must still select the exact ID, matching ai.resume's rule,
+        and leave the other dialog without a WKT relation.
+
+        '''
+        rows: list[dict] = [
+            {'name': self.cx_id, 'id': 'other', 'harness': 'codex'},
+            {'name': 'actual', 'id': self.cx_id, 'harness': 'codex'},
+        ]
+        with (
+            patch('aiskillz.cli.dialogs.list_dialogs',
+                  return_value=rows),
+            redirect_stdout(StringIO()),
+        ):
+            main([
+                'index', str(self.repo), '--record', 'cx',
+                self.cx_id, '--worktree', str(self.first),
+            ])
+        relations: list[dict] = list_wkt_relations(str(self.repo))
+        self.assertEqual(len(relations), 1)
+        self.assertEqual(relations[0]['id'], self.cx_id)
 
     def test_legacy_imports_match_relation_api(self) -> None:
         '''

@@ -369,6 +369,14 @@ To associate a worktree to a dialog explicitly, use:
 ai.dlogs index --record oc ses_example --worktree /repos/demo/wkts/feature
 ```
 
+The CLI accepts an exact dialog ID or a unique saved name after the
+harness. It searches that harness across directories, including
+archived sources, and saves the resolved ID. An ID match takes
+precedence over a name match. Missing names/IDs and duplicate names
+produce an error before changing any relation; use the correct
+harness or an exact ID to resolve it. `0` means the resolved relation
+was already saved unchanged.
+
 Or from Python:
 
 ```python
@@ -381,6 +389,9 @@ changed: int = record_wkt_relation(
     wkt='/repos/demo/wkts/feature',
 )  # 0 = unchanged, 1 = relation written
 ```
+
+The Python writer takes an explicit ID without searching saved
+dialogs, so skills can record a current ID before it is discoverable.
 
 `--record` can replace this dialog's previously recorded WKT.
 `--apply` only fills missing relations. Other dialogs' relations

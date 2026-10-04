@@ -30,6 +30,7 @@ if __package__ in (None, ''):
 from . import dialogs
 from ._resume import resume_target
 from .wkt import WktLookup
+from .wkt._relations import canonical_harness
 
 
 def _display_text(value: object) -> str:
@@ -423,9 +424,10 @@ def index_main(argv: list[str]) -> int:
     complete proposal and its pin to tooling.
 
     `--apply` requires a digest and permits explicit ambiguous
-    choices. `--record` requires a worktree and delegates current-ID
-    verification to the invoking skill or human. Invalid mode
-    combinations are CLI errors. Operational failures exit nonzero
+    choices. `--record` resolves an exact ID or unique saved name
+    within the selected harness before writing its WKT relation.
+    Lookup spans directories and includes archived sources.
+    Invalid mode combinations are CLI errors. Failures exit nonzero
     with context; successful apply/record calls print the number of
     WKT relations written.
 
@@ -442,8 +444,8 @@ def index_main(argv: list[str]) -> int:
         '--apply', type=Path, help='apply a reviewed preview file',
     )
     modes.add_argument(
-        '--record', nargs=2, metavar=('HARNESS', 'ID'),
-        help='record an explicitly known WKT relation',
+        '--record', nargs=2, metavar=('HARNESS', 'NAME_OR_ID'),
+        help='record a WKT relation for a saved dialog name or ID',
     )
     parser.add_argument('--sha256')
     parser.add_argument('--choose', action='append', default=[])
@@ -470,8 +472,42 @@ def index_main(argv: list[str]) -> int:
                 args.choose
             ):
                 parser.error('--record requires only --worktree')
+            harness: str
+            selector: str
+            harness, selector = args.record
+            canonical: str = canonical_harness(harness)
+            harness_label: str = repr(harness)
+            if harness != canonical:
+                harness_label += f' ({canonical})'
+            records: list[dict] = dialogs.list_dialogs(
+                path=None, harness=harness, all_sources=True,
+            )
+            row: dict
+            matches: list[dict] = [
+                row for row in records if row['id'] == selector
+            ]
+            if not matches:
+                matches = [
+                    row for row in records
+                    if row['name'] == selector
+                ]
+            if not matches:
+                raise ValueError(
+                    f'No saved dialog with name or ID {selector!r} '
+                    f'for harness {harness_label}\n'
+                    f'Check --record HARNESS and the dialog name or ID'
+                )
+            if len(matches) > 1:
+                ids: str = ', '.join(row['id'] for row in matches)
+                raise ValueError(
+                    f'Dialog name {selector!r} is ambiguous '
+                    f'for harness {harness_label}\n'
+                    f'Pass an exact ID: {ids}'
+                )
+            selected: dict = matches[0]
             changed = dialogs.record_wkt_relation(
-                args.repo, *args.record, args.worktree,
+                args.repo, selected['harness'], selected['id'],
+                args.worktree,
             )
             print('WKT relations written:', changed)
         else:
@@ -590,6 +626,7 @@ def index_main(argv: list[str]) -> int:
         ValueError,
         TypeError,
         KeyError,
+        sqlite3.Error,
     ) as error:
         parser.exit(1, 'ai.dlogs index: ' + str(error) + '\n')
     return 0
