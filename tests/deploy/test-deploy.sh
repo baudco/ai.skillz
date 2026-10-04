@@ -1850,7 +1850,7 @@ test_commit_plan_contract() {
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'A one-boundary plan is correct when all changes'
     assert_file_contains "$ROOT/deploy-manifest.conf" \
-        'skill|commit-plan|hybrid|SKILL.md,scripts|commit-msg,run-tests'
+        'skill|commit-plan|hybrid|SKILL.md,scripts,BENCHMARK.md|commit-msg,run-tests'
     assert_file_contains \
         "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
         '[boundary {ordinal}] SKIP already complete'
@@ -2082,6 +2082,10 @@ test_commit_plan_contract() {
         || fail 'commit-plan executor asset was not deployed'
     [ -f "$REPO/.opencode/skills/commit-plan/scripts/plan-build.py" ] \
         || fail 'commit-plan planner asset was not deployed'
+    [ -f "$REPO/.opencode/skills/commit-plan/BENCHMARK.md" ] \
+        || fail 'commit-plan benchmark reference was not deployed'
+    assert_eq "$(readlink -f "$REPO/.opencode/skills/commit-plan/BENCHMARK.md")" \
+        "$ROOT/skills/commit-plan/BENCHMARK.md"
     local planner="$REPO/.opencode/skills/commit-plan/scripts/plan-build.py"
     local planner_source source_probe source_before
     planner_source="$(dirname "$(readlink -f "$planner")")"
@@ -2121,6 +2125,10 @@ test_commit_plan_contract() {
     assert_fails env HOME="$home" bash "$DEPLOY" commit-plan --global
     env HOME="$home" bash "$DEPLOY" run-tests --global >/dev/null
     env HOME="$home" bash "$DEPLOY" commit-plan --global >/dev/null
+    [ -f "$home/.claude/skills/commit-plan/BENCHMARK.md" ] \
+        || fail 'global commit-plan benchmark reference was not deployed'
+    assert_eq "$(readlink -f "$home/.claude/skills/commit-plan/BENCHMARK.md")" \
+        "$ROOT/skills/commit-plan/BENCHMARK.md"
     local cycle="$TMP_ROOT/commit-plan-cycle"
     cp -a "$SOURCE_WORK" "$cycle"
     sed -i 's#skill|commit-msg|hybrid|SKILL.md$#skill|commit-msg|hybrid|SKILL.md|commit-plan#' \
