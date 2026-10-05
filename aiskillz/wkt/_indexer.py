@@ -16,7 +16,7 @@ from collections.abc import Callable
 import json
 from pathlib import Path
 
-from ..git import repository, primary_worktree
+from ..git import checkout_location, repository, primary_worktree
 from . import _relations as state
 
 
@@ -124,18 +124,45 @@ class WktIndexer:
             primary_worktree(common),
             *(Path(root) for root in inventory),
         ]
-        root_path: Path
+        scoped_paths: dict[str, bool] = {}
+
+        def belongs(observed: str) -> bool:
+            '''
+            Keep directory evidence within this Git repository.
+
+            Existing paths must resolve to the selected common Git
+            directory, excluding nested clones and submodules.
+            Missing historical directories retain containment-based
+            evidence; Git cannot identify their former repository.
+            `scoped_paths` avoids repeating Git queries per dialog.
+
+            '''
+            if observed not in scoped_paths:
+                observed_path: Path = Path(observed)
+                root: Path
+                inside: bool = (
+                    observed_path.is_absolute()
+                    and any(
+                        observed_path.resolve().is_relative_to(root)
+                        for root in repo_roots
+                    )
+                )
+                if inside and observed_path.exists():
+                    location: tuple[str, ...] = checkout_location(
+                        str(observed_path.resolve()),
+                    )
+                    inside = (
+                        len(location) == 3
+                        and Path(location[2]).resolve() == common
+                    )
+                scoped_paths[observed] = inside
+            return scoped_paths[observed]
+
         scoped: list[dict] = [
             record for record in dialogs
             if (
                 state.identity(record) in candidates
-                or
-                any(
-                    Path(record.get('cwd', '')).is_relative_to(
-                        root_path,
-                    )
-                    for root_path in repo_roots
-                )
+                or belongs(record.get('cwd', ''))
             )
         ]
         history: dict[tuple[str, str], set[str]] = (
@@ -151,7 +178,7 @@ class WktIndexer:
             cwd: str = record.get('cwd', '')
             observed: str
             for observed in {cwd, *history.get(key, set())}:
-                if not Path(observed).is_absolute():
+                if not belongs(observed):
                     continue
                 observed_path: Path = Path(observed).resolve()
                 for root in roots:

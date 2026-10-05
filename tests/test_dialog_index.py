@@ -375,6 +375,56 @@ class DialogIndexTests(unittest.TestCase):
             'name': 'Fixture dialog', 'updated_at': 0,
         })
 
+    def test_nested_repositories_are_not_wkt_evidence(self) -> None:
+        '''
+        Path containment used to assign nested clones to outer WKTs.
+
+        Place independent Git repositories inside a linked checkout,
+        including one with a .git file like a submodule. Their saved
+        cwd and structured-history paths must not create relations
+        or unresolved rows in the outer repository. An ordinary
+        subdirectory must still identify its enclosing worktree.
+
+        '''
+        kind: str
+        for kind in ('clone', 'gitfile'):
+            nested: Path = self.first / kind
+            argv: list[str] = ['git', 'init', '--quiet']
+            if kind == 'gitfile':
+                argv.extend([
+                    '--separate-git-dir', str(self.base / 'admin'),
+                ])
+            subprocess.run(
+                [*argv, str(nested)], check=True,
+                capture_output=True,
+            )
+            self.add('claude', kind, nested)
+        self.add('claude', 'main-dialog', self.repo)
+        log: Path = (
+            self.cld / 'projects/project/main-dialog.jsonl'
+        )
+        log.parent.mkdir(parents=True)
+        log.write_text(json.dumps({
+            'sessionId': 'main-dialog',
+            'cwd': str(self.first / 'gitfile'),
+        }))
+        plain: Path = self.second / 'src'
+        plain.mkdir()
+        self.add('claude', 'worktree-dialog', plain)
+        plan: dict = preview(str(self.repo))
+        self.assertEqual(
+            [row['id'] for row in plan['entries']],
+            ['worktree-dialog'],
+        )
+        self.assertEqual(
+            [row['id'] for row in plan['unresolved']],
+            ['main-dialog'],
+        )
+        self.assertEqual(
+            plan['entries'][0]['candidates'][0]['worktree'],
+            str(self.second),
+        )
+
     def test_cross_harness_structured_history(self) -> None:
         '''
         Saved main cwd hides later worktree use across harnesses.
