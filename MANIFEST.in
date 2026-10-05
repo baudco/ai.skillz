@@ -1,6 +1,7 @@
 prune tests
 include tests/test_dlogs.py
 include tests/test_harness_stores.py
+include tests/test_resume.py
 include tests/test_dialog_timestamps.py
 include tests/test_worktree_dialogs.py
 include tests/test_dialog_index.py
