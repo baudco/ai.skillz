@@ -59,6 +59,33 @@ class HarnessStoresTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
+    def test_legacy_opencode_archive_opt_in(self) -> None:
+        '''
+        Manual recording must include pre-SQLite archives too.
+
+        Put an archived session in OpenCode's legacy JSON layout
+        without a database. The same include_archived option used
+        by --record must return it, while all_sources alone must
+        keep it hidden. This prevents backend-dependent behavior.
+
+        '''
+        folder: Path = self.oc / 'storage/session/project'
+        folder.mkdir(parents=True)
+        (folder / 'archived.json').write_text(json.dumps({
+            'id': 'old',
+            'title': 'Archived dialog',
+            'directory': str(self.repo),
+            'time': {'updated': 1000, 'archived': 2000},
+        }))
+        self.assertEqual(list_dialogs(
+            path=None, harness='oc', all_sources=True,
+        ), [])
+        rows: list[dict] = list_dialogs(
+            path=None, harness='oc', all_sources=True,
+            include_archived=True,
+        )
+        self.assertEqual([row['id'] for row in rows], ['old'])
+
     def seed_oc(self) -> None:
         '''
         Create parent, child, archived, and other-directory sessions.

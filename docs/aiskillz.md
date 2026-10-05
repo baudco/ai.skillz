@@ -118,7 +118,9 @@ supported harness at the selected directory. Bare `ai.dlogs` and
 
 `all=True` selects every harness, cwd, and supported source kind,
 regardless of other filter arguments. Archived Codex/OpenCode sessions
-remain excluded. Normal listings exclude Codex non-interactive sources
+remain excluded unless `list_dialogs(include_archived=True)` is
+requested explicitly. Manual `index --record` uses that option.
+Normal listings exclude Codex non-interactive sources
 and OpenCode child sessions; `all_sources=True` includes them. Claude
 subagent logs are excluded because their IDs are not independent
 interactive resume targets.
@@ -371,8 +373,8 @@ ai.dlogs index --record oc ses_example --worktree /repos/demo/wkts/feature
 
 The CLI accepts an exact dialog ID or a unique saved name after the
 harness. It searches that harness across directories, including
-archived sources, and saves the resolved ID. An ID match takes
-precedence over a name match. Missing names/IDs and duplicate names
+archived Codex/OpenCode dialogs, and saves the resolved ID. An ID
+match takes precedence over a name match. Missing names/IDs and duplicate names
 produce an error before changing any relation; use the correct
 harness or an exact ID to resolve it. `0` means the resolved relation
 was already saved unchanged.

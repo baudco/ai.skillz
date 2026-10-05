@@ -31,6 +31,8 @@ def list_dialogs(
     harness: str|list[str]|None = None,
     all: bool = False,
     all_sources: bool = False,
+    *,
+    include_archived: bool = False,
 ) -> list[dict]:
     '''
     Return metadata; all=True overrides harness and cwd scope.
@@ -38,6 +40,8 @@ def list_dialogs(
     A None harness selects every supported harness at the given path.
     Missing stores are skipped in multi-harness discovery. Invalid
     existing stores raise an error rather than silently losing data.
+    `include_archived` adds Codex and OpenCode archived rows for
+    manual WKT recording; `all_sources` only widens source filters.
 
     '''
     names: list[str] = (
@@ -115,7 +119,10 @@ def list_dialogs(
             len(names) > 1
         ):
             continue
-        records.extend(readers[name](home, cwd, all_sources or all))
+        records.extend(readers[name](
+            home, cwd, all_sources or all,
+            include_archived=include_archived,
+        ))
     unique: dict[tuple[str, str], dict] = {}
     record: dict
     for record in sorted(records, key=lambda r: r['updated_at']):

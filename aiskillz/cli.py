@@ -480,7 +480,8 @@ def index_main(argv: list[str]) -> int:
             if harness != canonical:
                 harness_label += f' ({canonical})'
             records: list[dict] = dialogs.list_dialogs(
-                path=None, harness=harness, all_sources=True,
+                path=None, harness=canonical, all_sources=True,
+                include_archived=True,
             )
             row: dict
             matches: list[dict] = [

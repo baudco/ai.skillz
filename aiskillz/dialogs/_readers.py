@@ -20,12 +20,14 @@ def codex_sessions(
     home: Path,
     cwd: str|None,
     all_sources: bool = False,
+    include_archived: bool = False,
 ) -> list[dict]:
     '''
     Read the Codex 0.153.2 session index without modifying it.
 
     The private state_5.sqlite schema is deliberately isolated here.
     Named sessions prefer `name`; older schemas fall back to `title`.
+    Manual recording opts into archived rows with include_archived.
 
     '''
     database: Path = home / 'state_5.sqlite'
@@ -67,8 +69,10 @@ def codex_sessions(
             )
         query: str = (
             f'SELECT id, {name} AS name, cwd, source, updated_at '
-            f'FROM threads WHERE archived = 0'
+            f'FROM threads WHERE 1 = 1'
         )
+        if not include_archived:
+            query += ' AND archived = 0'
         parameters: list[str] = []
         if cwd is not None:
             query += ' AND cwd = ?'
@@ -87,9 +91,13 @@ def opencode_sessions(
     home: Path,
     cwd: str|None,
     all_sources: bool = False,
+    include_archived: bool = False,
 ) -> list[dict]:
     '''
     Read SQLite indexes, falling back to pre-SQLite session JSON.
+
+    include_archived widens both formats for manual WKT recording;
+    normal discovery retains the archive filter.
 
     '''
     rows: dict[str, dict] = {}
@@ -112,8 +120,10 @@ def opencode_sessions(
             connection.row_factory = sqlite3.Row
             query: str = (
                 'SELECT id, title, directory, time_updated '
-                'FROM session WHERE time_archived IS NULL'
+                'FROM session WHERE 1 = 1'
             )
+            if not include_archived:
+                query += ' AND time_archived IS NULL'
             parameters: list[str] = []
             if cwd is not None:
                 query += ' AND directory = ?'
@@ -149,7 +159,10 @@ def opencode_sessions(
                 entry.get('parentID')
             ):
                 continue
-            if entry.get('time', {}).get('archived'):
+            if (
+                not include_archived
+                and entry.get('time', {}).get('archived')
+            ):
                 continue
             rows[entry['id']] = {
                 'harness': 'opencode',
@@ -167,6 +180,7 @@ def claude_sessions(
     home: Path,
     cwd: str|None,
     all_sources: bool = False,
+    include_archived: bool = False,
 ) -> list[dict]:
     '''
     Read project indexes and logs, keeping exact cwd ownership.
@@ -174,7 +188,8 @@ def claude_sessions(
     Indexed metadata is used only while at least as fresh as its log.
     Otherwise scan the log for current titles and the original cwd.
     No transcript text is returned beyond a fallback first-prompt
-    name.
+    name. `include_archived` is accepted for the shared reader
+    signature; this Claude metadata format has no archive filter.
 
     '''
     projects: Path = home / 'projects'

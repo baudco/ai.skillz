@@ -81,7 +81,8 @@ class DialogIndexTests(unittest.TestCase):
         )
         self.assertEqual(path.read_bytes(), before)
         reader.assert_called_once_with(
-            path=None, harness='oc', all_sources=True,
+            path=None, harness='opencode', all_sources=True,
+            include_archived=True,
         )
 
     def test_record_resolves_name_to_real_id(self) -> None:
@@ -111,7 +112,8 @@ class DialogIndexTests(unittest.TestCase):
                     selector, '--worktree', str(self.first),
                 ]), 0)
             reader.assert_called_once_with(
-                path=None, harness='cx', all_sources=True,
+                path=None, harness='codex', all_sources=True,
+                include_archived=True,
             )
         self.assertIn('WKT relations written: 0', output.getvalue())
         relations: list[dict] = list_wkt_relations(str(self.repo))
@@ -423,6 +425,78 @@ class DialogIndexTests(unittest.TestCase):
         self.assertEqual(
             plan['entries'][0]['candidates'][0]['worktree'],
             str(self.second),
+        )
+
+    def test_record_archived_dialogs_from_real_stores(self) -> None:
+        '''
+        all_sources previously left archive filters enabled.
+
+        Seed archived Codex and OpenCode SQLite rows, then record
+        each by name and by ID through the CLI and real readers.
+        Relations must contain the resolved IDs; ordinary discovery
+        must still hide the archived rows. This verifies manual
+        recording independently of the source-kind filter.
+
+        '''
+        from aiskillz import list_dialogs
+
+        con: sqlite3.Connection
+        with closing(sqlite3.connect(
+            self.cx / 'state_5.sqlite',
+        )) as con:
+            con.execute(
+                'CREATE TABLE threads '
+                '(id, title, cwd, source, updated_at, archived)',
+            )
+            con.execute(
+                'INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)',
+                ('old-cx', 'Old CX', str(self.repo), 'cli', 1, 1),
+            )
+            con.commit()
+        with closing(sqlite3.connect(
+            self.oc / 'opencode.db',
+        )) as con:
+            con.execute(
+                'CREATE TABLE session (id, title, directory, '
+                'parent_id, time_updated, time_archived)',
+            )
+            con.execute(
+                'INSERT INTO session VALUES (?, ?, ?, ?, ?, ?)',
+                ('old-oc', 'Old OC', str(self.repo), None, 1, 2),
+            )
+            con.commit()
+        harness: str
+        did: str
+        name: str
+        for (
+            harness,
+            did,
+            name,
+        ) in (
+            ('codex', 'old-cx', 'Old CX'),
+            ('opencode', 'old-oc', 'Old OC'),
+        ):
+            self.assertEqual(list_dialogs(
+                path=None, harness=harness, all_sources=True,
+            ), [])
+            with patch(
+                'aiskillz.cli.dialogs.list_dialogs',
+                side_effect=list_dialogs,
+            ):
+                selector: str
+                for selector in (name, did):
+                    with redirect_stdout(StringIO()):
+                        self.assertEqual(main([
+                            'index', str(self.repo), '--record',
+                            harness, selector, '--worktree',
+                            str(self.first),
+                        ]), 0)
+        saved: dict = json.loads((
+            self.repo / '.ai/state/dialogs/relations.json'
+        ).read_text())
+        self.assertEqual(
+            {row['id'] for row in saved['records']},
+            {'old-cx', 'old-oc'},
         )
 
     def test_cross_harness_structured_history(self) -> None:
