@@ -998,7 +998,7 @@ class CommitPlanExecTests(unittest.TestCase):
         text = PLAN_EXEC.overview(spec)
         label = next(line for line in text.splitlines()
                      if line.startswith('repo: '))
-        self.assertIn(r'repo\_context', label)
+        self.assertIn('repo_context', label)
         decoded = re.sub(r'\\(.)', r'\1', label[6:].rstrip())
         self.assertEqual(decoded, str(self.root))
         self.assertIn(
