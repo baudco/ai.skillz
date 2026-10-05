@@ -255,7 +255,8 @@ def update(
     Create `write.guard`, write its `writer.json` PID, then reread
     `relations.json` while holding it. Identical WKT/Git-directory
     pairs are no-ops and return zero even when an old preview is
-    replayed. Otherwise reject a changed expected digest or a
+    replayed. An empty `additions` list still checks the preview's
+    expected digest. Otherwise reject a changed expected digest or a
     forbidden retarget. Write and fsync a temporary file before
     replacing `relations.json`. Return the number of changed
     relations.
@@ -305,7 +306,7 @@ def update(
                 raise ValueError('Saved WKT relation would change')
             current[key] = record
             changed += 1
-        if not changed:
+        if not changed and additions:
             return 0
         if (
             expected is not None
@@ -313,6 +314,8 @@ def update(
             digest != expected
         ):
             raise ValueError('WKT relations changed; preview again')
+        if not changed:
+            return 0
         data['records'] = list(current.values())
         stream: TextIO
         with temporary.open('x') as stream:

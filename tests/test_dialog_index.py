@@ -665,6 +665,61 @@ class DialogIndexTests(unittest.TestCase):
             ['cld:cld-one=' + str(self.second)],
         ), 1)
 
+    def test_empty_apply_checks_relation_digest(self) -> None:
+        '''
+        Applying no selected relations used to accept stale previews.
+
+        Exercise both an empty preview and an ambiguous dialog with
+        no choice. Each initially returns zero. Record another dialog
+        after saving the preview, then require stale apply to fail
+        without changing `relations.json` or leaving `write.guard`.
+        This covers the CLI's no-choice path through `apply_preview`.
+
+        '''
+        ambiguous: bool
+        for ambiguous in (False, True):
+            with self.subTest(ambiguous=ambiguous):
+                if ambiguous:
+                    self.add('claude', 'cld-one', self.first)
+                    log: Path = (
+                        self.cld / 'projects/project/cld-one.jsonl'
+                    )
+                    log.parent.mkdir(parents=True)
+                    log.write_text(json.dumps({
+                        'sessionId': 'cld-one',
+                        'cwd': str(self.second),
+                    }))
+
+                plan: dict = preview(str(self.repo))
+                if ambiguous:
+                    self.assertEqual(
+                        plan['entries'][0]['status'], 'ambiguous',
+                    )
+                else:
+                    self.assertEqual(plan['entries'], [])
+                path: Path
+                digest: str
+                path, digest = save_preview(plan)
+                self.assertEqual(
+                    apply_preview(str(self.repo), path, digest, []),
+                    0,
+                )
+                record(
+                    str(self.repo), 'cx', 'other-' + str(ambiguous),
+                    str(self.second),
+                )
+                directory: Path = self.repo / '.ai/state/dialogs'
+                relations: Path = directory / 'relations.json'
+                before: bytes = relations.read_bytes()
+                with self.assertRaisesRegex(
+                    ValueError, 'preview again',
+                ):
+                    apply_preview(str(self.repo), path, digest, [])
+                self.assertEqual(relations.read_bytes(), before)
+                self.assertFalse(
+                    (directory / 'write.guard').exists(),
+                )
+
     def test_digest_stale_store_and_removed_target(self) -> None:
         '''
         A reviewed proposal must not overwrite later assignments.
