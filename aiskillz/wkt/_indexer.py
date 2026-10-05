@@ -84,6 +84,7 @@ class WktIndexer:
         confirmed: set[tuple[str, str]] = {
             state.identity(record) for record in store['records']
         }
+        record: dict
         by_id: dict[tuple[str, str], dict] = {
             state.identity(record): record for record in dialogs
         }
@@ -107,12 +108,14 @@ class WktIndexer:
                     source = 'legacy-owner-matching-dialog-id'
                     if state.identity(dialog) not in by_id:
                         continue
+
                 key: tuple[str, str] = state.identity(dialog)
                 if key in confirmed:
                     continue
                 candidates.setdefault(key, {}).setdefault(
                     root, set(),
                 ).add(source)
+
             except (
                 OSError,
                 ValueError,
@@ -120,6 +123,8 @@ class WktIndexer:
                 AttributeError,
             ):
                 continue
+
+        root: str
         repo_roots: list[Path] = [
             primary_worktree(common),
             *(Path(root) for root in inventory),
@@ -155,9 +160,12 @@ class WktIndexer:
                         len(location) == 3
                         and Path(location[2]).resolve() == common
                     )
+
                 scoped_paths[observed] = inside
+
             return scoped_paths[observed]
 
+        record: dict
         scoped: list[dict] = [
             record for record in dialogs
             if (
@@ -170,7 +178,7 @@ class WktIndexer:
         )
         unresolved: list[dict] = []
         roots: list[str] = sorted(inventory, key=len, reverse=True)
-        p: Path
+        record: dict
         for record in scoped:
             key = state.identity(record)
             if key in confirmed:
@@ -181,6 +189,7 @@ class WktIndexer:
                 if not belongs(observed):
                     continue
                 observed_path: Path = Path(observed).resolve()
+                root: str
                 for root in roots:
                     if observed_path.is_relative_to(root):
                         source = (
@@ -191,38 +200,48 @@ class WktIndexer:
                             root, set(),
                         ).add(source)
                         break
+
+            p: Path
             if (
                 key not in candidates
-                and
-                Path(cwd).is_absolute()
+                and Path(cwd).is_absolute()
                 and
                 any(Path(cwd).is_relative_to(p) for p in repo_roots)
             ):
                 unresolved.append({
-                    'harness': key[0], 'id': key[1],
+                    'harness': key[0],
+                    'id': key[1],
                     'name': record['name'],
                 })
+
         entries: list[dict] = []
         key: tuple[str, str]
         choices: dict[str, set[str]]
         for key, choices in sorted(candidates.items()):
             entries.append({
-                'harness': key[0], 'id': key[1],
+                'harness': key[0],
+                'id': key[1],
                 'name': by_id.get(key, {}).get('name', '(metadata)'),
                 'status': (
                     'ready' if len(choices) == 1 else 'ambiguous'
                 ),
                 'candidates': [
                     {
-                        'worktree': root, 'git_dir': inventory[root],
+                        'worktree': root,
+                        'git_dir': inventory[root],
                         'evidence': sorted(choices[root]),
                     }
                     for root in sorted(choices)
                 ],
             })
+
         return {
-            'schema': 1, 'kind': 'dialog-wkt-preview',
-            'common_dir': str(common), 'base_sha256': digest,
-            'entries': entries, 'unresolved': unresolved,
-            'confirmed': len(confirmed), 'warnings': warnings,
+            'schema': 1,
+            'kind': 'dialog-wkt-preview',
+            'common_dir': str(common),
+            'base_sha256': digest,
+            'entries': entries,
+            'unresolved': unresolved,
+            'confirmed': len(confirmed),
+            'warnings': warnings,
         }

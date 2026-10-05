@@ -45,7 +45,9 @@ class DialogIndexTests(unittest.TestCase):
 
     '''
 
-    def test_record_wrong_harness_refuses_before_writing(self) -> None:
+    def test_record_wrong_harness_refuses_before_writing(
+        self,
+    ) -> None:
         '''
         A name under the wrong harness was saved as a literal ID.
 
@@ -69,9 +71,15 @@ class DialogIndexTests(unittest.TestCase):
             self.assertRaises(SystemExit) as raised,
         ):
             main([
-                'index', str(self.repo), '--record', 'oc', name,
-                '--worktree', str(self.first),
+                'index',
+                str(self.repo),
+                '--record',
+                'oc',
+                name,
+                '--worktree',
+                str(self.first),
             ])
+
         self.assertEqual(raised.exception.code, 1)
         self.assertIn(repr(name), error.getvalue())
         self.assertIn(
@@ -96,8 +104,10 @@ class DialogIndexTests(unittest.TestCase):
 
         '''
         row: dict = {
-            'name': 'config_schema_mngr', 'id': self.cx_id,
-            'harness': 'codex', 'cwd': str(self.second),
+            'name': 'config_schema_mngr',
+            'id': self.cx_id,
+            'harness': 'codex',
+            'cwd': str(self.second),
         }
         selector: str
         for selector in (row['name'], row['id']):
@@ -108,13 +118,20 @@ class DialogIndexTests(unittest.TestCase):
                 redirect_stdout(output),
             ):
                 self.assertEqual(main([
-                    'index', str(self.repo), '--record', 'cx',
-                    selector, '--worktree', str(self.first),
+                    'index',
+                    str(self.repo),
+                    '--record',
+                    'cx',
+                    selector,
+                    '--worktree',
+                    str(self.first),
                 ]), 0)
+
             reader.assert_called_once_with(
                 path=None, harness='codex', all_sources=True,
                 include_archived=True,
             )
+
         self.assertIn('WKT relations written: 0', output.getvalue())
         relations: list[dict] = list_wkt_relations(str(self.repo))
         self.assertEqual(len(relations), 1)
@@ -142,9 +159,15 @@ class DialogIndexTests(unittest.TestCase):
             self.assertRaises(SystemExit) as raised,
         ):
             main([
-                'index', str(self.repo), '--record', 'cx',
-                'duplicate', '--worktree', str(self.first),
+                'index',
+                str(self.repo),
+                '--record',
+                'cx',
+                'duplicate',
+                '--worktree',
+                str(self.first),
             ])
+
         self.assertEqual(raised.exception.code, 1)
         self.assertIn(
             "for harness 'cx' (codex)\n"
@@ -174,9 +197,15 @@ class DialogIndexTests(unittest.TestCase):
             redirect_stdout(StringIO()),
         ):
             main([
-                'index', str(self.repo), '--record', 'cx',
-                self.cx_id, '--worktree', str(self.first),
+                'index',
+                str(self.repo),
+                '--record',
+                'cx',
+                self.cx_id,
+                '--worktree',
+                str(self.first),
             ])
+
         relations: list[dict] = list_wkt_relations(str(self.repo))
         self.assertEqual(len(relations), 1)
         self.assertEqual(relations[0]['id'], self.cx_id)
@@ -204,7 +233,8 @@ class DialogIndexTests(unittest.TestCase):
         Record two harnesses sharing an opaque ID through the public
         writer, then query from a linked checkout with a harness
         alias. Removing one target must retain its historical record
-        with git_active=False, without altering the other harness's entry.
+        with git_active=False, without altering the other
+        harness's entry.
         This proves both repo-wide visibility and identity isolation.
 
         '''
@@ -311,7 +341,12 @@ class DialogIndexTests(unittest.TestCase):
         self.base: Path = Path(self.temp.name)
         self.repo: Path = self.base / 'repo'
         subprocess.run(
-            ['git', 'init', '--quiet', str(self.repo)],
+            [
+                'git',
+                'init',
+                '--quiet',
+                str(self.repo),
+            ],
             capture_output=True, check=True,
         )
         self.common: Path = self.repo / '.git'
@@ -354,7 +389,8 @@ class DialogIndexTests(unittest.TestCase):
         gitfile.write_text(f'gitdir: {admin}\n')
         (admin / 'ai-skillz-wkt').mkdir()
         (admin / 'ai-skillz-wkt/owner.json').write_text(json.dumps({
-            'token': 'other-agent', 'provider': 'codex',
+            'token': 'other-agent',
+            'provider': 'codex',
             'session': 'not-a-dialog-id',
         }))
         return root
@@ -373,8 +409,11 @@ class DialogIndexTests(unittest.TestCase):
 
         '''
         self.dialogs.append({
-            'harness': harness, 'id': did, 'cwd': str(cwd),
-            'name': 'Fixture dialog', 'updated_at': 0,
+            'harness': harness,
+            'id': did,
+            'cwd': str(cwd),
+            'name': 'Fixture dialog',
+            'updated_at': 0,
         })
 
     def test_nested_repositories_are_not_wkt_evidence(self) -> None:
@@ -391,16 +430,25 @@ class DialogIndexTests(unittest.TestCase):
         kind: str
         for kind in ('clone', 'gitfile'):
             nested: Path = self.first / kind
-            argv: list[str] = ['git', 'init', '--quiet']
+            argv: list[str] = [
+                'git',
+                'init',
+                '--quiet',
+            ]
             if kind == 'gitfile':
                 argv.extend([
-                    '--separate-git-dir', str(self.base / 'admin'),
+                    '--separate-git-dir',
+                    str(self.base / 'admin'),
                 ])
             subprocess.run(
-                [*argv, str(nested)], check=True,
+                [
+                    *argv,
+                    str(nested),
+                ], check=True,
                 capture_output=True,
             )
             self.add('claude', kind, nested)
+
         self.add('claude', 'main-dialog', self.repo)
         log: Path = (
             self.cld / 'projects/project/main-dialog.jsonl'
@@ -414,6 +462,7 @@ class DialogIndexTests(unittest.TestCase):
         plain.mkdir()
         self.add('claude', 'worktree-dialog', plain)
         plan: dict = preview(str(self.repo))
+        row: dict
         self.assertEqual(
             [row['id'] for row in plan['entries']],
             ['worktree-dialog'],
@@ -453,6 +502,7 @@ class DialogIndexTests(unittest.TestCase):
                 ('old-cx', 'Old CX', str(self.repo), 'cli', 1, 1),
             )
             con.commit()
+
         with closing(sqlite3.connect(
             self.oc / 'opencode.db',
         )) as con:
@@ -465,6 +515,7 @@ class DialogIndexTests(unittest.TestCase):
                 ('old-oc', 'Old OC', str(self.repo), None, 1, 2),
             )
             con.commit()
+
         harness: str
         did: str
         name: str
@@ -487,13 +538,19 @@ class DialogIndexTests(unittest.TestCase):
                 for selector in (name, did):
                     with redirect_stdout(StringIO()):
                         self.assertEqual(main([
-                            'index', str(self.repo), '--record',
-                            harness, selector, '--worktree',
+                            'index',
+                            str(self.repo),
+                            '--record',
+                            harness,
+                            selector,
+                            '--worktree',
                             str(self.first),
                         ]), 0)
+
         saved: dict = json.loads((
             self.repo / '.ai/state/dialogs/relations.json'
         ).read_text())
+        row: dict
         self.assertEqual(
             {row['id'] for row in saved['records']},
             {'old-cx', 'old-oc'},
@@ -517,17 +574,21 @@ class DialogIndexTests(unittest.TestCase):
         )
         cxlog.parent.mkdir()
         cxlog.write_text(json.dumps({
-            'type': 'response_item', 'payload': {
-                'type': 'function_call', 'name': 'exec_command',
+            'type': 'response_item',
+            'payload': {
+                'type': 'function_call',
+                'name': 'exec_command',
                 'arguments': json.dumps({
-                    'workdir': str(self.first), 'cmd': 'ignored',
+                    'workdir': str(self.first),
+                    'cmd': 'ignored',
                 }),
             },
         }) + '\n{partial')
         cldlog: Path = self.cld / 'projects/project/claude-one.jsonl'
         cldlog.parent.mkdir(parents=True)
         cldlog.write_text(json.dumps({
-            'sessionId': 'claude-one', 'cwd': str(self.first),
+            'sessionId': 'claude-one',
+            'cwd': str(self.first),
         }))
         db: Path = self.oc / 'opencode.db'
         con: sqlite3.Connection
@@ -539,6 +600,7 @@ class DialogIndexTests(unittest.TestCase):
                 }}),
             ))
             con.commit()
+
         owner: Path = (
             self.common / 'worktrees/first/ai-skillz-wkt/owner.json'
         )
@@ -583,7 +645,8 @@ class DialogIndexTests(unittest.TestCase):
         log: Path = self.cld / 'projects/project/cld-one.jsonl'
         log.parent.mkdir(parents=True)
         log.write_text(json.dumps({
-            'sessionId': 'cld-one', 'cwd': str(self.second),
+            'sessionId': 'cld-one',
+            'cwd': str(self.second),
         }))
         plan: dict = preview(str(self.repo))
         self.assertEqual(plan['entries'][0]['status'], 'ambiguous')
@@ -646,7 +709,12 @@ class DialogIndexTests(unittest.TestCase):
         path, digest = save_preview(preview(str(self.repo)))
         other: Path = self.base / 'other-repo'
         subprocess.run(
-            ['git', 'init', '--quiet', str(other)],
+            [
+                'git',
+                'init',
+                '--quiet',
+                str(other),
+            ],
             capture_output=True, check=True,
         )
         with self.assertRaisesRegex(
@@ -676,7 +744,8 @@ class DialogIndexTests(unittest.TestCase):
             self.common / 'worktrees/first/ai-skillz-wkt/owner.json'
         )
         owner.write_text(json.dumps({
-            'provider': 'codex', 'session': self.cx_id,
+            'provider': 'codex',
+            'session': self.cx_id,
         }))
         plan: dict = preview(str(self.repo), logs=False)
         self.assertEqual(len(plan['entries']), 1)
@@ -701,7 +770,9 @@ class DialogIndexTests(unittest.TestCase):
         output: StringIO = StringIO()
         with redirect_stdout(output):
             self.assertEqual(main([
-                'index', str(self.repo), '--no-logs',
+                'index',
+                str(self.repo),
+                '--no-logs',
             ]), 0)
         text: str = output.getvalue()
         self.assertIn('No new WKT relations to apply.', text)
@@ -718,24 +789,34 @@ class DialogIndexTests(unittest.TestCase):
 
         '''
         class Terminal(StringIO):
-            '''Capture terminal-only color output.'''
+            '''
+            Capture terminal-only color output.
+
+            '''
 
             def isatty(self) -> bool:
-                '''Enable the terminal color branch.'''
+                '''
+                Enable the terminal color branch.
+
+                '''
                 return True
 
         entries: list[dict] = [
             {
-                'status': 'ready', 'harness': 'codex',
-                'id': 'one', 'name': 'first',
+                'status': 'ready',
+                'harness': 'codex',
+                'id': 'one',
+                'name': 'first',
                 'candidates': [{
                     'worktree': str(self.first),
                     'evidence': ['saved-cwd'],
                 }],
             },
             {
-                'status': 'ambiguous', 'harness': 'opencode',
-                'id': 'two', 'name': "second's work",
+                'status': 'ambiguous',
+                'harness': 'opencode',
+                'id': 'two',
+                'name': "second's work",
                 'candidates': [{
                     'worktree': str(self.first),
                     'evidence': ['legacy-owner-matching-dialog-id'],
@@ -746,8 +827,10 @@ class DialogIndexTests(unittest.TestCase):
             },
         ]
         proposal: dict = {
-            'entries': entries, 'unresolved': [],
-            'confirmed': 0, 'warnings': ['check owner metadata'],
+            'entries': entries,
+            'unresolved': [],
+            'confirmed': 0,
+            'warnings': ['check owner metadata'],
         }
         preview_path: Path = self.repo / 'preview.json'
         plain: StringIO = StringIO()
@@ -757,18 +840,27 @@ class DialogIndexTests(unittest.TestCase):
                   return_value=proposal),
             patch('aiskillz.cli.dialogs.save_wkt_preview',
                   return_value=(preview_path, 'abcd')),
-            patch.dict(os.environ, {'TERM': 'xterm', 'NO_COLOR': ''}),
+            patch.dict(
+                os.environ, {'TERM': 'xterm', 'NO_COLOR': ''},
+            ),
         ):
             with patch('aiskillz.cli.sys.stdout', plain):
-                self.assertEqual(main(['index', str(self.repo)]), 0)
+                self.assertEqual(main([
+                    'index',
+                    str(self.repo),
+                ]), 0)
             with patch('aiskillz.cli.sys.stdout', terminal):
-                self.assertEqual(main(['index', str(self.repo)]), 0)
+                self.assertEqual(main([
+                    'index',
+                    str(self.repo),
+                ]), 0)
 
         text: str = plain.getvalue()
         self.assertIn(
             'Resume (xonsh/POSIX sh): '
             'ai.resume first -a -b codex --id one\n'
-            f'  "{self.first}" [saved-cwd]\n\nAMBIGUOUS',
+            f'  "{self.first}" [saved-cwd]\n'
+            f'\nAMBIGUOUS',
             text,
         )
         self.assertIn(
@@ -785,16 +877,25 @@ class DialogIndexTests(unittest.TestCase):
             and 'opencode' in line
         )
         self.assertEqual(shlex.split(posix), [
-            'ai.resume', "second's work", '-a', '-b',
-            'opencode', '--id', 'two',
+            'ai.resume',
+            "second's work",
+            '-a',
+            '-b',
+            'opencode',
+            '--id',
+            'two',
         ])
         self.assertIn(
             f'Resume (POSIX sh): {posix}\n'
-            f'  "{self.first}"\n  "{self.second}"\n\n'
+            f'  "{self.first}"\n  "{self.second}"\n'
+            f'\n'
             'Unresolved: 0',
             text,
         )
-        self.assertIn('\n\nUnresolved: 0', text)
+        self.assertIn(
+            '\n'
+            '\nUnresolved: 0', text,
+        )
         self.assertNotIn('legacy-owner-matching-dialog-id', text)
         apply: str = next(
             line.split(': ', 1)[1]
@@ -802,15 +903,25 @@ class DialogIndexTests(unittest.TestCase):
             if line.startswith('Apply (xonsh/POSIX sh): ')
         )
         self.assertEqual(shlex.split(apply), [
-            'ai.dlogs', 'index', str(self.repo),
-            '--apply', str(preview_path), '--sha256', 'abcd',
+            'ai.dlogs',
+            'index',
+            str(self.repo),
+            '--apply',
+            str(preview_path),
+            '--sha256',
+            'abcd',
         ])
         apostrophe_path: str = str(self.repo / "preview's.json")
         shell_forms: list[tuple[str, str]] = _shell_commands(
             'Apply',
             [
-                'ai.dlogs', 'index', str(self.repo),
-                '--apply', apostrophe_path, '--sha256', 'abcd',
+                'ai.dlogs',
+                'index',
+                str(self.repo),
+                '--apply',
+                apostrophe_path,
+                '--sha256',
+                'abcd',
             ],
             f'ai.dlogs index @({str(self.repo)!r}) '
             f'--apply @({apostrophe_path!r}) --sha256 abcd',
@@ -820,8 +931,13 @@ class DialogIndexTests(unittest.TestCase):
             ['Apply (xonsh):', 'Apply (POSIX sh):'],
         )
         self.assertEqual(shlex.split(shell_forms[1][1]), [
-            'ai.dlogs', 'index', str(self.repo),
-            '--apply', apostrophe_path, '--sha256', 'abcd',
+            'ai.dlogs',
+            'index',
+            str(self.repo),
+            '--apply',
+            apostrophe_path,
+            '--sha256',
+            'abcd',
         ])
         colored: str = terminal.getvalue()
         self.assertTrue(colored.startswith(
@@ -841,6 +957,7 @@ class DialogIndexTests(unittest.TestCase):
             'Resume (POSIX sh):',
         ):
             self.assertIn(f'\x1b[90m{label}\x1b[0m', colored)
+
         self.assertNotIn('\x1b', text)
 
     def test_prompt_text_is_not_evidence_and_cli_dispatch(
@@ -858,14 +975,17 @@ class DialogIndexTests(unittest.TestCase):
         log: Path = self.cld / 'projects/project/one.jsonl'
         log.parent.mkdir(parents=True)
         log.write_text(json.dumps({
-            'sessionId': 'one', 'cwd': str(self.repo),
+            'sessionId': 'one',
+            'cwd': str(self.repo),
             'message': {'content': str(self.first)},
             'command': 'cd ' + str(self.first),
         }))
         output: StringIO = StringIO()
         with redirect_stdout(output):
             self.assertEqual(main([
-                'index', str(self.repo), '--json',
+                'index',
+                str(self.repo),
+                '--json',
             ]), 0)
         rendered: dict = json.loads(output.getvalue())
         self.assertEqual(rendered['data']['entries'], [])

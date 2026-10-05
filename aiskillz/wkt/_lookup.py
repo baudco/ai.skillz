@@ -22,9 +22,10 @@ class WktLookup:
     '''
     Read worktree paths associated with dialogs, caching one listing.
 
-    cli.format_dialog_table() creates one instance and calls roots()
-    for each row. locations remembers Git paths for each saved cwd,
-    while relations remembers dialog/worktree pairs for each
+    `cli.format_dialog_table()` creates one instance and calls
+    `roots()` for each row. `WktLookup.locations` caches Git paths
+    for each saved cwd; `WktLookup.relations` caches dialog/WKT
+    pairs for each
     repository. Discard the instance after listing to see subsequent
     file changes.
 
@@ -38,8 +39,9 @@ class WktLookup:
         '''
         Create empty caches for a single dialog listing.
 
-        roots() populates these dictionaries on demand. Construction
-        has no filesystem side effects.
+        `roots()` populates `WktLookup.locations` and
+        `WktLookup.relations` on demand. Construction has no
+        filesystem side effects.
 
         '''
         self.locations: dict[str, tuple[str, ...]] = {}
@@ -61,8 +63,8 @@ class WktLookup:
         relation is recorded, use the linked checkout containing
         that cwd. A recorded but inactive WKT returns an empty set.
         The main checkout and missing/deleted cwd paths also return
-        an empty set. These paths describe recorded
-        worktree use, not a running agent cwd.
+        an empty set. These paths describe recorded worktree use,
+        not a running agent cwd.
 
         '''
         if cwd not in self.locations:
@@ -73,14 +75,14 @@ class WktLookup:
         common: str = paths[2]
         if (
             harness
-            and
-            dialog_id
+            and dialog_id
         ):
             if common not in self.relations:
                 self.relations[common] = self._read(cwd, common)
             key: tuple[str, str] = (harness, dialog_id)
             if key in self.relations[common]:
                 return set(self.relations[common][key])
+
         if paths[1] == common:
             return set()
         return {paths[0]}
@@ -147,6 +149,7 @@ class WktLookup:
             root: str = record['worktree']
             if inventory.get(root) == record['git_dir']:
                 result[key] = {root}
+
         root: str
         private: str
         for root, private in inventory.items():
@@ -158,6 +161,7 @@ class WktLookup:
                 key = identity(dialog)
                 if key not in confirmed:
                     result.setdefault(key, set()).add(root)
+
             except (
                 OSError,
                 ValueError,
@@ -165,4 +169,5 @@ class WktLookup:
                 TypeError,
             ):
                 continue
+
         return result

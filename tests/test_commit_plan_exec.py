@@ -36,7 +36,16 @@ MODULE_SPEC.loader.exec_module(PLAN_EXEC)
 
 
 class CommitPlanExecTests(unittest.TestCase):
+    '''
+    Exercise authenticated commit-plan execution in disposable repos.
+
+    '''
     def setUp(self):
+        '''
+        Build independent Git trees and runtime artifacts for each
+        test.
+
+        '''
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name) / 'repo'
@@ -102,6 +111,10 @@ class CommitPlanExecTests(unittest.TestCase):
         check=True,
         env=None,
     ):
+        '''
+        Run a fixture command and expose captured output on failure.
+
+        '''
         result = subprocess.run(
             arguments,
             cwd=self.root,
@@ -134,7 +147,12 @@ class CommitPlanExecTests(unittest.TestCase):
             (True, '1', 'xterm', False),
             (True, '', 'dumb', False),
         )
-        for tty, no_color, term, colored in cases:
+        for (
+            tty,
+            no_color,
+            term,
+            colored,
+        ) in cases:
             with self.subTest(
                 tty=tty, no_color=no_color, term=term,
             ):
@@ -149,12 +167,16 @@ class CommitPlanExecTests(unittest.TestCase):
                     contextlib.redirect_stdout(output),
                 ):
                     PLAN_EXEC.trace_start(
-                        'commit-plan check 3/4', ['git', 'status'],
+                        'commit-plan check 3/4', [
+                            'git',
+                            'status',
+                        ],
                         self.root,
                     )
                     PLAN_EXEC.trace_result(
                         'commit-plan check 3/4', result,
                     )
+
                 text = output.getvalue()
                 label = '[commit-plan check 3/4]'
                 if colored:
@@ -176,24 +198,41 @@ class CommitPlanExecTests(unittest.TestCase):
             PLAN_EXEC.trace_result(
                 'commit-plan check 3/4', failure,
             )
+
         self.assertIn(
             '\x1b[1;36m[commit-plan check 3/4]\x1b[0m '
             'FAIL exit=23', errors.getvalue(),
         )
 
     def git(self, *arguments, check=True):
+        '''
+        Run Git inside this test's disposable repository.
+
+        '''
         return self.run_process(
-            ['git', *arguments],
+            [
+                'git',
+                *arguments,
+            ],
             check=check,
         )
 
     def index_tree(self, *paths):
+        '''
+        Write a fixture tree, then restore its index to HEAD.
+
+        '''
         self.git('add', '--', *paths)
         tree = self.git('write-tree').stdout.strip()
         self.git('read-tree', 'HEAD')
         return tree
 
     def make_check_script(self):
+        '''
+        Create the counted project-check command used by the
+        executor.
+
+        '''
         path = self.runtime / 'record-check.sh'
         path.write_text(
             '#!/bin/sh\n'
@@ -214,6 +253,11 @@ class CommitPlanExecTests(unittest.TestCase):
         return path
 
     def make_editor_script(self):
+        '''
+        Create a fixture editor that records commit-message
+        interactions.
+
+        '''
         path = self.runtime / 'editor.sh'
         count = self.editor_count
         sentinel = self.editor_sentinel
@@ -231,11 +275,19 @@ class CommitPlanExecTests(unittest.TestCase):
         return path
 
     def make_message(self, name, subject):
+        '''
+        Write a commit message into this test's runtime directory.
+
+        '''
         path = self.runtime / name
         path.write_text(f'{subject}\n')
         return path
 
     def make_patch(self, name, before_tree, after_tree):
+        '''
+        Save the exact diff between two fixture Git trees.
+
+        '''
         path = self.runtime / name
         payload = self.git(
             'diff',
@@ -247,9 +299,17 @@ class CommitPlanExecTests(unittest.TestCase):
         return path
 
     def digest(self, path):
+        '''
+        Compute the artifact digest expected by the executor.
+
+        '''
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def relative(self, path):
+        '''
+        Express a fixture path relative to its repository root.
+
+        '''
         return str(path.relative_to(self.root))
 
     def boundary(
@@ -262,6 +322,10 @@ class CommitPlanExecTests(unittest.TestCase):
         patch,
         message,
     ):
+        '''
+        Describe one commit boundary and its authenticated artifacts.
+
+        '''
         parent_tree = (
             self.initial_tree
             if ordinal == 1
@@ -294,17 +358,19 @@ class CommitPlanExecTests(unittest.TestCase):
                     'resolution_argv': [
                         sys.executable,
                         '-c',
-                        (
-                            'import pathlib, fixturepkg; '
-                            'print(pathlib.Path('
-                            'fixturepkg.__file__).resolve())'
-                        ),
+                        'import pathlib, fixturepkg; '
+                        'print(pathlib.Path('
+                        'fixturepkg.__file__).resolve())',
                     ],
                 },
             ],
         }
 
     def write_spec(self):
+        '''
+        Write the fixture plan with its checks and commit boundaries.
+
+        '''
         common_dir = self.git(
             'rev-parse',
             '--git-common-dir',
@@ -354,12 +420,20 @@ class CommitPlanExecTests(unittest.TestCase):
         self.spec_digest = self.digest(self.spec_path)
 
     def rewrite_spec(self, update):
+        '''
+        Apply a test mutation and refresh the fixture plan digest.
+
+        '''
         spec = json.loads(self.spec_path.read_text())
         update(spec)
         self.spec_path.write_text(json.dumps(spec, indent=2))
         self.spec_digest = self.digest(self.spec_path)
 
     def invoke(self, *mode, check=True, extra_env=None):
+        '''
+        Run the executor against this test's pinned plan.
+
+        '''
         env = os.environ.copy()
         env['GIT_EDITOR'] = str(self.editor_script)
         env['PYTHONPATH'] = str(self.root)
@@ -380,11 +454,19 @@ class CommitPlanExecTests(unittest.TestCase):
         )
 
     def line_count(self, path):
+        '''
+        Count captured invocations, treating an absent log as empty.
+
+        '''
         if not path.exists():
             return 0
         return len(path.read_text().splitlines())
 
     def commit_count(self):
+        '''
+        Count commits in the disposable repository.
+
+        '''
         return int(self.git('rev-list', '--count', 'HEAD').stdout)
 
     def test_partial_and_complete_plan_reruns_are_noops(self):
@@ -528,6 +610,7 @@ class CommitPlanExecTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 2)
                     self.assertIn('strict policy', result.stderr)
                     self.assertIn('fresh plan', result.stderr)
+
         self.assertEqual(
             (self.root / '.git/index').read_bytes(), index,
         )
@@ -557,6 +640,7 @@ class CommitPlanExecTests(unittest.TestCase):
             self.assertTrue(
                 all('--strict' in line for line in calls)
             )
+
         self.assertIn('Branch policy: strict',
                       self.invoke('--show', '--strict').stdout)
         self.assertEqual(self.spec_path.read_bytes(), original)
@@ -590,6 +674,7 @@ class CommitPlanExecTests(unittest.TestCase):
             result = self.invoke('--execute', '1', check=False)
             self.assertEqual(result.returncode, 2)
             self.rewrite_spec(lambda data: data.update(spec))
+
         self.git('add', 'fixturepkg.py')
         index = (self.root / '.git/index').read_bytes()
         result = self.invoke('--execute', '1', check=False)
@@ -633,9 +718,11 @@ class CommitPlanExecTests(unittest.TestCase):
                     'detached HEAD' if detached else 'diverged'
                 )
                 self.assertIn(expected, result.stderr)
+
             self.assertEqual(
                 (self.root / '.git/index').read_bytes(), index,
             )
+
         self.assertEqual(self.line_count(self.check_count), 0)
         self.assertEqual(self.line_count(self.editor_count), 0)
 
@@ -682,6 +769,7 @@ class CommitPlanExecTests(unittest.TestCase):
                 '--show', '--preflight', 'plan-exec.py',
             ):
                 self.assertNotIn(obsolete, shown)
+
         self.assertEqual(
             self.invoke('--show').stdout,
             self.invoke('--show', '--comment-width', '69').stdout,
@@ -715,6 +803,7 @@ class CommitPlanExecTests(unittest.TestCase):
             self.assertEqual(
                 lines.pop(0), f'{name} = {ascii(value)}',
             )
+
         self.assertEqual(lines.pop(0), '')
         root = str(self.root.resolve())
         self.assertEqual(
@@ -757,6 +846,7 @@ class CommitPlanExecTests(unittest.TestCase):
                             '# >> ',
                         ),
                     )
+
                 header = ' '.join(mode)
                 self.assertEqual(
                     comments[0],
@@ -771,11 +861,15 @@ class CommitPlanExecTests(unittest.TestCase):
                     and not lines[position - 1].startswith('#')
                 ):
                     comments = []
+
         self.assertEqual(len(groups), 4)
         self.assertTrue(rendered.endswith('\n'))
         self.assertFalse(rendered.endswith('\n' * 2))
         self.assertEqual(groups[0].splitlines()[1], '# ops-summary:')
-        self.assertNotIn('\n\n', groups[0])
+        self.assertNotIn(
+            '\n'
+            '\n', groups[0],
+        )
         self.assertTrue(all(
             not line or line.strip() for line in lines
         ))
@@ -801,6 +895,7 @@ class CommitPlanExecTests(unittest.TestCase):
                     self.assertTrue(
                         line.startswith('# |_SKIP-'),
                     )
+
             ordinal = boundary['ordinal']
             self.assertIn(
                 f'# >> plan-exec.py --execute {ordinal}',
@@ -838,6 +933,7 @@ class CommitPlanExecTests(unittest.TestCase):
                 'AUTHENTICATED_MESSAGE_SNAPSHOT',
             ):
                 self.assertIn(expected, rendered)
+
             headings = [
                 group.index(heading) for heading in (
                     '# >>', '|_PATCH>', '|_CHECK>',
@@ -859,6 +955,11 @@ class CommitPlanExecTests(unittest.TestCase):
         subject = 'Title `code`\n$(touch forged) <script>\x1b[2J'
 
         def update(spec):
+            '''
+            Configure the fixture plan for overview owns subjects and
+            is read only.
+
+            '''
             spec['boundaries'][0]['subject'] = subject
 
         self.rewrite_spec(update)
@@ -880,7 +981,8 @@ class CommitPlanExecTests(unittest.TestCase):
         )
         self.assertIn('worktree: (main checkout)', overview)
         self.assertIn(
-            'execution rules:\n\n- Branch policy:', overview,
+            'execution rules:\n'
+            '\n- Branch policy:', overview,
         )
         self.assertIn('\n- Validation:', overview)
         self.assertIn('\n- Progress:', overview)
@@ -961,6 +1063,11 @@ class CommitPlanExecTests(unittest.TestCase):
         self.git('branch', '-m', 'vibe_wkss_CONT')
 
         def update(spec):
+            '''
+            Configure the fixture plan for overview preserves subject
+            code and branch.
+
+            '''
             spec['strict_branch'] = False
             spec['boundaries'][0]['subject'] = (
                 'Update `codex` to 0.156.1'
@@ -1017,15 +1124,23 @@ class CommitPlanExecTests(unittest.TestCase):
 
         '''
         def update(spec):
+            '''
+            Configure the fixture plan for skip annotations always
+            put argv below status.
+
+            '''
             boundary = spec['boundaries'][0]
             evidence = {
-                'tree': boundary['tree'], 'exit': 0,
+                'tree': boundary['tree'],
+                'exit': 0,
                 'source': 'raw.log sha256=private-evidence-digest',
                 'outcome': '34 tests passed, no skips',
             }
             check = {
-                'argv': ['true'], 'env': {},
-                'resolution_argv': ['pwd'], 'prior_pass': evidence,
+                'argv': ['true'],
+                'env': {},
+                'resolution_argv': ['pwd'],
+                'prior_pass': evidence,
             }
             boundary['project_checks'] = [
                 check, dict(check, resolution_argv=['pwd', '-P']),
@@ -1054,6 +1169,7 @@ class CommitPlanExecTests(unittest.TestCase):
                 '--no-textconv --staged',
             ):
                 self.assertIn(expected, output)
+
             for obsolete in (
                 'raw.log', 'private-evidence-digest', self.tree_one,
                 '|_RUN>', 'before this pending', 'run-summary>>',
@@ -1080,7 +1196,10 @@ class CommitPlanExecTests(unittest.TestCase):
             "  '" + token + "' \\", '  end',
         ])
         self.assertEqual(PLAN_EXEC.comment_command(
-            'CHECK', ['git', 'status'], 69, shell='bash',
+            'CHECK', [
+                'git',
+                'status',
+            ], 69, shell='bash',
         ), ['|_CHECK> git status'])
 
     def test_comment_groups_match_full_block_without_commands(self):
@@ -1267,6 +1386,11 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('VIRTUAL_ENV: not selected', shown)
 
         def update(spec):
+            '''
+            Configure the fixture plan for render environment is
+            selected not inherited.
+
+            '''
             for boundary in spec['boundaries']:
                 boundary['project_checks'][0]['env'][
                     'VIRTUAL_ENV'
@@ -1418,7 +1542,12 @@ class CommitPlanExecTests(unittest.TestCase):
         environment['GIT_EDITOR'] = str(self.editor_script)
         block = '$XONSH_SUBPROC_CMD_RAISE_ERROR = False\n' + rendered
         result = subprocess.run(
-            [xonsh, '--no-rc', '-c', block],
+            [
+                xonsh,
+                '--no-rc',
+                '-c',
+                block,
+            ],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -1492,13 +1621,20 @@ class CommitPlanExecTests(unittest.TestCase):
         path = self.runtime / 'preview.sh'
         path.write_text(block)
         self.run_process([
-            'bash', '--noprofile', '--norc', '-n', str(path),
+            'bash',
+            '--noprofile',
+            '--norc',
+            '-n',
+            str(path),
         ])
         environment = os.environ.copy()
         names = ('PYVM', 'PLAN_SCRIPT', 'PLAN_SPEC', 'PLAN_SHA256')
         environment.update(dict.fromkeys(names, 'ambient'))
         result = self.run_process([
-            'bash', '--noprofile', '--norc', str(path),
+            'bash',
+            '--noprofile',
+            '--norc',
+            str(path),
         ], env=environment)
         expected = [
             [str(script), '--spec', str(renamed), '--sha256',
@@ -1540,7 +1676,8 @@ class CommitPlanExecTests(unittest.TestCase):
             '\x7f\x85\xa0',
         ]
         argv = [
-            str(executable), '-c',
+            str(executable),
+            '-c',
             'import json, sys; print(json.dumps(sys.argv[1:]))',
             *arguments,
         ]
@@ -1561,13 +1698,21 @@ class CommitPlanExecTests(unittest.TestCase):
                     item[2:] for item in comments[1:]
                 )
                 result = self.run_process([
-                    'bash', '--noprofile', '--norc', '-c', command,
+                    'bash',
+                    '--noprofile',
+                    '--norc',
+                    '-c',
+                    command,
                 ])
                 self.assertEqual(
                     json.loads(result.stdout), arguments,
                 )
+
         preview = PLAN_EXEC.comment_command(
-            'PATCH', ['git', *PLAN_EXEC.patch_operation()], 69,
+            'PATCH', [
+                'git',
+                *PLAN_EXEC.patch_operation(),
+            ], 69,
             ' < AUTHENTICATED_PATCH', shell='bash',
         )
         self.assertIn(
@@ -1596,7 +1741,10 @@ class CommitPlanExecTests(unittest.TestCase):
         path = self.runtime / 'preview.sh'
         path.write_text('set +e\n' + rendered)
         result = self.run_process([
-            'bash', '--noprofile', '--norc', str(path),
+            'bash',
+            '--noprofile',
+            '--norc',
+            str(path),
         ], check=False)
         self.assertEqual(result.returncode, 2)
         self.assertIn('boundary patch is missing', result.stderr)
@@ -1624,6 +1772,7 @@ class CommitPlanExecTests(unittest.TestCase):
             result = self.invoke(*mode, check=False)
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, '')
+
         self.assertEqual(self.commit_count(), 1)
         self.assertFalse(self.check_count.exists())
         self.assertFalse(self.editor_count.exists())
@@ -1638,6 +1787,11 @@ class CommitPlanExecTests(unittest.TestCase):
 
         '''
         def update(spec):
+            '''
+            Configure the fixture plan for retained prior pass and
+            pending checks.
+
+            '''
             boundary = spec['boundaries'][0]
             check = boundary['project_checks'][0]
             reused = dict(check, prior_pass={
@@ -1662,6 +1816,7 @@ class CommitPlanExecTests(unittest.TestCase):
             self.assertNotIn(
                 'fixture exact-tree verification log', shown,
             )
+
         result = self.invoke('--execute', '1')
         self.assertIn(
             '[commit-plan check 1/2] SKIP prior PASS',
@@ -1680,6 +1835,11 @@ class CommitPlanExecTests(unittest.TestCase):
 
         '''
         def update(spec):
+            '''
+            Configure the fixture plan for all reused checks need no
+            tools or isolation.
+
+            '''
             for boundary in spec['boundaries']:
                 check = boundary['project_checks'][0]
                 check['argv'] = ['/missing/reused-check']
@@ -1722,7 +1882,8 @@ class CommitPlanExecTests(unittest.TestCase):
         boundary = spec['boundaries'][0]
         check = boundary['project_checks'][0]
         check['argv'] = [
-            sys.executable, '-c',
+            sys.executable,
+            '-c',
             'import subprocess; '
             'subprocess.run(["git", "status"], check=True)',
         ]
@@ -1741,6 +1902,7 @@ class CommitPlanExecTests(unittest.TestCase):
                 PLAN_EXEC.run_project_checks(
                     spec, boundary, self.initial_parent,
                 )
+
         self.assertNotIn(' resolve]', output.getvalue())
         self.assertFalse(self.check_count.exists())
         self.assertEqual(
@@ -1767,15 +1929,24 @@ class CommitPlanExecTests(unittest.TestCase):
         }
         normalized = PLAN_EXEC.command(check, 'check')
         self.assertEqual(normalized['required_executables'], [])
-        check['required_executables'] = ['git', '/bin/cp']
+        check['required_executables'] = [
+            'git',
+            '/bin/cp',
+        ]
         normalized = PLAN_EXEC.command(check, 'check')
         self.assertEqual(
             normalized['required_executables'],
-            ['git', '/bin/cp'],
+            [
+                'git',
+                '/bin/cp',
+            ],
         )
         invalid: object
         for invalid in (None, 'git', {}, [1], [''], ['a\0b'],
-                        ['git', 'git']):
+                        [
+                            'git',
+                            'git',
+                        ]):
             with self.subTest(value=invalid):
                 check['required_executables'] = invalid
                 with self.assertRaisesRegex(
@@ -1838,6 +2009,7 @@ class CommitPlanExecTests(unittest.TestCase):
             self.assertNotIn('\n', message)
             self.assertNotIn('\x1b', message)
             self.assertNotIn('sensitive-value', message)
+
         check['required_executables'] = ['git']
         check['env'] = {'PATH': '.'}
         with self.assertRaises(PLAN_EXEC.PlanError):
@@ -1867,6 +2039,11 @@ class CommitPlanExecTests(unittest.TestCase):
         ):
             with self.subTest(evidence=evidence):
                 def update(spec):
+                    '''
+                    Configure the fixture plan for malformed prior
+                    pass fails closed.
+
+                    '''
                     boundary = spec['boundaries'][0]
                     check = boundary['project_checks'][0]
                     check['prior_pass'] = evidence
@@ -1879,6 +2056,7 @@ class CommitPlanExecTests(unittest.TestCase):
                     result = self.invoke(*mode, check=False)
                     self.assertEqual(result.returncode, 2)
                     self.assertIn('prior_pass', result.stderr)
+
         self.assertEqual(self.commit_count(), 1)
         self.assertFalse(self.check_count.exists())
 
@@ -1898,9 +2076,15 @@ class CommitPlanExecTests(unittest.TestCase):
         arguments = ['quote\'"', '$HOME; $(false)', 'a\nb\t\\']
 
         def update(spec):
+            '''
+            Configure the fixture plan for comment check argv is
+            lossless xonsh.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [
-                sys.executable, '-c',
+                sys.executable,
+                '-c',
                 'import json, sys; print(json.dumps(sys.argv[1:]))',
                 *arguments,
             ]
@@ -1947,7 +2131,8 @@ class CommitPlanExecTests(unittest.TestCase):
             '\u2603\U0001f642\u2028', '$(touch forged)',
         ]
         argv = [
-            str(executable), '-c',
+            str(executable),
+            '-c',
             'import json, sys; print(json.dumps(sys.argv[1:]))',
             *arguments,
         ]
@@ -1970,10 +2155,14 @@ class CommitPlanExecTests(unittest.TestCase):
                 self.assertEqual(
                     json.loads(result.stdout), arguments,
                 )
+
         self.assertFalse((self.root / 'forged').exists())
         self.assertFalse(self.check_count.exists())
         self.assertEqual(
-            PLAN_EXEC.comment_command('RUN', ['git', 'status'], 69),
+            PLAN_EXEC.comment_command('RUN', [
+                'git',
+                'status',
+            ], 69),
             ['|_RUN> git status'],
         )
 
@@ -1992,6 +2181,7 @@ class CommitPlanExecTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 2)
             self.assertIn('--comment-width', result.stderr)
+
         default = self.invoke('--render', 'comments').stdout
         explicit = self.invoke(
             '--render', 'comments', '--comment-width', '69',
@@ -2013,17 +2203,25 @@ class CommitPlanExecTests(unittest.TestCase):
 
         '''
         def update(spec):
+            '''
+            Configure the fixture plan for probe catalog preserves
+            environment and execution.
+
+            '''
             boundary = spec['boundaries'][0]
             original = boundary['project_checks'][0]
             checks = []
             for value in ('secret-one', 'secret-two'):
                 for _ in range(2):
                     checks.append(dict(original, env={
-                        **original['env'], 'PROBE_FLAVOR': value,
+                        **original['env'],
+                        'PROBE_FLAVOR': value,
                     }))
             checks[0]['prior_pass'] = {
-                'tree': boundary['tree'], 'exit': 0,
-                'source': 'fixture verification', 'outcome': 'PASS',
+                'tree': boundary['tree'],
+                'exit': 0,
+                'source': 'fixture verification',
+                'outcome': 'PASS',
             }
             boundary['project_checks'] = checks
             spec['boundaries'][1]['project_checks'] = []
@@ -2064,6 +2262,11 @@ class CommitPlanExecTests(unittest.TestCase):
         failure.chmod(0o755)
 
         def update(spec):
+            '''
+            Configure the fixture plan for project check failure
+            reports command context.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [str(failure)]
             check['env'] = {}
@@ -2102,6 +2305,11 @@ class CommitPlanExecTests(unittest.TestCase):
         '''
 
         def update(spec):
+            '''
+            Configure the fixture plan for show escapes terminal
+            control characters.
+
+            '''
             boundary = spec['boundaries'][0]
             injected = 'safe\n[commit] fake\r\x1b[2J'
             boundary['subject'] = injected
@@ -2128,6 +2336,11 @@ class CommitPlanExecTests(unittest.TestCase):
         executable = 'missing\n[commit] fake\x1b[2J'
 
         def update(spec):
+            '''
+            Configure the fixture plan for startup errors escape
+            executable names.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['resolution_argv'] = [executable]
 
@@ -2139,6 +2352,7 @@ class CommitPlanExecTests(unittest.TestCase):
             self.assertNotIn('\n[commit] fake', output)
             self.assertNotIn('\x1b', output)
             self.assertIn(r'\x0a[commit] fake\x1b[2J', output)
+
         self.assertEqual(self.line_count(self.check_count), 0)
         self.assertEqual(self.line_count(self.editor_count), 0)
 
@@ -2157,6 +2371,11 @@ class CommitPlanExecTests(unittest.TestCase):
         inherited_secret = 'inherited-database-value'
 
         def update(spec):
+            '''
+            Configure the fixture plan for resolution failure redacts
+            environment values.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['env'] = {'PLAN_VALUE': explicit_secret}
             check['resolution_argv'] = [
@@ -2334,6 +2553,11 @@ class CommitPlanExecTests(unittest.TestCase):
         output = self.runtime / 'injected-output'
 
         def update(spec):
+            '''
+            Configure the fixture plan for option shaped object id is
+            rejected.
+
+            '''
             spec['initial_parent'] = f'--output={output}'
 
         self.rewrite_spec(update)
@@ -2357,6 +2581,11 @@ class CommitPlanExecTests(unittest.TestCase):
         relative = self.relative(self.check_script)
 
         def update(spec):
+            '''
+            Configure the fixture plan for relative untracked
+            executable is rejected.
+
+            '''
             command = spec['boundaries'][0]['project_checks'][0]
             command['argv'][0] = relative
 
@@ -2392,6 +2621,11 @@ class CommitPlanExecTests(unittest.TestCase):
         mutator.chmod(0o755)
 
         def update(spec):
+            '''
+            Configure the fixture plan for message changes during
+            checks use pinned snapshot.
+
+            '''
             spec['boundaries'][0]['project_checks'] = [
                 {
                     'argv': [str(mutator)],
@@ -2418,9 +2652,18 @@ class CommitPlanExecTests(unittest.TestCase):
         '''
 
         def update(spec):
+            '''
+            Configure the fixture plan for resolution check rejects
+            live worktree import.
+
+            '''
             code = f'print({str(self.root / "fixturepkg.py")!r})'
             check = spec['boundaries'][0]['project_checks'][0]
-            check['resolution_argv'] = [sys.executable, '-c', code]
+            check['resolution_argv'] = [
+                sys.executable,
+                '-c',
+                code,
+            ]
 
         self.rewrite_spec(update)
         result = self.invoke('--execute', '1', check=False)
@@ -2452,12 +2695,21 @@ class CommitPlanExecTests(unittest.TestCase):
         '''
 
         def update(spec):
+            '''
+            Configure the fixture plan for relative resolution path
+            uses isolated root.
+
+            '''
             code = (
                 'import fixturepkg; from pathlib import Path; '
                 'print(Path(fixturepkg.__file__).name)'
             )
             check = spec['boundaries'][0]['project_checks'][0]
-            check['resolution_argv'] = [sys.executable, '-c', code]
+            check['resolution_argv'] = [
+                sys.executable,
+                '-c',
+                code,
+            ]
 
         self.rewrite_spec(update)
         result = self.invoke('--execute', '1')
@@ -2481,13 +2733,22 @@ class CommitPlanExecTests(unittest.TestCase):
         external = self.root / 'fixturepkg.py'
 
         def update(spec):
+            '''
+            Configure the fixture plan for probe rejects multiple
+            source paths.
+
+            '''
             code = (
                 'import pathlib, fixturepkg; '
                 f'print({str(external)!r}); '
                 'print(pathlib.Path(fixturepkg.__file__).resolve())'
             )
             check = spec['boundaries'][0]['project_checks'][0]
-            check['resolution_argv'] = [sys.executable, '-c', code]
+            check['resolution_argv'] = [
+                sys.executable,
+                '-c',
+                code,
+            ]
 
         self.rewrite_spec(update)
         result = self.invoke('--execute', '1', check=False)
@@ -2516,6 +2777,11 @@ class CommitPlanExecTests(unittest.TestCase):
         helper.chmod(0o755)
 
         def update(spec):
+            '''
+            Configure the fixture plan for absolute tracked live
+            helper is refused.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [str(helper)]
 
@@ -2543,6 +2809,11 @@ class CommitPlanExecTests(unittest.TestCase):
         helper.chmod(0o755)
 
         def update(spec):
+            '''
+            Configure the fixture plan for bare tracked helper on
+            live path is refused.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [helper.name]
             check['env']['PATH'] = (
@@ -2577,6 +2848,11 @@ class CommitPlanExecTests(unittest.TestCase):
         helper.chmod(0o755)
 
         def update(spec):
+            '''
+            Configure the fixture plan for ignored local tool remains
+            available.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [str(helper)]
 
@@ -2602,6 +2878,11 @@ class CommitPlanExecTests(unittest.TestCase):
         helper.chmod(0o755)
 
         def update(spec):
+            '''
+            Configure the fixture plan for unignored live helper is
+            refused.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [str(helper)]
 
@@ -2662,7 +2943,12 @@ class CommitPlanExecTests(unittest.TestCase):
             ),
         )
         original_read = PLAN_EXEC.read_regular
-        for role, source, description, label in items:
+        for (
+            role,
+            source,
+            description,
+            label,
+        ) in items:
             with self.subTest(role=role):
                 expected = source.read_bytes()
                 held = Path(self.temp_dir.name) / f'held-{role}'
@@ -2674,6 +2960,10 @@ class CommitPlanExecTests(unittest.TestCase):
                 )
 
                 def swap(path, kind, *, dir_fd=None):
+                    '''
+                    Substitute a symlink during artifact opening.
+
+                    '''
                     messages.rename(held)
                     messages.symlink_to(
                         external, target_is_directory=True,
@@ -2706,6 +2996,7 @@ class CommitPlanExecTests(unittest.TestCase):
                         messages.unlink()
                     if held.exists():
                         held.rename(messages)
+
         self.assertEqual(self.commit_count(), 1)
 
     def test_neutral_commit_message_runtime_executes(self):
@@ -2744,6 +3035,7 @@ class CommitPlanExecTests(unittest.TestCase):
             old_path = getattr(self, name)
             relative = old_path.relative_to(old_runtime)
             setattr(self, name, self.runtime / relative)
+
         self.messages = [
             self.runtime / path.relative_to(old_runtime)
             for path in self.messages
@@ -2766,7 +3058,9 @@ class CommitPlanExecTests(unittest.TestCase):
                     new_prefix,
                     1,
                 )
+
             boundary['project_checks'] = []
+
         self.spec_path.write_text(json.dumps(spec, indent=2))
         self.spec_digest = self.digest(self.spec_path)
 
@@ -2786,6 +3080,11 @@ class CommitPlanExecTests(unittest.TestCase):
         '''
 
         def update(spec):
+            '''
+            Configure the fixture plan for relative path entry is
+            rejected.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['resolution_argv'][0] = 'python3'
             check['env']['PATH'] = '.:/usr/bin'
@@ -2849,9 +3148,15 @@ class CommitPlanExecTests(unittest.TestCase):
         secret = 'very-private-check-secret'
 
         def update(spec):
+            '''
+            Configure the fixture plan for project output redacted on
+            success and failure.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [
-                'sh', '-c',
+                'sh',
+                '-c',
                 'printf "%s" "$PLAN_SECRET"; '
                 'printf "%s" "$PLAN_SECRET" >&2; '
                 'exit "$CHECK_EXIT"',
@@ -2868,9 +3173,14 @@ class CommitPlanExecTests(unittest.TestCase):
         self.assertIn('[boundary 1] PASS', success.stdout)
 
         def fail(spec):
+            '''
+            Make a project check fail after printing a secret.
+
+            '''
             check = spec['boundaries'][1]['project_checks'][0]
             check['argv'] = [
-                'sh', '-c',
+                'sh',
+                '-c',
                 'printf "%s" "$PLAN_SECRET"; '
                 'printf "%s" "$PLAN_SECRET" >&2; exit 27',
             ]
@@ -2902,6 +3212,11 @@ class CommitPlanExecTests(unittest.TestCase):
         mutation.chmod(0o755)
 
         def update(spec):
+            '''
+            Configure the fixture plan for checks cannot change the
+            tree under test.
+
+            '''
             first = spec['boundaries'][0]['project_checks'][0]
             first['argv'] = [str(mutation)]
             spec['boundaries'][0]['project_checks'].append(
@@ -3084,9 +3399,14 @@ class CommitPlanExecTests(unittest.TestCase):
 
         '''
         arguments = [
-            sys.executable, str(SCRIPT), '--spec',
-            str(self.spec_path), '--sha256',
-            self.spec_digest, '--execute', '1',
+            sys.executable,
+            str(SCRIPT),
+            '--spec',
+            str(self.spec_path),
+            '--sha256',
+            self.spec_digest,
+            '--execute',
+            '1',
         ]
         if no_pager:
             arguments.append('--no-pager')
@@ -3128,6 +3448,7 @@ class CommitPlanExecTests(unittest.TestCase):
                     ):
                         os.write(master, b'q')
                         pager_closed = True
+
                     if (
                         not confirmed
                         and b'Review the staged diff above'
@@ -3135,6 +3456,7 @@ class CommitPlanExecTests(unittest.TestCase):
                     ):
                         os.write(master, b'\n')
                         confirmed = True
+
                 finished, status = os.waitpid(pid, os.WNOHANG)
                 if finished:
                     break
@@ -3271,9 +3593,14 @@ class CommitPlanExecTests(unittest.TestCase):
         environment['PYTHONPATH'] = str(self.root)
         environment['NO_COLOR'] = '1'
         arguments = [
-            sys.executable, str(SCRIPT), '--spec',
-            str(self.spec_path), '--sha256',
-            self.spec_digest, '--execute', '1',
+            sys.executable,
+            str(SCRIPT),
+            '--spec',
+            str(self.spec_path),
+            '--sha256',
+            self.spec_digest,
+            '--execute',
+            '1',
         ]
         pid, master = pty.fork()
         if pid == 0:
@@ -3305,6 +3632,7 @@ class CommitPlanExecTests(unittest.TestCase):
                     ):
                         os.write(master, b'\x03\x1b[59;1R')
                         interrupted = True
+
                 finished, status = os.waitpid(pid, os.WNOHANG)
                 if finished:
                     break
@@ -3446,14 +3774,23 @@ class CommitPlanExecTests(unittest.TestCase):
         '''
 
         def update(spec):
+            '''
+            Configure the fixture plan for untracked check outputs do
+            not cross clones.
+
+            '''
             checks = spec['boundaries'][0]['project_checks']
             checks[0]['argv'] = [
-                'sh', '-c', 'printf "generated\\n" > generated.txt',
+                'sh',
+                '-c',
+                'printf "generated\\n" > generated.txt',
             ]
             checks[0]['resolution_argv'] = ['pwd']
             checks.append({
                 'argv': [
-                    'sh', '-c', 'test ! -e generated.txt',
+                    'sh',
+                    '-c',
+                    'test ! -e generated.txt',
                 ],
                 'resolution_argv': ['pwd'],
                 'env': {},
@@ -3546,9 +3883,15 @@ class CommitPlanExecTests(unittest.TestCase):
         '''
 
         def update(spec):
+            '''
+            Configure the fixture plan for non utf8 check failure
+            keeps phase and output.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [
-                'sh', '-c',
+                'sh',
+                '-c',
                 "printf '\\377\\n'; "
                 "printf '\\376\\n' >&2; exit 23",
             ]
@@ -3577,9 +3920,17 @@ class CommitPlanExecTests(unittest.TestCase):
         '''
 
         def update(spec):
+            '''
+            Configure the fixture plan for isolated check cannot
+            rewrite its head.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [
-                'git', 'reset', '--hard', 'HEAD^',
+                'git',
+                'reset',
+                '--hard',
+                'HEAD^',
             ]
             check['resolution_argv'] = ['pwd']
 
@@ -3603,6 +3954,11 @@ class CommitPlanExecTests(unittest.TestCase):
         absent = self.runtime / 'missing\n\x1b[31m'
 
         def update(spec):
+            '''
+            Configure the fixture plan for missing executable name is
+            escaped.
+
+            '''
             check = spec['boundaries'][0]['project_checks'][0]
             check['argv'] = [str(absent)]
 
@@ -3662,6 +4018,7 @@ class CommitPlanExecTests(unittest.TestCase):
                     else:
                         index.unlink()
                     index.write_bytes(original)
+
         self.assertEqual(self.commit_count(), 1)
         self.assertEqual(self.line_count(self.check_count), 0)
         self.assertEqual(self.line_count(self.editor_count), 0)
@@ -3684,6 +4041,11 @@ class CommitPlanExecTests(unittest.TestCase):
         )
 
         def update(spec):
+            '''
+            Configure the fixture plan for absent index stages
+            nonempty boundary.
+
+            '''
             spec['initial_index_tree'] = empty
             boundary = spec['boundaries'][0]
             boundary['index_before_tree'] = empty
@@ -3721,6 +4083,11 @@ class CommitPlanExecTests(unittest.TestCase):
         patch = self.make_patch('empty-target.patch', empty, empty)
 
         def update(spec):
+            '''
+            Configure the fixture plan for absent index materializes
+            empty target.
+
+            '''
             spec['initial_index_tree'] = empty
             spec['boundaries'] = spec['boundaries'][:1]
             boundary = spec['boundaries'][0]
@@ -3778,12 +4145,21 @@ class CommitPlanExecTests(unittest.TestCase):
         environment = os.environ.copy()
         environment['GIT_EXTERNAL_DIFF'] = str(external)
         self.run_process(
-            ['git', 'diff', '--staged'], env=environment,
+            [
+                'git',
+                'diff',
+                '--staged',
+            ], env=environment,
         )
         self.assertTrue(external_marker.exists())
         external_marker.unlink()
         self.run_process(
-            ['git', 'diff', '--staged', '--textconv'],
+            [
+                'git',
+                'diff',
+                '--staged',
+                '--textconv',
+            ],
         )
         self.assertTrue(textconv_marker.exists())
         textconv_marker.unlink()

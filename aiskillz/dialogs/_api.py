@@ -8,7 +8,8 @@ Public dialog discovery and worktree-relation orchestration.
 Workspace modules and the CLI call these functions. _readers supplies
 harness metadata; _inspect extracts recorded directories from logs.
 The wkt layer matches those directories to Git worktrees and persists
-relations. Shell parsing and table formatting belong to cli.py.
+relations. Shell parsing belongs to `cli.main()`; terminal table
+formatting belongs to `cli.format_dialog_table()`.
 
 '''
 
@@ -48,8 +49,7 @@ def list_dialogs(
         ['codex', 'opencode', 'claude']
         if (
             all
-            or
-            harness is None
+            or harness is None
         )
         else [harness]
         if isinstance(harness, str)
@@ -72,8 +72,7 @@ def list_dialogs(
     cwd: str|None = None
     if (
         not all
-        and
-        path is not None
+        and path is not None
     ):
         cwd = str(Path(path).expanduser().resolve())
     data: Path = Path(
@@ -113,16 +112,15 @@ def list_dialogs(
         home: Path = homes[name].expanduser().resolve()
         if (
             name == 'codex'
-            and
-            not (home / 'state_5.sqlite').is_file()
-            and
-            len(names) > 1
+            and not (home / 'state_5.sqlite').is_file()
+            and len(names) > 1
         ):
             continue
         records.extend(readers[name](
             home, cwd, all_sources or all,
             include_archived=include_archived,
         ))
+
     unique: dict[tuple[str, str], dict] = {}
     record: dict
     for record in sorted(records, key=lambda r: r['updated_at']):
@@ -131,7 +129,6 @@ def list_dialogs(
         unique.values(),
         key=lambda r: (-r['updated_at'], r['harness'], r['id']),
     )
-
 
 
 def get_dialog(
@@ -162,8 +159,7 @@ def get_dialog(
     '''
     if (
         not isinstance(dialog_id, str)
-        or
-        not dialog_id
+        or not dialog_id
     ):
         raise ValueError('dialog_id must be a nonempty string')
     row: dict
@@ -210,12 +206,14 @@ def name2id(
             name = f'{name} [{backend}:{did}]'
             while (
                 name in reserved
-                or
-                name in result
+                or name in result
             ):
                 name += '#'
+
         result[name] = row['id']
+
     return result
+
 
 def preview_wkt_relations(
     path: str = '.',
@@ -243,6 +241,7 @@ def preview_wkt_relations(
             sqlite3.Error,
         ) as error:
             warnings.append(harness + ': ' + str(error))
+
     indexer: WktIndexer = WktIndexer(path)
     return indexer.suggest(
         dialogs, observations if logs else None, warnings,

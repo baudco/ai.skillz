@@ -36,7 +36,12 @@ class DialogWorktreeTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root: Path = Path(self.temp.name) / 'main'
         subprocess.run(
-            ['git', 'init', '--quiet', str(self.root)],
+            [
+                'git',
+                'init',
+                '--quiet',
+                str(self.root),
+            ],
             capture_output=True, check=True,
         )
 
@@ -57,11 +62,14 @@ class DialogWorktreeTests(unittest.TestCase):
         metadata: Path = admin / 'ai-skillz-wkt'
         metadata.mkdir()
         (metadata / 'owner.json').write_text(json.dumps({
-            'session': 'generic-owner-token', 'dialog': dialog,
+            'session': 'generic-owner-token',
+            'dialog': dialog,
         }))
         return root
 
-    def test_removed_relation_suppresses_saved_checkout(self) -> None:
+    def test_removed_relation_suppresses_saved_checkout(
+        self,
+    ) -> None:
         '''
         A removed recorded WKT used to revive an older saved cwd.
 
@@ -92,13 +100,16 @@ class DialogWorktreeTests(unittest.TestCase):
             lookup.roots(str(old), 'claude', 'unrecorded'),
             {str(old)},
         )
-        with patch('aiskillz._resume.dialogs.list_dialogs',
-                   return_value=[{
-                       'name': 'Example',
-                       'id': 'dialog',
-                       'harness': 'claude',
-                       'cwd': str(old),
-                   }]):
+        dialog: dict = {
+            'name': 'Example',
+            'id': 'dialog',
+            'harness': 'claude',
+            'cwd': str(old),
+        }
+        with patch(
+            'aiskillz._resume.dialogs.list_dialogs',
+            return_value=[dialog],
+        ):
             with self.assertRaisesRegex(ValueError, 'use --cwd'):
                 resume_target('Example')
             self.assertEqual(
@@ -117,7 +128,8 @@ class DialogWorktreeTests(unittest.TestCase):
 
         '''
         root: Path = self.linked('feature', {
-            'harness': 'codex', 'id': 'dialog-one',
+            'harness': 'codex',
+            'id': 'dialog-one',
         })
         labels: WktLookup = WktLookup()
         self.assertEqual(
@@ -132,6 +144,7 @@ class DialogWorktreeTests(unittest.TestCase):
                 {str(root)},
             )
             query.assert_not_called()
+
         self.assertEqual(
             labels.roots(str(self.root), 'claude', 'dialog-one'),
             set(),

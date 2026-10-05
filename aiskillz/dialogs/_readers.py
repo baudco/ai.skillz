@@ -143,20 +143,19 @@ def opencode_sessions(
                 old: dict = rows.get(item['id'], {})
                 if item['updated_at'] >= old.get('updated_at', 0):
                     rows[item['id']] = item
+
     if not databases:
         path: Path
         for path in (home / 'storage/session').glob('*/*.json'):
             entry: dict = json.loads(path.read_text())
             if (
                 cwd is not None
-                and
-                entry.get('directory') != cwd
+                and entry.get('directory') != cwd
             ):
                 continue
             if (
                 not all_sources
-                and
-                entry.get('parentID')
+                and entry.get('parentID')
             ):
                 continue
             if (
@@ -173,6 +172,7 @@ def opencode_sessions(
                 'updated_at': entry.get('time', {}).get('updated', 0)
                 / 1000,
             }
+
     return list(rows.values())
 
 
@@ -218,22 +218,16 @@ def claude_sessions(
             sidechain: bool = 'subagents' in path.parts
             if (
                 entry
-                and
-                index.stat().st_mtime >= stat.st_mtime
+                and index.stat().st_mtime >= stat.st_mtime
             ):
                 owner = entry.get('projectPath', '')
                 name = (
                     entry.get('customTitle')
-                    or
-                    entry.get('aiTitle')
-                    or
-                    entry.get('lastPrompt')
-                    or
-                    entry.get('summary')
-                    or
-                    entry.get('firstPrompt')
-                    or
-                    ''
+                    or entry.get('aiTitle')
+                    or entry.get('lastPrompt')
+                    or entry.get('summary')
+                    or entry.get('firstPrompt')
+                    or ''
                 )
                 sidechain = entry.get('isSidechain', sidechain)
             else:
@@ -258,8 +252,7 @@ def claude_sessions(
                             did = event['sessionId']
                         sidechain = (
                             sidechain
-                            or
-                            bool(event.get('isSidechain'))
+                            or bool(event.get('isSidechain'))
                         )
                         kind: str = event.get('type', '')
                         if kind == 'custom-title':
@@ -272,8 +265,7 @@ def claude_sessions(
                             summary = event.get('summary', '')
                         elif (
                             kind == 'user'
-                            and
-                            not prompt
+                            and not prompt
                         ):
                             content: object = event.get(
                                 'message', {},
@@ -283,19 +275,17 @@ def claude_sessions(
                             )
                             if isinstance(content, str):
                                 prompt = content[:120]
+
                 name = (
                     custom
-                    or
-                    last_prompt
-                    or
-                    summary
-                    or
-                    prompt
+                    or last_prompt
+                    or summary
+                    or prompt
                 )
+
             if (
                 cwd is not None
-                and
-                owner != cwd
+                and owner != cwd
             ):
                 continue
             if sidechain:
@@ -311,4 +301,5 @@ def claude_sessions(
                     'updated_at': stat.st_mtime,
                 }
             )
+
     return result

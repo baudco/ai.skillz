@@ -120,7 +120,12 @@ class DlogsTests(unittest.TestCase):
 
         '''
         subprocess.run(
-            ['git', 'init', '--quiet', str(self.repo)],
+            [
+                'git',
+                'init',
+                '--quiet',
+                str(self.repo),
+            ],
             check=True, capture_output=True,
         )
         relations: Path = (
@@ -134,7 +139,11 @@ class DlogsTests(unittest.TestCase):
             redirect_stderr(error),
             self.assertRaises(SystemExit) as raised,
         ):
-            dlogs_main([str(self.repo), '-b', 'cx'])
+            dlogs_main([
+                str(self.repo),
+                '-b',
+                'cx',
+            ])
         self.assertEqual(raised.exception.code, 1)
         self.assertIn('ai.dlogs:', error.getvalue())
         self.assertNotIn('Traceback', error.getvalue())
@@ -144,7 +153,10 @@ class DlogsTests(unittest.TestCase):
             redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(dlogs_main([
-                str(self.repo), '-b', 'cx', '--json',
+                str(self.repo),
+                '-b',
+                'cx',
+                '--json',
             ]), 0)
 
     def test_scope_names_order_and_read_only(self) -> None:
@@ -233,7 +245,10 @@ class DlogsTests(unittest.TestCase):
             self.assertIn(uuid, rendered.getvalue())
             rendered = io.StringIO()
             with redirect_stdout(rendered):
-                self.assertEqual(dlogs_main(['--did', '--json']), 0)
+                self.assertEqual(dlogs_main([
+                    '--did',
+                    '--json',
+                ]), 0)
             self.assertEqual(
                 json.loads(rendered.getvalue()), sessions,
             )
@@ -250,7 +265,12 @@ class DlogsTests(unittest.TestCase):
 
         '''
         subprocess.run(
-            ['git', 'init', '--quiet', str(self.repo)],
+            [
+                'git',
+                'init',
+                '--quiet',
+                str(self.repo),
+            ],
             check=True, capture_output=True,
         )
         linked: Path = self.home / 'feature'
@@ -291,12 +311,16 @@ class DlogsTests(unittest.TestCase):
         name: str = 'long' * 40
         sessions: list[dict] = [
             {
-                'name': name, 'id': 'dialog-one',
-                'cwd': '/repo', 'harness': 'claude',
+                'name': name,
+                'id': 'dialog-one',
+                'cwd': '/repo',
+                'harness': 'claude',
             },
             {
-                'name': 'x' * 36, 'id': 'dialog-two',
-                'cwd': '/repo', 'harness': 'codex',
+                'name': 'x' * 36,
+                'id': 'dialog-two',
+                'cwd': '/repo',
+                'harness': 'codex',
             },
         ]
         lines: list[str] = table(sessions).splitlines()
@@ -336,11 +360,15 @@ class DlogsTests(unittest.TestCase):
         '''
         rows: list[dict] = [
             {
-                'name': 'One', 'id': 'one', 'cwd': '/repo',
+                'name': 'One',
+                'id': 'one',
+                'cwd': '/repo',
                 'harness': 'codex',
             },
             {
-                'name': 'Two', 'id': 'two', 'cwd': '/repo',
+                'name': 'Two',
+                'id': 'two',
+                'cwd': '/repo',
                 'harness': 'codex',
             },
         ]
@@ -375,7 +403,10 @@ class DlogsTests(unittest.TestCase):
         with patch('aiskillz.cli.dialogs.list_dialogs') as listing:
             listing.return_value = []
             with redirect_stdout(io.StringIO()):
-                self.assertEqual(dlogs_main(['-b', 'cx']), 0)
+                self.assertEqual(dlogs_main([
+                    '-b',
+                    'cx',
+                ]), 0)
         self.assertEqual(listing.call_args.args[1], 'cx')
 
     def test_terminal_color_stays_on_table_header(self) -> None:
@@ -402,7 +433,9 @@ class DlogsTests(unittest.TestCase):
 
         output: Terminal = Terminal()
         rows: list[dict] = [{
-            'name': 'One', 'id': 'one', 'cwd': '/repo',
+            'name': 'One',
+            'id': 'one',
+            'cwd': '/repo',
             'harness': 'codex',
         }]
         with (
@@ -413,6 +446,7 @@ class DlogsTests(unittest.TestCase):
         ):
             os.environ.pop('NO_COLOR', None)
             self.assertEqual(dlogs_main([]), 0)
+
         self.assertTrue(output.getvalue().startswith(
             '\x1b[90msort-by: \x1b[0m'
             '"last-update-time" (newest first)\n'
@@ -450,7 +484,11 @@ class DlogsTests(unittest.TestCase):
         })
         result: subprocess.CompletedProcess = subprocess.run(
             [
-                sys.executable, '-m', 'xonsh', '--no-rc', '-c',
+                sys.executable,
+                '-m',
+                'xonsh',
+                '--no-rc',
+                '-c',
                 'xontrib load aiskillz; '
                 'ai.dlogs --harness codex --json',
             ],
@@ -476,7 +514,12 @@ class DlogsTests(unittest.TestCase):
             'ai.dlogs --harness codex --json'
         )
         result: subprocess.CompletedProcess = subprocess.run(
-            ['xonsh', '--no-rc', '-c', command],
+            [
+                'xonsh',
+                '--no-rc',
+                '-c',
+                command,
+            ],
             cwd=self.repo,
             env=os.environ
             | {

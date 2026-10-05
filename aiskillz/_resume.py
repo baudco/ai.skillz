@@ -32,12 +32,17 @@ def _codex_supports_no_daemon() -> bool:
     '''
     try:
         result: subprocess.CompletedProcess[str] = subprocess.run(
-            ['codex', 'resume', '--help'],
+            [
+                'codex',
+                'resume',
+                '--help',
+            ],
             capture_output=True,
             text=True,
             check=False,
             timeout=5,
         )
+
     except (
         OSError,
         subprocess.TimeoutExpired,
@@ -45,8 +50,7 @@ def _codex_supports_no_daemon() -> bool:
         return False
     return (
         result.returncode == 0
-        and
-        re.search(
+        and re.search(
             r'(?m)^\s*--no-daemon(?:\s|$)',
             result.stdout + '\n' + result.stderr,
         ) is not None
@@ -76,8 +80,7 @@ def resume_target(
     '''
     if (
         not isinstance(name, str)
-        or
-        not name
+        or not name
     ):
         raise ValueError('NAME_OR_ID must be a nonempty string')
     records: list[dict] = dialogs.list_dialogs(
@@ -96,15 +99,14 @@ def resume_target(
         ]
     if (
         not matches
-        and
-        len(name) == 36
-        and
-        name.endswith('…')
+        and len(name) == 36
+        and name.endswith('…')
     ):
         matches = [
             record for record in records
             if record['name'].startswith(name[:35])
         ]
+
     if dialog_id is not None:
         matches = [
             record for record in matches
@@ -117,54 +119,69 @@ def resume_target(
         )
     if len(matches) > 1:
         row: dict
-        choices: str = ', '.join(
-            f"{row['harness']}:{row['id']} @ {row['cwd']}"
-            for row in matches
-        )
+        options: list[str] = []
+        for row in matches:
+            backend: str = row['harness']
+            matched_id: str = row['id']
+            saved_cwd: str = row['cwd']
+            options.append(f'{backend}:{matched_id} @ {saved_cwd}')
+        choices: str = ', '.join(options)
         raise ValueError(
             'Dialog selector is ambiguous; use --id, -b, or --repo: '
             + choices
         )
+
     selected: dict = matches[0]
     did: str = selected['id']
     char: str
     if (
         not isinstance(did, str)
-        or
-        not did
-        or
-        did.startswith('-')
-        or
-        any(not char.isprintable() for char in did)
+        or not did
+        or did.startswith('-')
+        or any(not char.isprintable() for char in did)
     ):
         raise ValueError('Dialog ID is invalid for a harness CLI')
 
     provider: str = selected['harness']
     commands: dict[str, list[str]] = {
-        'codex': ['codex', 'resume', did],
-        'opencode': ['opencode', '--session', did],
-        'claude': ['claude', '--resume', did],
+        'codex': [
+            'codex',
+            'resume',
+            did,
+        ],
+        'opencode': [
+            'opencode',
+            '--session',
+            did,
+        ],
+        'claude': [
+            'claude',
+            '--resume',
+            did,
+        ],
     }
     if provider not in commands:
         raise ValueError('Unsupported harness: ' + provider)
     if (
         provider == 'codex'
-        and
-        _codex_supports_no_daemon()
+        and _codex_supports_no_daemon()
     ):
         commands['codex'] = [
-            'codex', 'resume', '--no-daemon', did,
+            'codex',
+            'resume',
+            '--no-daemon',
+            did,
         ]
 
     saved: str = selected.get('cwd', '')
     if (
         cwd is None
-        and
-        not saved
+        and not saved
     ):
         raise ValueError(
             'Dialog has no saved cwd; use --cwd'
         )
+
     if cwd is not None:
         directory: Path = Path(cwd).expanduser().resolve()
     else:
@@ -172,7 +189,10 @@ def resume_target(
         roots: set[str] = lookup.roots(
             saved, provider, did,
         )
-        if not roots and lookup.has_relation(saved, provider, did):
+        if (
+            not roots
+            and lookup.has_relation(saved, provider, did)
+        ):
             raise ValueError(
                 'Recorded WKT is no longer available; use --cwd'
             )
@@ -183,6 +203,7 @@ def resume_target(
         directory = Path(
             next(iter(roots)) if roots else saved
         ).expanduser().resolve()
+
     if not directory.is_dir():
         raise ValueError(
             'Launch directory is missing: ' + str(directory)

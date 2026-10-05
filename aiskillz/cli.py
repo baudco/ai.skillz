@@ -51,7 +51,10 @@ def _display_text(value: object) -> str:
 
 
 def _terminal_color_enabled() -> bool:
-    '''Use color only for an interactive terminal that permits it.'''
+    '''
+    Use color only for an interactive terminal that permits it.
+
+    '''
     return (
         sys.stdout.isatty()
         and not os.environ.get('NO_COLOR')
@@ -60,12 +63,18 @@ def _terminal_color_enabled() -> bool:
 
 
 def _grey_label(label: str, color: bool) -> str:
-    '''Dim a preview label without coloring its value.'''
+    '''
+    Dim a preview label without coloring its value.
+
+    '''
     return f'\x1b[90m{label}\x1b[0m' if color else label
 
 
 def _highlight(value: str, code: int, color: bool) -> str:
-    '''Color one preview value while preserving plain output.'''
+    '''
+    Color one preview value while preserving plain output.
+
+    '''
     return f'\x1b[{code}m{value}\x1b[0m' if color else value
 
 
@@ -74,7 +83,8 @@ def _shell_commands(
     argv: list[str],
     xonsh_command: str,
 ) -> list[tuple[str, str]]:
-    '''Format a preview action for Xonsh and POSIX shell users.
+    '''
+    Format a preview action for Xonsh and POSIX shell users.
 
     `index_main()` uses this for both Resume and Apply. Ordinary
     `shlex.join()` output works in both shells. POSIX's apostrophe
@@ -82,6 +92,7 @@ def _shell_commands(
 
     '''
     posix_command: str = shlex.join(argv)
+    arg: str
     if any("'" in arg for arg in argv):
         return [
             (f'{action} (xonsh):', xonsh_command),
@@ -144,10 +155,13 @@ def format_dialog_table(
                     ValueError,
                 ):
                     pass
+
         if cwd == home:
             display['cwd'] = '~'
         elif cwd.startswith(home_prefix):
             display['cwd'] = '~' + os.sep + cwd[len(home_prefix):]
+        key: str
+        value: object
         values: dict[str, str] = {
             key: _display_text(value)
             for key, value in display.items()
@@ -159,6 +173,7 @@ def format_dialog_table(
     context: list[str] = [
         'sort-by: "last-update-time" (newest first)',
     ]
+    row: dict[str, str]
     cwd_values: set[str] = {
         row.get('cwd', '') for row in displays
     }
@@ -167,15 +182,12 @@ def format_dialog_table(
     }
     uniform_cwd: bool = (
         show_cwd
-        and
-        len(cwd_values) == 1
-        and
-        bool(next(iter(cwd_values)))
+        and len(cwd_values) == 1
+        and bool(next(iter(cwd_values)))
     )
     uniform_harness: bool = (
         len(harness_values) == 1
-        and
-        bool(next(iter(harness_values)))
+        and bool(next(iter(harness_values)))
     )
     if uniform_cwd:
         context.append('CWD=' + next(iter(cwd_values)))
@@ -195,10 +207,10 @@ def format_dialog_table(
         columns.append(('updated', 'UPDATED (UTC)'))
     if (
         show_cwd
-        and
-        not uniform_cwd
+        and not uniform_cwd
     ):
         columns.append(('cwd', 'CWD'))
+    key: str
     keys: list[str] = [key for key, _ in columns]
     rows: list[list[str]] = [
         [label for _, label in columns]
@@ -223,7 +235,10 @@ def format_dialog_table(
         for row in rows
     )
     if context:
-        return '\n'.join(context) + '\n\n' + table
+        return (
+            '\n'.join(context) + '\n'
+            '\n' + table
+        )
     return table
 
 
@@ -302,6 +317,7 @@ def main(argv: list[str]|None = None) -> int:
                 show_did=args.did,
             )
         )
+
     except (
         OSError,
         ValueError,
@@ -313,8 +329,13 @@ def main(argv: list[str]|None = None) -> int:
         context: str
         context_separator: str
         table: str
-        context, context_separator, table = output.partition(
-            '\n\n',
+        (
+            context,
+            context_separator,
+            table,
+        ) = output.partition(
+            '\n'
+            '\n',
         )
         if not context_separator:
             table = context
@@ -322,7 +343,11 @@ def main(argv: list[str]|None = None) -> int:
         header: str
         separator: str
         body: str
-        header, separator, body = table.partition('\n')
+        (
+            header,
+            separator,
+            body,
+        ) = table.partition('\n')
         table = f'\x1b[90m{header}\x1b[0m{separator}{body}'
         if context_separator:
             colored: list[str] = []
@@ -334,15 +359,22 @@ def main(argv: list[str]|None = None) -> int:
                 delimiter: str = (
                     ': ' if line.startswith('sort-by: ') else '='
                 )
-                label, separator, value = line.partition(delimiter)
+                (
+                    label,
+                    separator,
+                    value,
+                ) = line.partition(delimiter)
                 colored.append(
                     f'\x1b[90m{label}{separator}\x1b[0m{value}'
                 )
+
             context = '\n'.join(colored)
+
         output = (
             context + context_separator + table
             if context_separator else table
         )
+
     print(output)
     return 0
 
@@ -369,7 +401,12 @@ def resume_main(argv: list[str]|None = None) -> int:
     parser.add_argument(
         '-b', '--harness',
         choices=[
-            'codex', 'cx', 'opencode', 'oc', 'claude', 'cld',
+            'codex',
+            'cx',
+            'opencode',
+            'oc',
+            'claude',
+            'cld',
         ],
         help='narrow duplicate names or IDs to one harness',
     )
@@ -403,6 +440,7 @@ def resume_main(argv: list[str]|None = None) -> int:
             check=False,
         )
         return result.returncode
+
     except (
         OSError,
         ValueError,
@@ -468,10 +506,8 @@ def index_main(argv: list[str]) -> int:
         elif args.record:
             if (
                 not args.worktree
-                or
-                args.sha256
-                or
-                args.choose
+                or args.sha256
+                or args.choose
             ):
                 parser.error('--record requires only --worktree')
             harness: str
@@ -498,8 +534,10 @@ def index_main(argv: list[str]) -> int:
                 raise ValueError(
                     f'No saved dialog with name or ID {selector!r} '
                     f'for harness {harness_label}\n'
-                    f'Check --record HARNESS and the dialog name or ID'
+                    f'Check --record HARNESS and the dialog '
+                    f'name or ID'
                 )
+
             if len(matches) > 1:
                 ids: str = ', '.join(row['id'] for row in matches)
                 raise ValueError(
@@ -507,6 +545,7 @@ def index_main(argv: list[str]) -> int:
                     f'for harness {harness_label}\n'
                     f'Pass an exact ID: {ids}'
                 )
+
             selected: dict = matches[0]
             changed = dialogs.record_wkt_relation(
                 args.repo, selected['harness'], selected['id'],
@@ -516,10 +555,8 @@ def index_main(argv: list[str]) -> int:
         else:
             if (
                 args.sha256
-                or
-                args.choose
-                or
-                args.worktree
+                or args.choose
+                or args.worktree
             ):
                 parser.error('Apply/record options need their mode')
             data: dict = dialogs.preview_wkt_relations(
@@ -530,7 +567,8 @@ def index_main(argv: list[str]) -> int:
             path, digest = dialogs.save_wkt_preview(data)
             if args.json:
                 print(json.dumps({
-                    'path': str(path), 'sha256': digest,
+                    'path': str(path),
+                    'sha256': digest,
                     'data': data,
                 }, indent=2))
             else:
@@ -542,6 +580,7 @@ def index_main(argv: list[str]) -> int:
                     ))
                 else:
                     print('No new WKT relations to apply.')
+
                 entry: dict
                 for entry in data['entries']:
                     status: str = entry['status'].upper()
@@ -555,36 +594,57 @@ def index_main(argv: list[str]) -> int:
                         _highlight(label, 36, color),
                     )
                     if entry['name'] != '(metadata)':
+                        name: str = entry['name']
+                        resume_commands: list[tuple[str, str]] = (
+                            _shell_commands(
+                                'Resume',
+                                [
+                                    'ai.resume',
+                                    name,
+                                    '-a',
+                                    '-b',
+                                    harness,
+                                    '--id',
+                                    did,
+                                ],
+                                f'ai.resume @({name!r}) '
+                                f'-a -b {harness} --id @({did!r})',
+                            )
+                        )
                         resume_label: str
                         resume_command: str
-                        for resume_label, resume_command in _shell_commands(
-                            'Resume',
-                            [
-                                'ai.resume', entry['name'],
-                                '-a', '-b', harness, '--id', did,
-                            ],
-                            f'ai.resume @({entry["name"]!r}) '
-                            f'-a -b {harness} --id @({did!r})',
-                        ):
+                        for (
+                            resume_label,
+                            resume_command,
+                        ) in resume_commands:
                             print(
                                 _grey_label(resume_label, color),
                                 resume_command,
                             )
+
                     candidate: dict
                     for candidate in entry['candidates']:
                         target: str = json.dumps(
                             candidate['worktree'],
                         )
+                        hidden_evidence: str = (
+                            'legacy-owner-matching-dialog-id'
+                        )
+                        item: str
                         evidence: str = ', '.join(
                             item for item in candidate['evidence']
-                            if item != 'legacy-owner-matching-dialog-id'
+                            if item != hidden_evidence
                         )
-                        detail: str = f' [{evidence}]' if evidence else ''
+                        detail: str = (
+                            f' [{evidence}]' if evidence else ''
+                        )
                         print(
                             '  ' + _highlight(target, 34, color)
                             + detail,
                         )
+
                     print()
+
                 print(
                     _grey_label('Unresolved:', color),
                     len(data['unresolved']),
@@ -607,23 +667,34 @@ def index_main(argv: list[str]) -> int:
                 repo: str = str(Path(args.repo).resolve())
                 preview_path: str = str(path)
                 if data['entries']:
+                    apply_commands: list[tuple[str, str]] = (
+                        _shell_commands(
+                            'Apply',
+                            [
+                                'ai.dlogs',
+                                'index',
+                                repo,
+                                '--apply',
+                                preview_path,
+                                '--sha256',
+                                digest,
+                            ],
+                            f'ai.dlogs index @({repo!r}) '
+                            f'--apply @({preview_path!r}) '
+                            f'--sha256 {digest}',
+                        )
+                    )
                     apply_label: str
                     apply_command: str
-                    for apply_label, apply_command in _shell_commands(
-                        'Apply',
-                        [
-                            'ai.dlogs', 'index', repo,
-                            '--apply', preview_path,
-                            '--sha256', digest,
-                        ],
-                        f'ai.dlogs index @({repo!r}) '
-                        f'--apply @({preview_path!r}) '
-                        f'--sha256 {digest}',
-                    ):
+                    for (
+                        apply_label,
+                        apply_command,
+                    ) in apply_commands:
                         print(
                             _grey_label(apply_label, color),
                             apply_command,
                         )
+
     except (
         OSError,
         ValueError,

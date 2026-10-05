@@ -113,6 +113,7 @@ class HarnessStoresTests(unittest.TestCase):
             path=None, harness='oc', all_sources=True,
             include_archived=True,
         )
+        row: dict
         self.assertEqual([row['id'] for row in rows], ['old'])
 
     def seed_oc(self) -> None:
@@ -336,7 +337,8 @@ class HarnessStoresTests(unittest.TestCase):
         stream: TextIO
         with path.open('a') as stream:
             stream.write(json.dumps({
-                'type': 'ai-title', 'aiTitle': 'Latest AI title',
+                'type': 'ai-title',
+                'aiTitle': 'Latest AI title',
             }) + '\n')
         rows: list[dict] = claude_sessions(
             self.claude, str(self.repo),
@@ -417,6 +419,7 @@ class HarnessStoresTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, 'ambiguous'):
                 get_dialog('shared')
+
         with self.assertRaisesRegex(ValueError, 'nonempty'):
             get_dialog('')
 
@@ -486,7 +489,12 @@ class HarnessStoresTests(unittest.TestCase):
         self.assertFalse(alias.__xonsh_threadable__)
         self.assertEqual(
             xsh.aliases['ai.resume'],
-            [sys.executable, '-m', 'aiskillz', 'resume'],
+            [
+                sys.executable,
+                '-m',
+                'aiskillz',
+                'resume',
+            ],
         )
         out: StringIO = StringIO()
         err: StringIO = StringIO()
