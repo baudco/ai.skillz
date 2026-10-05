@@ -58,9 +58,10 @@ class WktLookup:
 
         Resolve the Git repository containing its saved cwd, then
         read the relation file once per repository. If no existing
-        associated worktree is found, use the linked checkout
-        containing that cwd. The main checkout and missing/deleted
-        cwd paths return an empty set. These paths describe recorded
+        relation is recorded, use the linked checkout containing
+        that cwd. A recorded but inactive WKT returns an empty set.
+        The main checkout and missing/deleted cwd paths also return
+        an empty set. These paths describe recorded
         worktree use, not a running agent cwd.
 
         '''
@@ -77,14 +78,33 @@ class WktLookup:
         ):
             if common not in self.relations:
                 self.relations[common] = self._read(cwd, common)
-            names: set[str] = self.relations[common].get(
-                (harness, dialog_id), set(),
-            )
-            if names:
-                return set(names)
+            key: tuple[str, str] = (harness, dialog_id)
+            if key in self.relations[common]:
+                return set(self.relations[common][key])
         if paths[1] == common:
             return set()
         return {paths[0]}
+
+    def has_relation(
+        self,
+        cwd: str,
+        harness: str,
+        dialog_id: str,
+    ) -> bool:
+        '''
+        Whether explicit relation metadata identifies this dialog.
+
+        `resume_target()` uses this after `roots()` returns no WKTs
+        to require an explicit launch directory instead of reviving
+        an older saved cwd. `roots()` populates WktLookup.relations;
+        an empty set there preserves a removed WKT's recorded ID.
+
+        '''
+        self.roots(cwd, harness, dialog_id)
+        paths: tuple[str, ...] = self.locations.get(cwd, ())
+        if len(paths) != 3:
+            return False
+        return (harness, dialog_id) in self.relations[paths[2]]
 
     def _read(
         self,
@@ -123,6 +143,7 @@ class WktLookup:
         for record in store['records']:
             key: tuple[str, str] = identity(record)
             confirmed.add(key)
+            result[key] = set()
             root: str = record['worktree']
             if inventory.get(root) == record['git_dir']:
                 result[key] = {root}

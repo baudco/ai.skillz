@@ -321,6 +321,11 @@ Codex installations retain `codex resume ID`; `--dry-run` shows the
 exact argv selected for the current installation. Other harnesses
 are unaffected.
 
+When a recorded WKT is removed or unregistered, its relation remains
+in `relations.json`. The WKT column stays empty instead of showing
+an older saved checkout. `ai.resume` requires `--cwd` in this case
+so you explicitly choose where to continue the dialog.
+
 ## Storage and limits
 
 - Codex: read-only `CODEX_HOME/state_5.sqlite`, default `~/.codex`.

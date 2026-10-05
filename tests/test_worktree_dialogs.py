@@ -61,6 +61,51 @@ class DialogWorktreeTests(unittest.TestCase):
         }))
         return root
 
+    def test_removed_relation_suppresses_saved_checkout(self) -> None:
+        '''
+        A removed recorded WKT used to revive an older saved cwd.
+
+        Record a new WKT for a dialog saved in another live linked
+        checkout, then remove the new WKT's Git file. Lookup must
+        retain the recorded identity but return no active path.
+        Resume must refuse automatic launch, while --cwd permits
+        an explicit choice. Other dialogs retain ordinary fallback.
+
+        '''
+        from aiskillz import record_wkt_relation
+        from aiskillz._resume import resume_target
+
+        old: Path = self.linked('old', {})
+        new: Path = self.linked('new', {})
+        record_wkt_relation(
+            str(self.root), 'claude', 'dialog', str(new),
+        )
+        (new / '.git').unlink()
+        lookup: WktLookup = WktLookup()
+        self.assertEqual(
+            lookup.roots(str(old), 'claude', 'dialog'), set(),
+        )
+        self.assertTrue(
+            lookup.has_relation(str(old), 'claude', 'dialog'),
+        )
+        self.assertEqual(
+            lookup.roots(str(old), 'claude', 'unrecorded'),
+            {str(old)},
+        )
+        with patch('aiskillz._resume.dialogs.list_dialogs',
+                   return_value=[{
+                       'name': 'Example',
+                       'id': 'dialog',
+                       'harness': 'claude',
+                       'cwd': str(old),
+                   }]):
+            with self.assertRaisesRegex(ValueError, 'use --cwd'):
+                resume_target('Example')
+            self.assertEqual(
+                resume_target('Example', cwd=str(old))['cwd'],
+                str(old),
+            )
+
     def test_explicit_owner_overrides_saved_main_cwd(self) -> None:
         '''
         A dialog opened at main can work in a linked checkout.

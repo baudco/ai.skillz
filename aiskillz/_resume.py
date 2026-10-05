@@ -168,9 +168,14 @@ def resume_target(
     if cwd is not None:
         directory: Path = Path(cwd).expanduser().resolve()
     else:
-        roots: set[str] = WktLookup().roots(
+        lookup: WktLookup = WktLookup()
+        roots: set[str] = lookup.roots(
             saved, provider, did,
         )
+        if not roots and lookup.has_relation(saved, provider, did):
+            raise ValueError(
+                'Recorded WKT is no longer available; use --cwd'
+            )
         if len(roots) > 1:
             raise ValueError(
                 'Several WKTs match this dialog; use --cwd'
