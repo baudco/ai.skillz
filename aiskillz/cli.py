@@ -292,21 +292,23 @@ def main(argv: list[str]|None = None) -> int:
             all=args.all,
             all_sources=args.all_sources,
         )
+
+        output: str = (
+            json.dumps(sessions, indent=2)
+            if args.json
+            else format_dialog_table(
+                sessions,
+                show_timestamps=args.timestamps,
+                show_did=args.did,
+            )
+        )
     except (
         OSError,
         ValueError,
         sqlite3.Error,
     ) as error:
         parser.exit(1, f'ai.dlogs: {error}\n')
-    output: str = (
-        json.dumps(sessions, indent=2)
-        if args.json
-        else format_dialog_table(
-            sessions,
-            show_timestamps=args.timestamps,
-            show_did=args.did,
-        )
-    )
+
     if not args.json and _terminal_color_enabled():
         context: str
         context_separator: str

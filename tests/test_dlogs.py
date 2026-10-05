@@ -8,7 +8,7 @@ Exercise offline session discovery and the sourceable Xonsh alias.
 '''
 
 from contextlib import closing
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 import io
 import json
 from importlib.metadata import entry_points
@@ -108,6 +108,44 @@ class DlogsTests(unittest.TestCase):
                 ],
             )
             connection.commit()
+
+    def test_malformed_relation_reports_cli_error(self) -> None:
+        '''
+        WKT formatting errors used to bypass main()'s error handler.
+
+        Use the real Codex reader and Git lookup with malformed
+        relations.json in a temporary repo. The CLI must exit one
+        with its normal diagnostic, leaving the relation untouched.
+        JSON output bypasses WKT formatting and remains usable.
+
+        '''
+        subprocess.run(
+            ['git', 'init', '--quiet', str(self.repo)],
+            check=True, capture_output=True,
+        )
+        relations: Path = (
+            self.repo / '.ai/state/dialogs/relations.json'
+        )
+        relations.parent.mkdir(parents=True)
+        relations.write_text('{invalid')
+        error: io.StringIO = io.StringIO()
+        with (
+            patch.dict(os.environ, {'CODEX_HOME': str(self.home)}),
+            redirect_stderr(error),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            dlogs_main([str(self.repo), '-b', 'cx'])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn('ai.dlogs:', error.getvalue())
+        self.assertNotIn('Traceback', error.getvalue())
+        self.assertEqual(relations.read_text(), '{invalid')
+        with (
+            patch.dict(os.environ, {'CODEX_HOME': str(self.home)}),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(dlogs_main([
+                str(self.repo), '-b', 'cx', '--json',
+            ]), 0)
 
     def test_scope_names_order_and_read_only(self) -> None:
         '''
