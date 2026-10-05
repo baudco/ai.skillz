@@ -250,6 +250,8 @@ def claude_sessions(
                         except json.JSONDecodeError:
                             # Active logs may end in a partial line.
                             continue
+                        if not isinstance(event, dict):
+                            continue
                         if not owner:
                             owner = event.get('cwd', '')
                         if event.get('sessionId'):

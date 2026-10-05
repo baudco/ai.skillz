@@ -59,6 +59,35 @@ class HarnessStoresTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
+    def test_claude_skips_non_object_log_records(self) -> None:
+        '''
+        Valid JSON scalars and arrays used to crash Claude listing.
+
+        Surround one real metadata event with null, scalar, array,
+        and partial JSON records in a temporary log. Discovery must
+        still return the real dialog and its cwd/title instead of
+        aborting the entire harness store on event.get().
+
+        '''
+        folder: Path = self.claude / 'projects/fixture'
+        folder.mkdir(parents=True)
+        log: Path = folder / 'dialog.jsonl'
+        event: dict = {
+            'sessionId': 'dialog',
+            'cwd': str(self.repo),
+            'type': 'custom-title',
+            'customTitle': 'Kept title',
+        }
+        log.write_text(
+            '[]\nnull\nfalse\n42\n"scalar"\n'
+            + json.dumps(event) + '\n[1]\n{partial',
+        )
+        rows: list[dict] = list_dialogs(path=None, harness='cld')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['id'], 'dialog')
+        self.assertEqual(rows[0]['name'], 'Kept title')
+        self.assertEqual(rows[0]['cwd'], str(self.repo))
+
     def test_legacy_opencode_archive_opt_in(self) -> None:
         '''
         Manual recording must include pre-SQLite archives too.
