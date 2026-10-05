@@ -267,11 +267,11 @@ def claude_sessions(
                             kind == 'user'
                             and not prompt
                         ):
-                            content: object = event.get(
-                                'message', {},
-                            ).get(
-                                'content',
-                                '',
+                            message: object = event.get('message')
+                            content: object = (
+                                message.get('content', '')
+                                if isinstance(message, dict)
+                                else ''
                             )
                             if isinstance(content, str):
                                 prompt = content[:120]

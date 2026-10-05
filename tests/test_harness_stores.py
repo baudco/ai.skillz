@@ -88,6 +88,45 @@ class HarnessStoresTests(unittest.TestCase):
         self.assertEqual(rows[0]['name'], 'Kept title')
         self.assertEqual(rows[0]['cwd'], str(self.repo))
 
+    def test_claude_skips_non_object_messages(self) -> None:
+        '''
+        A user event's non-object `message` used to abort discovery.
+
+        Read a real JSONL log for each malformed nested value.
+        Without a valid prompt, discovery must return `(untitled)`.
+        Append a valid user message and read again:
+        the skipped value must not prevent extracting that prompt.
+        These assertions exercise `claude_sessions` through the
+        public `list_dialogs` API, including null and scalar values.
+
+        '''
+        folder: Path = self.claude / 'projects/fixture'
+        folder.mkdir(parents=True)
+        log: Path = folder / 'dialog.jsonl'
+        message: object
+        for message in (None, [], False, 42, 'scalar'):
+            with self.subTest(message=message):
+                event: dict = {
+                    'sessionId': 'dialog',
+                    'cwd': str(self.repo),
+                    'type': 'user',
+                    'message': message,
+                }
+                malformed: str = json.dumps(event) + '\n'
+                log.write_text(malformed)
+                rows: list[dict] = list_dialogs(
+                    path=None, harness='cld',
+                )
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]['id'], 'dialog')
+                self.assertEqual(rows[0]['name'], '(untitled)')
+                event['message'] = {'content': 'Valid prompt'}
+                log.write_text(malformed + json.dumps(event))
+                rows = list_dialogs(path=None, harness='cld')
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]['name'], 'Valid prompt')
+                self.assertEqual(rows[0]['cwd'], str(self.repo))
+
     def test_legacy_opencode_archive_opt_in(self) -> None:
         '''
         Manual recording must include pre-SQLite archives too.
