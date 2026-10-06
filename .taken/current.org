@@ -131,7 +131,6 @@
   [[https://github.com/baudco/ai.skillz/issues/22][issue #22]], including
   deferred final branch-identity reporting; do not duplicate its
   complete outstanding-review checklist here.
-
 *** TODO Revise pending commit-plan tails after review
 :PROPERTIES:
 :ID: 2ff08348-4dea-48dd-a015-b0df73b70f87
@@ -166,6 +165,21 @@
 - [ ] Cover staged-first revision, completed-prefix revision, editor
   abort/resume, unchanged later definitions, conflicting revisions,
   stale history/index refusal and completed replacement no-ops.
+*** TODO Add reviewable commit-plan amendment
+:PROPERTIES:
+:ID: 18dc9bef-273a-4901-a866-cf83a0ba088b
+:CREATED: [2026-10-05]
+:CARRIED: 0
+:REPO: ai.skillz/
+:TAKEN_APPEND_OP: 70eeff8b-d8ce-4812-ae02-7f8ecaf9e27d
+:TAKEN_APPEND_REQUEST: 6d9192365aabf96052082484b3558c527ca6614c841a323c5311e1f131b7ac90
+:END:
+- [ ] Implement and validate the tightened
+  [[file:../ai/plans/commit-plan-reviewable-amendment.md][reviewable amendment plan]].
+  * Start with one-boundary, single-parent HEAD replacement; prepare
+    authenticated append/amend alternatives for eligible dynamic review.
+  * Preserve author/parent, support message-only amendment, and prove
+    owned resumption and completed-operation no-ops with real Git tests.
 
 ** TODO Code-style / format review
 :PROPERTIES:
