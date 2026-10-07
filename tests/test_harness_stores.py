@@ -88,6 +88,104 @@ class HarnessStoresTests(unittest.TestCase):
         self.assertEqual(rows[0]['name'], 'Kept title')
         self.assertEqual(rows[0]['cwd'], str(self.repo))
 
+    def test_claude_rejects_malformed_identity_title_and_cwd(
+        self,
+    ) -> None:
+        '''
+        A truthy list sessionId used to crash public deduplication.
+
+        Write real JSONL events with non-string IDs, titles and cwd,
+        followed by valid metadata. Exercise empty and scalar IDs as
+        well as unhashable values. Listing must recover valid cwd and
+        title while retaining the filename ID until a string ID is
+        supplied. A later malformed title must not poison that name.
+        This protects name completion's string operations as well as
+        dictionary-key construction in `list_dialogs()`.
+
+        '''
+        folder: Path = self.claude / 'projects/fixture'
+        folder.mkdir(parents=True)
+        log: Path = folder / 'fallback-id.jsonl'
+        invalid: object
+        for invalid in (['bad'], {'bad': 1}, 42, True, None, ''):
+            with self.subTest(invalid=invalid):
+                bad: dict = {
+                    'sessionId': invalid,
+                    'cwd': ['wrong-directory'],
+                    'type': 'custom-title',
+                    'customTitle': ['wrong-title'],
+                }
+                valid: dict = {
+                    'cwd': str(self.repo),
+                    'type': 'custom-title',
+                    'customTitle': 'Recovered title',
+                }
+                event: dict
+                log.write_text('\n'.join(
+                    json.dumps(event) for event in (bad, valid, bad)
+                ))
+                rows: list[dict] = list_dialogs(
+                    path=None, harness='cld',
+                )
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]['id'], 'fallback-id')
+                self.assertEqual(rows[0]['cwd'], str(self.repo))
+                self.assertEqual(rows[0]['name'], 'Recovered title')
+                valid['sessionId'] = 'verified-id'
+                log.write_text('\n'.join(
+                    json.dumps(event) for event in (bad, valid)
+                ))
+                rows = list_dialogs(path=None, harness='cld')
+                self.assertEqual(rows[0]['id'], 'verified-id')
+
+    def test_claude_index_validates_fields_before_using_cache(
+        self,
+    ) -> None:
+        '''
+        Index entries could publish list titles or use list ID keys.
+
+        Create a newer index containing scalar entries and malformed
+        IDs plus one entry for a real log. Ignore invalid identities
+        and choose a valid lower-priority title. Then give its cwd a
+        wrong type: discovery must read the log for valid metadata
+        instead of losing the dialog under exact cwd filtering.
+
+        '''
+        folder: Path = self.claude / 'projects/fixture'
+        folder.mkdir(parents=True)
+        log: Path = folder / 'dialog.jsonl'
+        log.write_text(json.dumps({
+            'sessionId': 'dialog',
+            'cwd': str(self.repo),
+            'type': 'custom-title',
+            'customTitle': 'From log',
+        }) + '\n')
+        index: Path = folder / 'sessions-index.json'
+        item: dict = {
+            'sessionId': 'dialog',
+            'projectPath': str(self.repo),
+            'customTitle': ['invalid'],
+            'aiTitle': {'invalid': True},
+            'summary': 'From index',
+        }
+        index.write_text(json.dumps({'entries': [
+            None,
+            [],
+            {'sessionId': ['invalid']},
+            item,
+        ]}))
+        stamp: float = log.stat().st_mtime + 10
+        os.utime(index, (stamp, stamp))
+        rows: list[dict] = list_dialogs(path=None, harness='cld')
+        self.assertEqual(rows[0]['name'], 'From index')
+        self.assertEqual(rows[0]['id'], 'dialog')
+        item['projectPath'] = ['invalid']
+        index.write_text(json.dumps({'entries': [item]}))
+        os.utime(index, (stamp, stamp))
+        rows = list_dialogs(path=None, harness='cld')
+        self.assertEqual(rows[0]['name'], 'From log')
+        self.assertEqual(rows[0]['cwd'], str(self.repo))
+
     def test_claude_skips_non_object_messages(self) -> None:
         '''
         A user event's non-object `message` used to abort discovery.

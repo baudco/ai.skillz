@@ -215,11 +215,27 @@ def claude_sessions(
         index: Path = folder / 'sessions-index.json'
         entries: dict[str, dict] = {}
         if index.is_file():
-            item: dict
-            entries = {
-                item['sessionId']: item
-                for item in json.loads(index.read_text())['entries']
-            }
+            indexed: object = json.loads(index.read_text())
+            if (
+                not isinstance(indexed, dict)
+                or
+                not isinstance(indexed.get('entries'), list)
+            ):
+                raise ValueError(
+                    'Unsupported Claude sessions index: '
+                    + str(index)
+                )
+            item: object
+            for item in indexed['entries']:
+                if not isinstance(item, dict):
+                    continue
+                indexed_id: object = item.get('sessionId')
+                if (
+                    isinstance(indexed_id, str)
+                    and
+                    indexed_id
+                ):
+                    entries[indexed_id] = item
         paths: list[Path] = list(folder.glob('*.jsonl'))
         path: Path
         for path in paths:
@@ -232,17 +248,29 @@ def claude_sessions(
             if (
                 entry
                 and
+                isinstance(entry.get('projectPath'), str)
+                and
                 index.stat().st_mtime >= stat.st_mtime
             ):
-                owner = entry.get('projectPath', '')
-                name = (
-                    entry.get('customTitle')
-                    or entry.get('aiTitle')
-                    or entry.get('lastPrompt')
-                    or entry.get('summary')
-                    or entry.get('firstPrompt')
-                    or ''
-                )
+                project: object = entry.get('projectPath')
+                if isinstance(project, str):
+                    owner = project
+                field: str
+                for field in (
+                    'customTitle',
+                    'aiTitle',
+                    'lastPrompt',
+                    'summary',
+                    'firstPrompt',
+                ):
+                    title: object = entry.get(field)
+                    if (
+                        isinstance(title, str)
+                        and
+                        title
+                    ):
+                        name = title
+                        break
                 sidechain = entry.get('isSidechain', sidechain)
             else:
                 custom: str = ''
@@ -261,22 +289,37 @@ def claude_sessions(
                         if not isinstance(event, dict):
                             continue
                         if not owner:
-                            owner = event.get('cwd', '')
-                        if event.get('sessionId'):
-                            did = event['sessionId']
+                            directory: object = event.get('cwd')
+                            if isinstance(directory, str):
+                                owner = directory
+                        identity: object = event.get('sessionId')
+                        if (
+                            isinstance(identity, str)
+                            and
+                            identity
+                        ):
+                            did = identity
                         sidechain = (
                             sidechain
                             or bool(event.get('isSidechain'))
                         )
                         kind: str = event.get('type', '')
                         if kind == 'custom-title':
-                            custom = event.get('customTitle', '')
+                            title: object = event.get('customTitle')
+                            if isinstance(title, str):
+                                custom = title
                         elif kind == 'ai-title':
-                            custom = event.get('aiTitle', '')
+                            title = event.get('aiTitle')
+                            if isinstance(title, str):
+                                custom = title
                         elif kind == 'last-prompt':
-                            last_prompt = event.get('lastPrompt', '')
+                            title = event.get('lastPrompt')
+                            if isinstance(title, str):
+                                last_prompt = title
                         elif kind == 'summary':
-                            summary = event.get('summary', '')
+                            title = event.get('summary')
+                            if isinstance(title, str):
+                                summary = title
                         elif (
                             kind == 'user'
                             and

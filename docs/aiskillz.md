@@ -520,8 +520,9 @@ same harness stores as the discovery APIs.
   Scanning large log histories can be slower than SQLite discovery.
 - Titles: custom/AI title, last-prompt metadata, summary, then a
   first-prompt excerpt.
-- Malformed log records: skip non-object events/message values and
-  partial JSON lines.
+- Malformed log events: skip partial JSON and invalid field values.
+  Invalid IDs keep the filename fallback; valid later metadata wins.
+- Invalid cached cwd: read the log instead.
 - Missing or empty storage: no records returned.
 - Scope: subagent logs are excluded; their IDs are not independent
   interactive resume targets. Archive status is unknown (`None`).
