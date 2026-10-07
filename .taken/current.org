@@ -228,3 +228,503 @@
   future-import ordering; verify headers do not affect CLI/deployment
   behavior or source-preservation checks.
 
+** Product management / 2026-10-07
+:PROPERTIES:
+:ID: aiskillz-pm-20261007
+:REPO: ai.skillz/
+:END:
+
+Outstanding goals and next actions, with links to the detailed notes
+and unfinished plans in their original locations. Priorities are
+proposals. Existing task and checkbox states remain human-owned.
+
+Assessment: 2026-10-07, against local main c95b90c and development
+branches. Main already contains PRs 21, 23 and 24; their remaining
+rollout and follow-up work is distinguished below. Recheck branch
+state when assigning work rather than keeping Git inventories here.
+
+Before integration, reconcile newer edits in the registered migration
+store. This branch preserves its inherited task states; the migration
+store was observed with the commit-plan task at WIP and a newer
+supervisor-dialog note.
+
+*** TODO Coordinate store cutover and ongoing product tracking
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-coordination
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P1. This enables all later human/agent handoffs.
+Next action: review this imported backlog, reconcile newer migration-store
+edits, and choose the authoritative registration for publication.
+
+**** Context and concerns
+The federation branch has the guarded-write routing and the migrated LNS
+scope. The root checkout's store_native_handoffs branch adds task-native
+handoffs and has concurrent checkout-branch work. These are related
+changes with separate owners. Neither this inventory nor a clean Git
+status establishes that an active agent has stopped working.
+
+**** Execution
+- [ ] Reconcile this branch's append-only store changes against a fresh
+  wkt/federated_project_stores store revision before integration.
+- [ ] Coordinate store-native handoff adoption with the owning worker;
+  retain source/task IDs, complete context and guarded result write-back.
+- [ ] Before retiring a migration worktree, retarget the registered store
+  and cross-repository Taken skill links to their reviewed landed paths.
+- [ ] For subsequent assignments in this PM dialog, open an isolated
+  worktree from the then-current wkt/federated_project_stores tip; record
+  the pinned OID, assignment scope, evidence and handback in the store.
+- [ ] On refresh, compare live worktree changes, branch tips, local notes
+  and current main; link newly found outstanding plans and notes.
+  Propose exact state changes separately for human acceptance.
+
+**** Verification and handback
+Verify the original-source links, guarded save and unchanged task
+markers. Report the saved task locator, unresolved conflicts and
+registration/cutover status.
+
+**** Notes and unfinished plans
+
+- [[file:/home/goodboy/repos/ai.skillz/docs/taken-handoffs.md][Task-native handoff contract]]
+- [[file:/home/goodboy/repos/ai.skillz/wkts/federated_project_stores/.taken/current.org][Registered migration store]]
+
+*** TODO Finish dialog API and resume review for PR 18
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-dialogs
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P1. This is the shared dependency beneath most current work.
+Next action: reconcile the latest PR 18 review with the evolving dirty
+worktree and confirm the intended landing base against current main.
+
+**** Context and concerns
+pyskillz is 32 commits ahead of the observed main, with active edits to
+dialog readers, public API, resume behavior, WKT lookup and tests. Earlier
+resume, dialog-index and optional-ID branches are ancestors, not separate
+feature requests. The October 7 review describes a malformed Claude
+sessionId that can crash discovery; it explicitly did not run tests and
+must be checked against the latest worker changes before calling it open.
+The review also distinguishes truthful stale-WKT metadata from allowing a
+valid interactive saved-cwd resume. Task-driven launch needs explicit cwd.
+
+**** Execution
+- [ ] Verify sessionId, title and cwd type validation with real malformed
+  JSONL fixtures, preserving filename identity fallback and later records.
+- [ ] Reconcile archive visibility, missing-store behavior, exact harness
+  lookup, alias reload, ranked completion and non-probing resume contracts
+  with the current public API and review responses.
+- [ ] Confirm PR 18's current base and scope; the saved review says it
+  still targets wkt/finalize_render_handoff although PR 24 is on main.
+- [ ] Satisfy the existing full-Python pre-landing review task
+  [[id:dc775e3f-1bd6-48af-bc67-f652b6023a8d][Full Python style review before landing #18]].
+  Keep license-header work owned by
+  [[id:89e286d3-fb4a-4856-af06-e4dfaf74408c][Prepend license headers to project-owned Python]].
+
+**** Verification and handback
+Run the owner's relevant reader/API/resume/WKT/completion and packaging
+checks on the final reviewed diff. Report which historical findings are
+addressed, remaining behavior decisions, actual results and landing scope.
+Do not count a review reply or inherited passing test as final validation.
+
+**** Notes and unfinished plans
+
+- [[file:/home/goodboy/repos/ai.skillz/wkts/pr18_review/.ai/code-review/reports/20261007_c4b9cbd_review.md][Outstanding PR 18 review]]
+- [[file:/home/goodboy/repos/ai.skillz/wkts/pr18_review/docs/dialog-contract.md][Dialog contract and remaining integration decisions]]
+- [[file:../plans/codex/ai-resume-fuzzy-picker.md][Fuzzy dialog picker plan]]
+
+*** TODO Review commit-plan reliability before extending it
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-executor
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P1 for reliability review; P2 for amendments and configuration.
+Next action: compare the four deferred_commit_plan_rebuilt commits with
+shipped PR 24 and decide the smallest justified reliability slice.
+
+**** Context and concerns
+Main already contains the executor, shared runtime and final rendering
+work from PRs 21, 23 and 24. wkt/deferred_commit_plan_rebuilt has four
+additional commits for reruns, parser-safe commands, boundary-bound review
+replies and execution-state hardening. Older deferred branches and their
+virtual-index experiment are design evidence, not extra landing queues.
+The amendment plan explicitly says not to revive that architecture whole.
+
+**** Execution
+- [ ] Review rerun/idempotency, interrupted execution, branch/index
+  preservation, parser safety and boundary-specific response validation.
+  Compare complexity and failure recovery against current main.
+- [ ] Keep pending-tail revisions owned by
+  [[id:2ff08348-4dea-48dd-a015-b0df73b70f87][Revise pending commit-plan tails after review]].
+- [ ] Keep single-boundary, single-parent HEAD amendment owned by
+  [[id:18dc9bef-273a-4901-a866-cf83a0ba088b][Add reviewable commit-plan amendment]].
+  Preserve original author/parent, authenticated append/amend alternatives,
+  message-only changes, editor abort/resume and completed-operation no-ops.
+- [ ] Develop CI and shell configuration as separate bounded slices:
+  repository check catalogs, actual shell capabilities, harmless syntax
+  fixtures and reviewed guidance updates, without implicit publication.
+- [ ] Recheck folded phase summaries in the actual external editor,
+  deriving patch/check/review/commit counts from executable operations.
+
+**** Verification and handback
+Use real Git fixtures for stateful execution and failures, the selected
+shell for rendered commands, and preserved benchmark inputs for latency.
+Hand back reviewed scope, complexity tradeoffs, measured results and any
+remaining acceptance questions to
+[[id:82626558-865b-42c4-9330-875f0aa2f1c2][Commit-plan refinement]].
+
+**** Notes and unfinished plans
+
+- [[file:../ai/plans/commit-plan-reviewable-amendment.md][Reviewable amendment plan]]
+- [[file:/home/goodboy/repos/ai.skillz/plans/opencode/commit-plan-refinement-followups.md][Outstanding commit-plan follow-ups]]
+
+*** TODO Complete deployment migration and consumer rollout
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-deployment
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P2, after the shared dependency's review scope is clear.
+Next action: review repo_skill_migration_safety's two post-foundation
+commits and identify consumer-specific migration still outstanding.
+
+**** Context and concerns
+Shared discovery, Codex support and neutral runtime migration already
+landed with PR 23. Older portable-deployment and cross-harness plans
+retain useful rollout requirements but are stale implementation baselines.
+The migration-safety branch adds explicit repository-skill choices and
+fixes stale commit-plan link fixtures. Durable ai/ artifacts and archived
+runtime evidence are present on the current development foundation.
+
+**** Execution
+- [ ] Review explicit choices for occupied repository skills, preserved
+  local guidance, exact index preservation, preflight and failure recovery.
+- [ ] Reconcile consumer rollout with the existing Cross-provider
+  deployment foundation, deploy in local repos and piker deploy headings.
+- [ ] Check Piker's existing moar_ai_skillz landing work with its owner;
+  validate Modden's own test-harness reference rather than borrowing
+  Tractor's. Retain per-repository template and dependency specialization.
+- [ ] Verify deployed source anchors, shared discovery and harness shims
+  against actual runtime paths; preserve original historical attribution
+  when moving durable artifacts. Keep model/credential policy separate.
+
+**** Verification and handback
+Use deployment fixtures, failure/recovery cases and skill validation for
+changed contracts. Report per-consumer evidence and unresolved migrations
+back to the existing rollout tasks; a successful installer is not proof
+that every consumer's workflow and local references are usable.
+
+**** Notes and unfinished plans
+
+- [[file:../plans/opencode/portable-cross-provider-deployment-plan.md][Deployment and consumer rollout plan]]
+- [[file:/home/goodboy/repos/ai.skillz/plans/codex/cross-harness-support-plan.md][Cross-harness adoption and remaining rollout notes]]
+
+*** TODO Reconcile Tuicr review handoffs and response enforcement
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-reviews
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P2. This improves the review path used by active branches.
+Next action: review tuicr_injection_lessons commit 2cc089d together
+with local-session support and the response-reference guard.
+
+**** Context and concerns
+tuicr_refined remains at 79f51e5. During this inventory the lessons worker
+committed its changes as 2cc089d, Document verified Tuicr draft injection;
+its worktree was clean at the final observation. This is implementation
+evidence, not human acceptance. response_reference_guard has location checks
+and shared style lessons. Keep local Tuicr feedback distinct from forge
+publication and preserve the chosen comment sink and authorship evidence.
+
+**** Execution
+- [ ] Review the native Tuicr export/injection workflow against installed
+  behavior, session identity, authored replies and worker handback format.
+- [ ] Verify repository-location citations from the original user root,
+  including absolute references for other worktrees and full commit-plan
+  handoffs. State harness enforcement limits accurately.
+- [ ] Retain the optional Tuicr follow-ups for exposed comment authors,
+  native reply relationships and resolution state; coordinate upstream
+  rather than declaring those APIs available.
+- [ ] Reconcile historical review replies with their exact reviewed
+  commits. Preserve unresolved policy questions and human concerns.
+
+**** Verification and handback
+Run the canonical skill validator and focused workflow/response-reference
+fixtures. Report actual native-session exercise results and remaining
+adapter limitations to the same identified review task.
+
+**** Notes and unfinished plans
+
+- [[file:../skills/code-review-changes/ROADMAP.md][Tuicr and review-transport follow-ups]]
+
+*** TODO Settle Taken-dialog-Modden integration contracts
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-integration
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P2, dependent on the dialog API and store cutover decisions.
+Next action: review the separate taken_dialog_integration worktree's
+fixture and compatibility document with the PR 18 owner.
+
+**** Context and concerns
+This worktree shares PR 18's c4b9cbd base but carries separate uncommitted
+packaging, integration documentation and tests. The document exercises
+committed Taken APIs; it does not establish a production launcher or a
+transaction spanning workspace launch and store write-back.
+
+**** Execution
+- [ ] Decide AI_WKT/AI_DLOG_ID versus the draft AI_WORKTREE/AI_DIALOG_ID
+  spellings against the latest committed Taken schema and deployed skill.
+- [ ] Define task-local versus ancestor REPO/WKS resolution with exact
+  provenance, preserving absent/empty values and unknown drawer bytes.
+- [ ] Keep source occurrence, logical task ID, harness-qualified dialog
+  identity and local WKT observations distinct. Reject missing required
+  context while allowing intentionally omitted unrelated siblings.
+- [ ] Bound legacy AI_DIALOG decoding, guarded field updates, many-to-many
+  task/dialog associations and fresh-dialog identity receipts explicitly.
+- [ ] Specify reviewed task-request previews, explicit launch intent,
+  partial-success recovery and guarded metadata retries without relaunch.
+  Multiple WKTs per dialog remain a separate follow-up.
+
+**** Verification and handback
+Run the fixture against the documented real public modules with a fake
+launcher; preserve arbitrary properties and task states. Report which
+contracts are committed, experimental or unresolved before any production
+adapter work is assigned. Return decisions to this task and its owners.
+
+**** Notes and unfinished plans
+
+- [[file:/home/goodboy/repos/ai.skillz/wkts/taken_dialog_integration/docs/taken-integration.md][Compatibility review and unresolved adapter contracts]]
+
+*** TODO Scope supervisor, delegation and performance pilots
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-supervisor
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P3, after executable workflow and identity contracts settle.
+Next action: review the existing delegation and multi-harness supervisor
+drafts, then select one deterministic fake-worker pilot.
+
+**** Execution
+- [ ] Define the interactive root's liaison role and external supervisor's
+  subprocess ownership. Keep UDS task control separate from stdio/PTY
+  adapters and add Tractor only where its lifecycle/isolation is needed.
+- [ ] Carry task/revision/attempt identity, explicit scope, environment and
+  effective authorization. Separate stored/displayed/processed results,
+  reject replaced-attempt output and reconcile reconnects durably.
+- [ ] Exercise progress, approval routing, human pause, cancellation,
+  replacement, root disconnect, bounded output and real child cleanup.
+- [ ] Preserve fresh-agent benchmark sources, identical fixtures,
+  counterbalanced runs and independent validation; retain failures and
+  separate dispatch time from tool/model/permission latency. The recorded
+  5.6% result from two pairs is not a general speedup claim.
+- [ ] Evaluate the background-program management prompt as a requirement
+  source for lifecycle/monitoring work, not a deployed supervisor.
+
+**** Verification and handback
+Return the smallest proven pilot, capability limits, reproducible timing
+evidence and remaining human-interaction decisions. Worker completion
+does not change task acceptance or authorize commits/publication.
+
+**** Notes and unfinished plans
+
+- [[file:../plans/opencode/multi-harness-supervisor-draft.md][Multi-harness supervisor draft]]
+- [[file:../plans/opencode/commit-plan-delegation-draft.md][Delegated commit-plan workflow draft]]
+- [[file:/home/goodboy/repos/ai.skillz/plans/opencode/commit-plan-historical-benchmark.md][Benchmark methodology and remaining measurement work]]
+
+*** TODO Review opt-in repository permission profiles
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-permissions
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P3. Next action: reassess the kdl_permissions_config branch's
+preview-first implementation against today's harness versions and main.
+
+**** Execution
+- [ ] Reconcile the repository-policy scaffold proposal with the existing
+  KDL implementation; identify its distinct delta from shared deployment.
+- [ ] Verify explicit ownership, exact diff preview, conflict detection,
+  backup/restore and human-authorized policy application.
+- [ ] Keep planner preparation/finalization grants separate from executor
+  commit authority. Distinguish OpenCode external-directory approvals
+  from Codex execution approvals and report unsupported capabilities.
+
+**** Verification and handback
+Use isolated profile/permission fixtures and current documented settings.
+Report actionable review findings and a bounded consumer rollout choice;
+skill installation alone does not approve a profile change.
+
+**** Notes and unfinished plans
+
+- [[file:../plans/opencode/repository-policy-scaffold-plan.md][Opt-in repository permission-profile plan]]
+
+*** TODO Resume evidence-backed Prompt-IO attribution audit
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-attribution
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P3. Next action: coordinate with the existing audit worktree
+owner and regenerate the inventory before editing historical records.
+
+**** Execution
+- [ ] Build the read-only inventory and session-grouped evidence resolver
+  described in the saved audit plan. Its 235 records / 165 lexical
+  candidates are an old baseline, not verified attribution findings.
+- [ ] Classify verified-accurate, correction-required, unverifiable and
+  malformed records using actual interaction evidence. Preserve raw
+  output, ambiguous provenance and the human's review contribution.
+- [ ] Establish the correction policy, pilot ai.skillz and Tractor, then
+  coordinate separately authorized repository-local correction batches.
+  Do not copy complete private transcripts into the project store.
+
+**** Verification and handback
+Return reproducible counts, source evidence and proposed corrections.
+Keep the audit in its existing worktree and link its results here.
+
+**** Notes and unfinished plans
+
+- [[file:/home/goodboy/repos/ai.skillz/wkts/prompt_io_attribution_audit/plans/opencode/prompt-io-attribution-audit.md][Attribution audit plan]]
+
+*** TODO Reconcile gish transport and skill roadmap gaps
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-gish
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P3. Next action: compare the roadmap's proposed operations with
+current gish capability contracts before choosing a first implementation.
+
+**** Execution
+- [ ] Reconcile local persisted review/reply files, normalized inspection,
+  backend CI reads, commit-ref patching and watch notifications with
+  existing approved publication APIs. Keep unavailable operations explicit.
+- [ ] Review post-merge stack hygiene, dependent base/body refresh and
+  reorder-closed PR detection as proposed user-visible operations.
+- [ ] Preserve phase requirements for Gitea, SourceHut/email, GitLab,
+  standalone CLI packaging and gish's eventual own skill home.
+- [ ] Link the existing gish where? task for repository/submodule ownership
+  decisions; retain factoring, deployment and shared-state questions.
+- [ ] Coordinate pr-msg post-submission tracking/templates and commit-msg
+  style-guide generation/cross-provider context injection with their own
+  roadmaps instead of assuming the transport implements them already.
+
+**** Verification and handback
+Return a capability-to-requirement comparison with one bounded next
+slice, backend fixtures and explicit publication boundaries. Preserve all
+outstanding roadmap details in their linked original documents.
+
+**** Notes and unfinished plans
+
+- [[file:../skills/gish/ROADMAP.md][Transport and packaging roadmap]]
+- [[file:../skills/pr-msg/ROADMAP.md][PR workflow follow-ups]]
+- [[file:../skills/commit-msg/ROADMAP.md][Commit-message follow-ups]]
+
+*** TODO Reconcile test-design and consumer test guidance
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-testing
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P3. Next action: compare test_design_skill, its later review
+branches and main by actual capability rather than branch age.
+
+**** Execution
+- [ ] Retain the dedicated test-design work and review lessons; determine
+  what is unique after earlier reconstructed/landed review fixes.
+- [ ] Reconcile run-tests' generic base and per-repository reference
+  design with the shipped shared runtime and remaining Modden adoption.
+- [ ] Review store_native_handoffs' static-check versus imported-code
+  probe distinction alongside CI configuration work. A Python import may
+  execute project code and is not equivalent to a static syntax check.
+
+**** Verification and handback
+Return the remaining design/consumer gaps, representative meaningful
+fixtures and actual checks. Keep tests targeted to observed failure modes
+and avoid treating an old TODO in an implemented design as new work.
+
+**** Notes and unfinished plans
+
+- [[file:../skills/run-tests/ROADMAP.md][Remaining consumer test-guidance adoption]]
+
+*** TODO Triage legacy extraction, editor and utility ideas
+:PROPERTIES:
+:ID: aiskillz-pm-20261007-legacy
+:CREATED: [2026-10-07]
+:CARRIED: 0
+:REPO: ai.skillz/
+:AI_HARNESS: opencode
+:END:
+
+Priority: P4 unless the human selects a specific utility next.
+Next action: separate retained ideas from already-extracted ai.reply and
+landed historical deployment/license work.
+
+**** Execution
+- [ ] Reconcile ai.reply extraction, picker/session/sidecar UX, Python
+  extension and standalone plugin plans with their owning repositories.
+  Keep old command cleanup linked to the existing Legacy cleanups task.
+- [ ] Review branch-in-term and terminal-clear benchmark branches for
+  remaining unique behavior; do not equate old divergent commits with
+  a request to resurrect their complete historical stacks.
+- [ ] Keep xonsh alias factoring owned by its existing WIP heading and
+  retain harness/provider-model options as outstanding requirements.
+- [ ] Preserve yt-dl-audio, audio-quality-check, beet-import,
+  yt-music-search, xontrib-ytm, bot integration and skills-to-package
+  migration ideas from the media roadmap; choose their eventual home.
+- [ ] Retain the untracked Pi/RTK extension-install notes as an evaluation
+  idea. Check tool relevance and duplicate packages before proposing an
+  installation; this task does not execute its historical shell snippets.
+- [ ] Reconcile privacy-opsec and other unlanded specialist branches with
+  current skills before selecting more work. Preserve original licensing
+  evaluations and notices as evidence rather than reopening settled scope.
+
+**** Verification and handback
+Return which ideas remain desired, where their canonical tracker belongs
+and one bounded next action per selected idea. Keep all original content
+in its original location and leave human-owned states intact.
+
+**** Notes and unfinished plans
+
+- [[file:../skills/yt-url-lookup/ROADMAP.md][Media tooling and package-extraction ideas]]
+- [[file:/home/goodboy/repos/ai.skillz/bigB/pi-extensions-install.md][Pi extension notes]]
+

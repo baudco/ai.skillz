@@ -20,3 +20,15 @@ Before removing this migration worktree after landing, update the
 global registration and the cross-repository taken skill link to the
 landed locations. The skill link intentionally points to the Taken
 migration branch until that code and documentation land.
+
+## Outstanding work
+
+The `aiskillz-pm-20261007` subtree in `current.org` contains the
+outstanding goals and next actions, with links to original notes and
+unfinished plans. Keep detailed source content in its existing home.
+Do not copy runtime state, prompt archives or file-inventory ledgers
+into the project store. Existing acceptance states remain human-owned.
+
+Future PM assignments start in an isolated worktree from the current
+`wkt/federated_project_stores` tip. Reconcile the registered store's
+newer edits before integrating this branch-local update.
