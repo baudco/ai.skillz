@@ -2,8 +2,9 @@
 name: taken-export
 description: >
   Export repository work as Taken-compatible Org headlines and
-  checkbox subtasks, defaulting to copy/paste with optional explicitly
-  authorized insertion into current.org or artifact export. Use when a
+  checkboxes, using store-native handoffs with authorized updates or
+  unsaved copy/paste proposals and explicitly requested artifact export.
+  Use when a
   repository supervisor is asked to render Taken tasks, export Org
   TODOs, prepare follow-up lists, or submit work to current.org.
 compatibility: >
@@ -25,6 +26,21 @@ before writing artifacts. See
 [references/examples.md](references/examples.md) for representative
 outputs.
 
+## Store-native handoffs
+
+Read the shared
+[store-native handoff contract](../../docs/taken-handoffs.md)
+before preparing
+work for another human or agent. The identified task subtree is the
+handoff; source documents and reports are supporting evidence. Include
+objective, next action, context, concerns, execution, verification and
+expected handback in that subtree, using named child headings for detail.
+Do not create a separate instruction document without an explicit request.
+Report saved handoffs task-first with source/task IDs, full headline path
+and saved/committed status. Receiving workers read the full subtree and
+prerequisites; results return to the originating task through guarded
+writes. Preserve existing human-owned states and outstanding concerns.
+
 ## Non-Negotiable Authority Boundary
 
 Persistent task state belongs to the human.
@@ -45,15 +61,18 @@ and follow it before inspecting or editing its task files.
 
 ## Modes
 
-Default to Copy/Paste. Do not ask the requester to choose a handoff mode.
-Use Export only for an explicit artifact request and Apply only for an
-explicit apply request or an affirmative auto-update answer.
+Default handoff content is a store-native task subtree. When a scoped
+save is already authorized, use Apply without requesting it again.
+Otherwise use Copy/Paste as an explicitly unsaved proposal. Use Export
+only for an explicit artifact request; artifacts support the task rather
+than becoming a second authoritative instruction document.
 
 ### Copy/Paste
 
 Use when the human asks to "render", "copy/paste", "list", "propose",
-"draft", or "show" Taken tasks, or requests a handoff without asking for
-a persisted artifact. Return one insertion-ready fenced `org` fragment in
+"draft", or "show" Taken tasks without authorizing a store update.
+An explicit copy/paste-only request always stays read-only. Return one
+insertion-ready fenced `org` fragment in
 chat. Do not write an artifact or manifest, and do not modify the target.
 
 The fence contains only the children to paste beneath the resolved target,
@@ -61,7 +80,9 @@ at the correct headline depth. Do not mix explanations, placeholders, or
 source notes into the copyable block. If target ambiguity or a stale source
 makes safe rendering impossible, ask or warn before returning the fragment.
 
-After rendering, ask whether the requester wants to auto-update their
+When no scoped save authorization already exists and the human has not
+requested copy/paste-only output, ask after rendering
+whether the requester wants to auto-update their
 `current.org` with that exact fragment. Name the resolved corpus path and
 target headline in the question, and offer these choices:
 
@@ -225,11 +246,13 @@ For copy/paste mode:
 2. Return exactly one fenced `org` block containing the complete fragment.
 3. Include no manifest, hash, artifact path, or commentary in the block.
 4. Write no files and leave `current.org` untouched.
-5. When the corpus and target resolve uniquely, ask whether to auto-update
-   them with the exact fragment using the choices defined above.
+5. Offer auto-update only when no scoped save authorization exists, the
+   target resolves uniquely, and copy/paste-only was not requested.
 
-The fenced Org block is the handoff. Omit an operational report unless an
-unresolved risk must be disclosed outside the block. The structured
+The fenced Org block is an unsaved handoff proposal. State that it is
+not saved; do not describe it as an authoritative stored task. Omit an
+operational report unless an unresolved risk needs disclosure.
+The structured
 auto-update question is separate from the copyable content.
 
 For export mode:
@@ -254,10 +277,11 @@ Use a filesystem-safe export ID:
 
 Before editing `current.org`:
 
-1. Confirm authorization names the exact fragment, corpus path, and target.
-   An affirmative auto-update answer authorizes only the fragment shown in
-   the immediately preceding copy/paste handoff. Re-rendered or changed
-   content requires a new answer.
+1. Confirm existing authorization covers the corpus, target and proposed
+   additions. Continue within that scope without requesting permission
+   again. An affirmative auto-update answer covers only the exact fragment
+   just shown; changed content needs new authorization unless an existing
+   broader scoped update request already covers it.
 2. Re-read the target file immediately before mutation.
 3. Verify the target `ID` or full ancestor path resolves exactly once.
 4. For an artifact apply, verify the exact Org fragment bytes match
@@ -271,7 +295,7 @@ Before editing `current.org`:
 6. Search the target subtree for matching forge URLs, dedupe keys, and
    semantically equivalent tasks.
 7. Present or inspect the exact additions; do not replace the subtree.
-8. Insert only approved new headlines and checkbox items.
+8. Append only authorized new headlines and checkboxes.
 9. Preserve every existing headline state, checkbox marker, property,
    ordering choice, and unrelated edit.
 10. Run non-writing `tkn lint` when available.
@@ -285,7 +309,11 @@ because exported children were inserted.
 
 ### 8. Report The Handoff
 
-For export and apply modes, report:
+For a saved handoff, first report its navigable store/task location,
+source and stable task IDs, full headline path, and saved/committed
+status. Identify the task as the receiving worker's entry point.
+
+Then, for export and apply modes, report:
 
 - mode used;
 - source repository, branch/worktree, and `HEAD`;
@@ -297,8 +325,9 @@ For export and apply modes, report:
 - unresolved risks or stale references;
 - whether `current.org` was untouched or explicitly modified.
 
-For copy/paste mode, return the fenced Org handoff, then ask the auto-update
-question when the corpus and target resolve uniquely. Do not add an
+For copy/paste mode, return the fenced Org proposal and its unsaved
+status. Offer auto-update only under the Copy/Paste rules above.
+Do not add an
 operational report unless a blocking or unresolved risk requires it.
 
 Do not commit, push, roll, or mutate forge state unless the human makes

@@ -5,6 +5,13 @@ basename. The Org file is optimized for human review and insertion. The
 manifest carries source identity, target intent, deduplication evidence,
 and stale-write guards.
 
+For work assigned to another worker, also apply the
+[store-native handoff contract](../../../docs/taken-handoffs.md).
+The identified task subtree owns the objective and executable handoff;
+this export manifest describes transport and mutation evidence. Saved
+handoffs require existing scoped authorization and guarded writes.
+Without it, Copy/Paste remains an explicitly unsaved task proposal.
+
 ## Copy/Paste Handoffs
 
 A copy/paste handoff uses the same Org rendering invariants but is not an
@@ -12,9 +19,11 @@ artifact export. It returns one fenced Org fragment in chat and creates no
 manifest, path, content hash, or apply receipt. The fragment contains only
 children of the resolved target at the correct headline depth.
 
-Copy/paste is the default mode. When the corpus and target resolve uniquely,
-the exporter asks whether to auto-update `current.org` with that exact
-fragment. An affirmative answer authorizes Apply only for the named corpus,
+Without scoped save authorization, copy/paste is the default mode.
+Offer auto-update only when the corpus and target resolve uniquely and
+the human has not requested copy/paste-only output. Existing authorized
+updates use Apply without another permission question. An affirmative
+answer authorizes Apply only for the named corpus,
 target, and unchanged fragment. A copy/paste answer or later human insertion
 is not Apply mode: the agent neither edits the corpus nor infers acceptance.
 
