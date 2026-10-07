@@ -15,4 +15,5 @@ from ._discovery import (
     worktree_roots as worktree_roots,
     primary_worktree as primary_worktree,
     checkout_location as checkout_location,
+    checkout_branch as checkout_branch,
 )

@@ -71,8 +71,11 @@ Optional established properties:
 - `PR`: canonical pull-request URL.
 - `ISSUE`: canonical issue URL.
 - `REVIEW`: canonical review URL.
-- `AI_DIALOG` or `AI_SESSION`: only when the human wants a durable resume
-  hint and the target corpus already uses that convention.
+- `AI_HARNESS` and `AI_DLOG_ID`: verified harness/dlog identity for
+  explicitly requested durable executor tracking.
+- `AI_WKT` and `AI_BRANCH`: canonical observed Git checkout and branch.
+  Use dlog/wkt as shorthands for dialog/worktree. Do not infer identity
+  from newest logs, labels or model names; omit unknown values.
 
 The Org fragment must not contain export-envelope metadata, content
 hashes, worker state, or forge response payloads.

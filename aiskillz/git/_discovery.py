@@ -143,3 +143,19 @@ def checkout_location(cwd: str) -> tuple[str, ...]:
     )
     paths: tuple[str, ...] = tuple((output or '').splitlines())
     return paths if len(paths) == 3 else ()
+
+
+def checkout_branch(cwd: str) -> str|None:
+    '''
+    Observe the branch at a checkout without inherited Git overrides.
+
+    Executor bindings use this alongside checkout_location() to
+    retain and recheck their selected WKT branch. Return None for
+    detached HEAD, unavailable directories or failed queries. This
+    uses the same timeout and GIT_* isolation as repository queries.
+
+    '''
+    output: str|None = query(
+        cwd, 'symbolic-ref', '--quiet', '--short', 'HEAD',
+    )
+    return output.rstrip('\n') if output else None
