@@ -59,20 +59,40 @@ def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
     '''
     Register the in-process alias and remember its prior binding.
 
+    Repeated loads retain the first saved binding while the current
+    alias is still owned by this extension. A user replacement
+    becomes the prior binding when a subsequent load takes it over.
+
     '''
     from xonsh.tools import unthreadable
 
     command: Any = unthreadable(dlogs_alias)
-    previous: Any = xsh.aliases.get('ai.dlogs')
-    xsh.ctx['_aiskillz_alias_previous'] = previous
+    if (
+        '_aiskillz_alias_command' not in xsh.ctx
+        or
+        xsh.aliases.get('ai.dlogs')
+        != xsh.ctx['_aiskillz_alias_command']
+    ):
+        xsh.ctx['_aiskillz_alias_previous'] = (
+            xsh.aliases.get('ai.dlogs')
+        )
     xsh.ctx['_aiskillz_alias_command'] = command
     xsh.aliases['ai.dlogs'] = command
     resume: list[str] = [
-        sys.executable, '-m', 'aiskillz', 'resume',
+        sys.executable,
+        '-m',
+        'aiskillz',
+        'resume',
     ]
-    xsh.ctx['_aiskillz_resume_previous'] = (
+    if (
+        '_aiskillz_resume_command' not in xsh.ctx
+        or
         xsh.aliases.get('ai.resume')
-    )
+        != xsh.ctx['_aiskillz_resume_command']
+    ):
+        xsh.ctx['_aiskillz_resume_previous'] = (
+            xsh.aliases.get('ai.resume')
+        )
     xsh.ctx['_aiskillz_resume_command'] = resume
     xsh.aliases['ai.resume'] = resume
     return {}

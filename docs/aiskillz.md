@@ -47,6 +47,11 @@ Use a permanent checkout for editable installs.
 
 Add `xontrib load aiskillz` to your Xonsh setup. Installation in one
 virtualenv does not install the package in other Xonsh interpreters.
+Repeated loads preserve the prior `ai.dlogs` and `ai.resume` aliases.
+`xontrib unload aiskillz` restores those bindings, or removes the
+aliases if they had no prior bindings. An alias you replace while
+the extension is loaded survives unload; if you load again after
+replacing it, that replacement becomes the binding restored later.
 The package also exports the `ai.dlogs` executable and
 `python -m aiskillz`. Without installation, the original
 `source /path/to/ai.skillz/aliases.xsh` entrypoint remains available.

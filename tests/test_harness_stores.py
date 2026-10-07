@@ -611,6 +611,56 @@ class HarnessStoresTests(unittest.TestCase):
         self.assertEqual(dict(os.environ), previous_env)
         _unload_xontrib_(xsh)
 
+    def test_xontrib_reloads_preserve_prior_aliases(self) -> None:
+        '''
+        Repeated loads used to save extension aliases as originals.
+
+        Load twice with existing user bindings, then unload: both
+        prior bindings must return. Repeat with no original aliases
+        to require their removal. If a user changes either binding
+        between loads, the latest user binding must survive unload;
+        changes made after the final load must also remain intact.
+        Exercise the actual loader and unloader with isolated shell
+        aliases and context, without launching a harness process.
+
+        '''
+        from types import SimpleNamespace
+
+        original: dict
+        for original in (
+            {},
+            {
+                'ai.dlogs': ['old-dlogs'],
+                'ai.resume': ['old-resume'],
+            },
+        ):
+            with self.subTest(original=original):
+                xsh: SimpleNamespace = SimpleNamespace(
+                    aliases=dict(original), ctx={},
+                )
+                _load_xontrib_(xsh)
+                _load_xontrib_(xsh)
+                _unload_xontrib_(xsh)
+                self.assertEqual(xsh.aliases, original)
+                self.assertEqual(xsh.ctx, {})
+
+        xsh = SimpleNamespace(aliases={}, ctx={})
+        _load_xontrib_(xsh)
+        replacement: dict = {
+            'ai.dlogs': ['replacement-dlogs'],
+            'ai.resume': ['replacement-resume'],
+        }
+        xsh.aliases.update(replacement)
+        _load_xontrib_(xsh)
+        _load_xontrib_(xsh)
+        _unload_xontrib_(xsh)
+        self.assertEqual(xsh.aliases, replacement)
+        _load_xontrib_(xsh)
+        _load_xontrib_(xsh)
+        xsh.aliases.update(replacement)
+        _unload_xontrib_(xsh)
+        self.assertEqual(xsh.aliases, replacement)
+
     def test_xontrib_unload_restores_alias(self) -> None:
         '''
         Loading an extension must not permanently erase a user's
