@@ -71,6 +71,30 @@ class PlanBuildTests(unittest.TestCase):
             list((self.root / '.git').glob('plan-build-*')), []
         )
 
+    def test_version_probe_refused_before_package_publication(self):
+        '''
+        The planner published a ready package containing StyLua's
+        version query as an import probe. Supply that definition
+        through the check catalog and require prepare to refuse it
+        before publishing artifacts or changing the real index.
+
+        '''
+        self.request['checks'] = {
+            'style': {
+                'argv': ['stylua', '--check', 'one'],
+                'resolution_argv': ['stylua', '--version'],
+            },
+        }
+        self.request['boundaries'][0]['checks'] = ['style']
+        before = BUILD.snapshot(self.root)[0]
+        with self.assertRaisesRegex(
+            BUILD.EXEC.PlanError, 'tool version is not a code path',
+        ):
+            self.prepare()
+        self.assertEqual(BUILD.snapshot(self.root)[0], before)
+        self.assert_cleaned()
+        self.assertFalse(self.output.exists())
+
     def test_two_boundaries_equivalent_and_read_only(self):
         '''
         Later evidence must exclude earlier boundary changes.

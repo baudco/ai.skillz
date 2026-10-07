@@ -121,7 +121,11 @@ Create an input JSON file under the resolved ignored runtime:
       "argv": ["python3", "tests/test_example.py"],
       "required_executables": ["git"],
       "env": {},
-      "resolution_argv": ["python3", "-c", "import pathlib; print(pathlib.Path.cwd())"]
+      "resolution_probe": {
+        "kind": "python-import",
+        "interpreter": "python3",
+        "module": "example"
+      }
     }
   },
   "boundaries": [
@@ -141,6 +145,40 @@ deletions, never directories or pathspec expressions. For overlapping
 edits, supply a cached patch relative to that boundary's parent tree;
 the helper does not synthesize partial hunks. An explicit patch is
 frozen at prepare time; later edits to its original source are ignored.
+
+Static file checks such as StyLua and Luacheck omit resolution probes.
+Their inputs are the pinned boundary files; a tool's version is not an
+import location. Do not invent `--version` or `-V` probes: construction
+rejects them before publishing a package.
+
+Checks which import project code declare `resolution_probe`. The executor
+generates the stdout-path command from the declaration:
+
+```json
+{"kind": "python-import", "interpreter": "/absolute/python", "module": "taken"}
+```
+
+For a Neovim module, declare the loaded function whose source to verify:
+
+```json
+{
+  "kind": "nvim-module",
+  "executable": "/absolute/nvim",
+  "init": "tests/minimal_init.lua",
+  "module": "taken",
+  "symbol": "setup"
+}
+```
+
+Use the same interpreter/environment or Neovim initialization as the
+check. Never substitute a Python package probe for a Lua module check.
+Repository-owned custom probes may supply `resolution_argv` instead;
+choose one form. They must emit exactly one existing boundary path on
+stdout. Neovim probes use io.write rather than print, which writes to
+stderr. Preparation normalizes generated probes into the pinned argv.
+Preflight validates definitions and executable availability without
+running probes or project checks; execution validates imported paths.
+An executable's availability does not prove imports or tests pass.
 
 Each check may declare `required_executables`: a list of distinct,
 non-empty process-safe argv0 strings, defaulting to `[]` for old v1
@@ -275,9 +313,12 @@ history classification. Never generate a competing state machine.
 Record relative project executables only when they are executable
 files in the boundary tree. Resolve ignored repository-local tools,
 including virtual environment entry points, to absolute paths.
-For Python projects, include the documented import-resolution probe
-with every distinct interpreter/environment and require exactly one
-reported import path beneath `AI_SKILLZ_BOUNDARY_ROOT`.
+For checks importing Python project code, declare the documented
+module with each distinct interpreter/environment and require one
+reported import path beneath `AI_SKILLZ_BOUNDARY_ROOT`. Static file
+checks omit probes. Keep executable availability separate from code
+resolution and use absolute installed tool paths when environment
+provisioning does not guarantee a stable PATH.
 
 Absolute helpers under the live repository are accepted only when
 ignored and absent from the recorded boundary trees. Record tracked

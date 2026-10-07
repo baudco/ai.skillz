@@ -603,6 +603,64 @@ def required_string(value: Any, field: str) -> str:
     return value
 
 
+def resolution_probe(value: dict, field: str) -> list[str]:
+    '''
+    Build an import-location probe from a declared language module.
+
+    ``command()`` owns check normalization; this constructor owns
+    the Python/Neovim invocation and stdout path protocol. Tool
+    versions are metadata, not locations of imported project code.
+
+    '''
+    if not isinstance(value, dict):
+        raise PlanError(f'{field} must be a probe object')
+    kind: str = value.get('kind')
+    module: str = required_string(value.get('module'), field)
+    identifier: str = r'[A-Za-z_][A-Za-z0-9_]*'
+    dotted: str = identifier + r'(\.' + identifier + r')*'
+    if not re.fullmatch(dotted, module):
+        raise PlanError(f'{field}.module must name a module')
+    if kind == 'python-import':
+        if set(value) != {'kind', 'module', 'interpreter'}:
+            raise PlanError(f'{field}: invalid python-import fields')
+        interpreter: str = required_string(
+            value['interpreter'], f'{field}.interpreter',
+        )
+        code: str = (
+            'import importlib,pathlib; '
+            f'module=importlib.import_module({module!r}); '
+            f'print(pathlib.Path(module.__file__).resolve())'
+        )
+        return [interpreter, '-c', code]
+    if kind == 'nvim-module':
+        if set(value) != {
+            'kind', 'module', 'executable', 'init', 'symbol',
+        }:
+            raise PlanError(f'{field}: invalid nvim-module fields')
+        symbol: str = required_string(
+            value['symbol'], f'{field}.symbol',
+        )
+        if not re.fullmatch(dotted, symbol):
+            raise PlanError(f'{field}.symbol must name a function')
+        module_text: str = json.dumps(module)
+        symbol_text: str = json.dumps(symbol)
+        lua: str = (
+            f'lua local target=require({module_text}); '
+            f'for name in string.gmatch({symbol_text}, "[^.]+") '
+            f'do target=target[name] end; '
+            f'local source=debug.getinfo(target,"S").source; '
+            f'assert(source:sub(1,1)=="@"); '
+            f'io.write(source:sub(2).."\\n")'
+        )
+        return [
+            required_string(value['executable'], field),
+            '--headless', '--noplugin', '-i', 'NONE',
+            '-u', required_string(value['init'], field),
+            '-c', lua, '-c', 'qa!',
+        ]
+    raise PlanError(f'{field}: unknown probe kind {kind!r}')
+
+
 def command(value: Any, field: str) -> dict[str, Any]:
     '''
     Validate one project-check command and environment overlay.
@@ -618,18 +676,39 @@ def command(value: Any, field: str) -> dict[str, Any]:
         for index, item in enumerate(argv_value)
     ]
     resolution_value = value.get('resolution_argv')
-    valid_resolution = (
-        isinstance(resolution_value, list)
-        and bool(resolution_value)
-    )
-    if not valid_resolution:
-        raise PlanError(
-            f'{field}.resolution_argv must be a non-empty list'
+    declared_probe = value.get('resolution_probe')
+    if declared_probe is not None:
+        if resolution_value is not None:
+            raise PlanError(
+                f'{field}: choose resolution_probe '
+                f'or resolution_argv'
+            )
+        resolution_value = resolution_probe(
+            declared_probe, f'{field}.resolution_probe',
         )
-    resolution_argv = [
-        required_string(item, f'{field}.resolution_argv[{index}]')
-        for index, item in enumerate(resolution_value)
-    ]
+    resolution_argv: list[str]|None = None
+    if resolution_value is not None:
+        if (
+            not isinstance(resolution_value, list)
+            or not resolution_value
+        ):
+            raise PlanError(
+                f'{field}.resolution_argv must be a non-empty list'
+            )
+        resolution_argv = [
+            required_string(
+                item, f'{field}.resolution_argv[{index}]',
+            )
+            for index, item in enumerate(resolution_value)
+        ]
+        if any(
+            arg in {'--version', '-V'} for arg in resolution_argv
+        ):
+            raise PlanError(
+                f'{field}: a tool version is not a code path; '
+                f'omit the probe for static checks or declare '
+                f'a module with resolution_probe'
+            )
     required_value = value.get('required_executables', [])
     required_field = f'{field}.required_executables'
     if not isinstance(required_value, list):
@@ -1654,37 +1733,47 @@ def run_project_checks(
 
     - Reuse authenticated prior PASS evidence without creating a
       clone.
-    - Otherwise create one isolated_tree() per description; close the
+    - Otherwise create one `isolated_tree()` per check; close the
       preceding clone before entering the next check.
     - Validate argv/probe executables and declared prerequisites
       using that check's environment overlay before starting
       subprocesses.
-    - Require the resolution probe to print one source path inside
-      the isolated boundary. A live editable import cannot satisfy
-      it.
+    - Static checks omit resolution probes. A declared probe must
+      print one existing source path inside the isolated boundary;
+      a live editable import or tool version cannot satisfy it.
     - Run the check, report its output and stop at the first failure.
-    - ensure_isolated_tree() rejects changes to the authenticated
-      tree before/after subprocess execution; ExitStack owns cleanup.
-    - spec/boundary hold heterogeneous JSON fields whose schema
-      validate_spec() checks before execution.
+    - `ensure_isolated_tree()` rejects changes to the authenticated
+      tree before/after execution; `ExitStack` owns cleanup.
+    - `spec`/`boundary` hold heterogeneous JSON fields whose schema
+      `validate_spec()` checks before execution.
 
     '''
-    descriptions = boundary['project_checks']
+    descriptions: list[dict[str, Any]] = boundary['project_checks']
     if not descriptions:
         return 0
+
+    stack: contextlib.ExitStack
     with contextlib.ExitStack() as stack:
-        total = len(descriptions)
+        total: int = len(descriptions)
+        index: int
+        description: dict[str, Any]
         for index, description in enumerate(descriptions, start=1):
             stack.close()
-            evidence = description.get('prior_pass')
+            evidence: (
+                dict[str, Any]|None
+            ) = description.get('prior_pass')
             if evidence:
-                reason = prior_pass_reason(evidence)
+                reason: str = prior_pass_reason(evidence)
                 print(
                     f'[{SKILL_NAME} check {index}/{total}] '
                     f'SKIP {reason}',
                     flush=True,
                 )
                 continue
+
+            root: Path
+            environment: dict[str, str]
+            commit_oid: str
             (
                 root,
                 environment,
@@ -1695,104 +1784,130 @@ def run_project_checks(
             ensure_isolated_tree(
                 root, environment, commit_oid, boundary['tree'],
             )
-            check_env = environment.copy()
+            check_env: dict[str, str] = environment.copy()
             check_env.update(description['env'])
+            key: str
             for key in ('resolution_argv', 'argv'):
+                if description[key] is None:
+                    continue
+
                 if not command_executable(
                     description, root, boundary['tree'],
                     key, spec,
                 ):
-                    name = visible_text(description[key][0])
+                    name: str = visible_text(description[key][0])
                     raise PlanError(
                         f'required executable unavailable: {name}'
                     )
+
             check_prerequisites(
                 spec, dict(description, env=check_env),
                 root, boundary, index,
             )
-            secrets = secret_values(
+            secrets: tuple[str, ...] = secret_values(
                 check_env,
             )
-            resolve_phase = (
+            resolve_phase: str = (
                 f'{SKILL_NAME} check {index}/{total} resolve'
             )
-            resolution = description['resolution_argv']
-            cwd = visible_text(str(root))
-            trace_start(resolve_phase, resolution, root)
-            try:
-                probe = subprocess.run(
-                    resolution,
-                    cwd=root,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    errors='backslashreplace',
-                    env=check_env,
-                )
-            except OSError as error:
-                name = visible_text(
-                    description['resolution_argv'][0]
-                )
-                raise PlanError(
-                    f'[{resolve_phase}] unable to start: {name}\n'
-                    f'cwd: {cwd}\n'
-                    f'command: {render_command(resolution)}'
-                ) from error
-            if probe.returncode:
-                trace_result(
-                    resolve_phase,
-                    probe,
-                    captured=True,
-                    secrets=secrets,
-                )
-                return probe.returncode
-            paths = probe.stdout.splitlines()
-            if not paths:
-                raise validation_error(
-                    resolve_phase,
-                    resolution,
-                    root,
-                    'resolution check did not print a path',
-                    probe,
-                    secrets,
-                )
-            if len(paths) != 1 or not paths[0]:
-                raise validation_error(
-                    resolve_phase,
-                    resolution,
-                    root,
-                    'resolution check must print exactly one path',
-                    probe,
-                    secrets,
-                )
-            try:
-                source = Path(paths[0])
-                if not source.is_absolute():
-                    source = root / source
-                source.resolve(
-                    strict=True
-                ).relative_to(root)
-            except (
-                OSError,
-                ValueError,
-            ) as error:
-                raise validation_error(
-                    resolve_phase,
-                    resolution,
-                    root,
-                    'resolution check escaped the boundary root',
-                    probe,
-                    secrets,
-                ) from error
-            trace_result(resolve_phase, probe)
+            resolution: (
+                list[str]|None
+            ) = description['resolution_argv']
+            # Static checks also need cwd in startup diagnostics.
+            cwd: str = visible_text(str(root))
+            if resolution is not None:
+                trace_start(resolve_phase, resolution, root)
+                try:
+                    probe: subprocess.CompletedProcess[
+                        str
+                    ] = subprocess.run(
+                        resolution,
+                        cwd=root,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        errors='backslashreplace',
+                        env=check_env,
+                    )
+                except OSError as error:
+                    probe_name: str = visible_text(resolution[0])
+                    probe_command: str = render_command(resolution)
+                    raise PlanError(
+                        f'[{resolve_phase}] unable to start: '
+                        f'{probe_name}\n'
+                        f'cwd: {cwd}\n'
+                        f'command: {probe_command}'
+                    ) from error
+
+                if probe.returncode:
+                    trace_result(
+                        resolve_phase,
+                        probe,
+                        captured=True,
+                        secrets=secrets,
+                    )
+                    return probe.returncode
+
+                paths: list[str] = probe.stdout.splitlines()
+                if not paths:
+                    raise validation_error(
+                        resolve_phase,
+                        resolution,
+                        root,
+                        'resolution check did not print a path',
+                        probe,
+                        secrets,
+                    )
+
+                if len(paths) != 1 or not paths[0]:
+                    raise validation_error(
+                        resolve_phase,
+                        resolution,
+                        root,
+                        'resolution check must print exactly '
+                        'one path',
+                        probe,
+                        secrets,
+                    )
+
+                try:
+                    source: Path = Path(paths[0])
+                    if not source.is_absolute():
+                        source = root / source
+
+                    source.resolve(strict=True).relative_to(root)
+
+                except OSError as error:
+                    raise validation_error(
+                        resolve_phase, resolution, root,
+                        'resolution check must print an existing '
+                        'path; '
+                        'tool versions are not code locations',
+                        probe, secrets,
+                    ) from error
+
+                except ValueError as error:
+                    raise validation_error(
+                        resolve_phase,
+                        resolution,
+                        root,
+                        'resolution check escaped the boundary root',
+                        probe,
+                        secrets,
+                    ) from error
+
+                trace_result(resolve_phase, probe)
+
             ensure_isolated_tree(
                 root, environment, commit_oid, boundary['tree'],
             )
-            phase = f'{SKILL_NAME} check {index}/{total}'
-            arguments = description['argv']
+            phase: str = f'{SKILL_NAME} check {index}/{total}'
+            arguments: list[str] = description['argv']
             trace_start(phase, arguments, root)
             try:
-                result = subprocess.run(
+                result: subprocess.CompletedProcess[
+                    str
+                ] = subprocess.run(
                     arguments,
                     cwd=root,
                     check=False,
@@ -1802,12 +1917,14 @@ def run_project_checks(
                     errors='backslashreplace',
                 )
             except OSError as error:
-                name = visible_text(description['argv'][0])
+                check_name: str = visible_text(arguments[0])
+                check_command: str = render_command(arguments)
                 raise PlanError(
-                    f'[{phase}] unable to start: {name}\n'
+                    f'[{phase}] unable to start: {check_name}\n'
                     f'cwd: {cwd}\n'
-                    f'command: {render_command(arguments)}'
+                    f'command: {check_command}'
                 ) from error
+
             trace_result(
                 phase,
                 result,
@@ -1816,6 +1933,7 @@ def run_project_checks(
             )
             if result.returncode:
                 return result.returncode
+
             ensure_isolated_tree(
                 root, environment, commit_oid, boundary['tree'],
             )
@@ -1845,6 +1963,8 @@ def preflight(spec: dict[str, Any], root: Path) -> None:
                 spec, description, root, boundary, index,
             )
             for key in ('resolution_argv', 'argv'):
+                if description[key] is None:
+                    continue
                 if not command_executable(
                     description,
                     root,
@@ -2273,7 +2393,7 @@ def show_lines(
                     ))
                 else:
                     lines.append(f'|_PROBE> {name}')
-            else:
+            elif description['resolution_argv'] is not None:
                 lines.extend(comment_command(
                     'PROBE', description['resolution_argv'], width,
                     shell=shell,
@@ -2424,11 +2544,13 @@ def comment_command(
     return lines
 
 
-def probe_identity(description: dict) -> tuple:
+def probe_identity(description: dict) -> tuple|None:
     '''
     Identify display sharing without deduplicating execution.
 
     '''
+    if description['resolution_argv'] is None:
+        return None
     return (
         tuple(description['resolution_argv']),
         tuple(sorted(description['env'].items())),
@@ -2628,7 +2750,10 @@ def render(
         item for boundary in spec['boundaries']
         for item in boundary['project_checks']
     ]
-    identities = [probe_identity(item) for item in checks]
+    identities = [
+        probe_identity(item) for item in checks
+        if item['resolution_argv'] is not None
+    ]
     probes = {}
     for key in identities:
         if identities.count(key) > 1 and key not in probes:
