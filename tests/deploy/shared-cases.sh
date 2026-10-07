@@ -404,7 +404,8 @@ test_managed_hybrid_links() {
     bash "$DEPLOY" all "$REPO" --harness all >/dev/null
     for provider in claude opencode; do
         rm "$REPO/.$provider/skills/commit-plan/SKILL.md" \
-            "$REPO/.$provider/skills/commit-plan/scripts"
+            "$REPO/.$provider/skills/commit-plan/scripts" \
+            "$REPO/.$provider/skills/commit-plan/BENCHMARK.md"
         rmdir "$REPO/.$provider/skills/commit-plan"
         ln -s ../../.agents/skills/commit-plan "$REPO/.$provider/skills/commit-plan"
     done
@@ -421,7 +422,8 @@ test_managed_hybrid_links() {
     bash "$ROOT/scripts/validate-deployment.sh" "$REPO" >/dev/null
     for provider in claude opencode; do
         rm "$REPO/.$provider/skills/commit-plan/SKILL.md" \
-            "$REPO/.$provider/skills/commit-plan/scripts"
+            "$REPO/.$provider/skills/commit-plan/scripts" \
+            "$REPO/.$provider/skills/commit-plan/BENCHMARK.md"
         rmdir "$REPO/.$provider/skills/commit-plan"
         ln -s "$ROOT/skills/commit-plan" "$REPO/.$provider/skills/commit-plan"
     done
@@ -444,7 +446,8 @@ test_hybrid_portable_and_refusals() {
             --url "$SOURCE_URL" --stage >/dev/null
         bash "$DEPLOY" all "$REPO" --harness all --stage >/dev/null
         rm "$REPO/.claude/skills/commit-plan/SKILL.md" \
-            "$REPO/.claude/skills/commit-plan/scripts"
+            "$REPO/.claude/skills/commit-plan/scripts" \
+            "$REPO/.claude/skills/commit-plan/BENCHMARK.md"
         rmdir "$REPO/.claude/skills/commit-plan"
         ln -s ../../.ai/ai.skillz/skills/commit-plan \
             "$REPO/.claude/skills/commit-plan"
@@ -473,7 +476,8 @@ test_hybrid_portable_and_refusals() {
         bash "$DEPLOY" all "$REPO" --harness all >/dev/null
         for provider in claude opencode; do
             rm "$REPO/.$provider/skills/commit-plan/SKILL.md" \
-                "$REPO/.$provider/skills/commit-plan/scripts"
+                "$REPO/.$provider/skills/commit-plan/scripts" \
+                "$REPO/.$provider/skills/commit-plan/BENCHMARK.md"
             rmdir "$REPO/.$provider/skills/commit-plan"
         done
         ln -s "$ROOT/skills/commit-plan" "$REPO/.claude/skills/commit-plan"
