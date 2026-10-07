@@ -50,6 +50,13 @@ skill. Use --no-command for an explicit skill-only deployment.
 Shared deployment into this source repository uses relative links to skills/.
 --direct is retained as an explicit local-link compatibility alias.
 Nothing is staged unless --stage is supplied; this script never commits.
+Migrate inventories unmanaged legacy Claude skills and stops for consent:
+  --repo-skills move      relocate clean tracked skills into .agents/skills
+                         with relative Claude adapters
+  --repo-skills preserve  leave those sources untouched (not migrated)
+Without this choice, even --dry-run stops with affected paths and a prompt.
+Recognized legacy hybrid links can be repaired independently; neither choice
+bypasses canonical-link safety checks. Runtime migration remains separate.
 EOF
 }
 
@@ -1055,11 +1062,30 @@ require_planned_ignore() {
     rm -rf "$temp_dir"
 }
 
-recognized_legacy_run_tests_link() {
-    recognized_source_root "$1" run-tests "" \
-        && [ -f "$RECOGNIZED_ROOT/deploy-manifest.conf" ] \
-        && grep -q '^skill|run-tests|hybrid|SKILL.md$' \
-            "$RECOGNIZED_ROOT/deploy-manifest.conf"
+recognized_hybrid_link() {
+    recognized_source_root "$1" "$2" ""
+}
+
+preflight_hybrid_link_index() {
+    local target="$1" relative="$2"
+    if git_path_tracked "$target" "$relative"; then
+        git -C "$target" diff --quiet -- "$relative" \
+            && git -C "$target" diff --cached --quiet -- "$relative" \
+            || die "tracked hybrid directory link has local changes: $relative"
+    fi
+}
+
+replace_hybrid_link() {
+    local destination="$1" skill="$2" source="$3" old
+    recognized_hybrid_link "$destination" "$skill" \
+        && same_resolved_path "$destination" "$source/skills/$skill" \
+        || die "hybrid directory link changed after preflight: $destination"
+    old="$(readlink "$destination")"
+    rm -- "$destination"
+    if ! mkdir -- "$destination"; then
+        ln -s "$old" "$destination" || true
+        die "failed to replace hybrid directory link: $destination"
+    fi
 }
 
 preflight_skill_provider() {
@@ -1103,14 +1129,24 @@ preflight_skill_provider() {
         return 0
     fi
     if [ -L "$destination" ]; then
-        [ "$skill" = run-tests ] && recognized_legacy_run_tests_link "$destination" \
-            || die "refusing hybrid provider directory symlink: $destination"
+        preflight_hybrid_link_index "$target" "$PROVIDER_ROOT/skills/$skill"
+        recognized_hybrid_link "$destination" "$skill" \
+            || die "refusing unmanaged or broken hybrid directory link: $destination; reconcile manually"
+        # Preserve the shipped run-tests conversion from a legacy source.
+        [ "$skill" = run-tests ] \
+            || same_resolved_path "$destination" "$source_root" \
+            || die "hybrid link uses another source: $destination; run deploy.sh migrate '$target' --dry-run"
         if [ "$direct" = yes ]; then
             require_local_path_untracked "$target" "$PROVIDER_ROOT/skills/$skill"
-        else
-            require_portable_path_trackable "$target" \
-                "$PROVIDER_ROOT/skills/$skill/SKILL.md"
         fi
+        IFS=',' read -ra ASSET_LIST <<< "$SKILL_ASSETS"
+        for asset in "${ASSET_LIST[@]}"; do
+            [ -e "$source_root/$asset" ] \
+                || die "hybrid skill asset missing: $source_root/$asset"
+            [ "$direct" = yes ] || require_migration_path_trackable \
+                "$target" "$PROVIDER_ROOT/skills/$skill/$asset" \
+                "direct:symlink:$provider:$skill"
+        done
         return 0
     fi
     [ ! -e "$destination" ] || [ -d "$destination" ] \
@@ -1182,10 +1218,14 @@ deploy_skill_provider() {
         record_managed_path "$PROVIDER_ROOT/skills/$skill"
     else
         if [ -L "$destination" ]; then
-            [ "$skill" = run-tests ] \
-                || die "refusing to replace hybrid provider directory symlink: $destination"
-            rm "$destination"
-            printf '  Replaced legacy run-tests directory symlink\n'
+            recognized_hybrid_link "$destination" "$skill" \
+                || die "hybrid link changed after preflight: $destination"
+            local old_root="$RECOGNIZED_ROOT"
+            [ "$skill" = run-tests ] || [ "$old_root" = "$SOURCE_ROOT" ] \
+                || die "hybrid link source changed after preflight: $destination"
+            replace_hybrid_link "$destination" "$skill" "$old_root"
+            record_managed_path "$PROVIDER_ROOT/skills/$skill"
+            printf '  Replaced managed %s directory symlink\n' "$skill"
         fi
         [ ! -e "$destination" ] || [ -d "$destination" ] \
             || die "hybrid provider destination is not a directory: $destination"
@@ -2302,7 +2342,12 @@ status_provider() {
             printf '\n'
         else
             if [ -L "$path" ] || [ ! -d "$path" ]; then
-                printf '  skill %-24s invalid hybrid directory [UNHEALTHY]\n' "$name"
+                if recognized_hybrid_link "$path" "$name"; then
+                    printf '  skill %-24s repairable managed whole-directory hybrid link [UNHEALTHY]\n' "$name"
+                    printf "    Preview repair: deploy.sh migrate '%s' --dry-run; or redeploy this skill from the same source\n" "$target"
+                else
+                    printf '  skill %-24s invalid hybrid directory [UNHEALTHY]; reconcile unmanaged or broken destination manually\n' "$name"
+                fi
                 STATUS_UNHEALTHY=1
                 continue
             fi
@@ -2853,13 +2898,131 @@ relocate_legacy_submodule() {
     SOURCE_ROOT="$ANCHOR_SOURCE"
 }
 
+preflight_repo_skills() {
+    local relative name path destination entry value
+    REPO_SKILLS=()
+    # Inventory disk entries, including untracked/ignored skills. Do not
+    # confuse manifest-owned runtime directories with local definitions.
+    for path in "$TARGET"/.claude/skills/*; do
+        [ -e "$path" ] || [ -L "$path" ] || continue
+        name="${path##*/}"
+        destination="$TARGET/.agents/skills/$name"
+        if get_skill_record "$name"; then
+            [ -L "$path" ] || [ -L "$path/SKILL.md" ] \
+                || [ ! -e "$path/SKILL.md" ] || {
+                    REPO_SKILLS+=("$name")
+                }
+        elif [ -L "$path" ] \
+            && [ "$(readlink "$path")" = "../../.agents/skills/$name" ] \
+            && [ -d "$destination" ] && [ ! -L "$destination" ] \
+            && [ -f "$destination/SKILL.md" ]; then
+            continue
+        else
+            REPO_SKILLS+=("$name")
+        fi
+    done
+    if [ "${#REPO_SKILLS[@]}" -gt 0 ] && [ -z "$REPO_SKILL_CHOICE" ]; then
+        printf 'DECISION REQUIRED: unmanaged/repository-owned legacy Claude skills:\n' >&2
+        for name in "${REPO_SKILLS[@]}"; do
+            printf '  %q\n' ".claude/skills/$name" >&2
+        done
+        printf '\nAgent-ready prompt:\nInspect the listed legacy skill sources in %q.\n' "$TARGET" >&2
+        printf '%s\n' \
+            'Ask the owner whether to redeploy them into .agents/skills with' \
+            'relative Claude adapters, or preserve them in place. Do not infer' \
+            'consent from this diagnostic or a dry run. After explicit approval,' \
+            'preview migrate with --repo-skills move or --repo-skills preserve.' \
+            'Resolve dirty/unmanaged contents manually; never bypass tracked' \
+            'canonical-link safeguards or untrack a path to force success.' >&2
+        die "migration halted without mutation; choose --repo-skills move or --repo-skills preserve"
+    fi
+    [ "$REPO_SKILL_CHOICE" != preserve ] || return 0
+    for name in "${REPO_SKILLS[@]}"; do
+        validate_name "$name" skill
+        path="$TARGET/.claude/skills/$name"
+        destination="$TARGET/.agents/skills/$name"
+        get_skill_record "$name" \
+            && die "repository skill collides with deployment manifest: $name"
+        if [ -L "$path" ]; then
+            die "repository skill source is a symlink: $path"
+        fi
+        [ -f "$path/SKILL.md" ] && [ ! -L "$path/SKILL.md" ] \
+            || die "repository skill needs a regular SKILL.md: $path"
+        entry="$(git -C "$TARGET" ls-files -s -- ".claude/skills/$name/SKILL.md")"
+        case "$entry" in
+            100644\ *|100755\ *) ;;
+            *) die "repository skill needs a tracked regular SKILL.md: $path" ;;
+        esac
+        [ ! -e "$destination" ] && [ ! -L "$destination" ] \
+            || die "repository skill destination already exists: $destination; reconcile manually"
+        [ -z "$(git --no-optional-locks -C "$TARGET" status --porcelain --untracked-files=all \
+            --ignored -- ".claude/skills/$name" ".agents/skills/$name")" ] \
+            || die "repository skill has dirty, untracked, or ignored content: $name"
+        require_portable_path_trackable "$TARGET" ".agents/skills/$name"
+        if path_effectively_ignored "$TARGET" ".claude/skills/$name"; then
+            die "Claude adapter would be ignored: .claude/skills/$name; narrow the ignore rule"
+        fi
+        while IFS= read -r -d '' entry; do
+            case "$entry" in
+                160000\ *) die "repository skill contains a submodule: $name" ;;
+            esac
+            relative="${entry#*$'\t'}"
+            require_portable_path_trackable "$TARGET" \
+                ".agents/skills/$name/${relative#.claude/skills/$name/}"
+            if [ -L "$TARGET/$relative" ]; then
+                value="$(readlink "$TARGET/$relative")"
+                [[ "$value" != /* ]] \
+                    && resolve_existing_path "$TARGET/$relative" \
+                    && [[ "$RESOLVED_PATH" = "$path/"* ]] \
+                    || die "repository skill resource link escapes its tree: $relative"
+            fi
+        done < <(git -C "$TARGET" ls-files -s -z -- ".claude/skills/$name")
+    done
+}
+
+relocate_repo_skills() {
+    local name source destination
+    for name in "${REPO_SKILLS[@]}"; do
+        if [ "$REPO_SKILL_CHOICE" = preserve ]; then
+            migration_action "preserve .claude/skills/$name (not migrated)"
+            continue
+        fi
+        source="$TARGET/.claude/skills/$name"
+        destination="$TARGET/.agents/skills/$name"
+        migration_action "move .claude/skills/$name -> .agents/skills/$name"
+        migration_action "create .claude/skills/$name -> ../../.agents/skills/$name"
+        if [ "$stage" = yes ]; then
+            migration_action "stage .claude/skills/$name and .agents/skills/$name only"
+        fi
+        if [ "$MIGRATE_DRY_RUN" = no ]; then
+            mkdir -p "$TARGET/.agents/skills"
+            mv -T -- "$source" "$destination"
+            if ! ln -s "../../.agents/skills/$name" "$source"; then
+                mv -T -- "$destination" "$source" || true
+                die "failed to create Claude adapter: $source"
+            fi
+            stage_paths "$TARGET" "$stage" \
+                ".claude/skills/$name" ".agents/skills/$name"
+        fi
+    done
+}
+
 cmd_migrate() {
     local target_arg="" stage=no
+    local REPO_SKILL_CHOICE=""
     MIGRATE_DRY_RUN=no
     while [ $# -gt 0 ]; do
         case "$1" in
             --dry-run) MIGRATE_DRY_RUN=yes; shift ;;
             --stage) stage=yes; shift ;;
+            --repo-skills)
+                need_value "$@"
+                [ -z "$REPO_SKILL_CHOICE" ] || die "--repo-skills supplied more than once"
+                case "$2" in move|preserve) REPO_SKILL_CHOICE="$2" ;;
+                    *) die "--repo-skills must be move or preserve" ;;
+                esac
+                shift 2
+                ;;
             --*) die "unknown option: $1" ;;
             *) [ -z "$target_arg" ] || die "unexpected argument: $1"; target_arg="$1"; shift ;;
         esac
@@ -2872,6 +3035,9 @@ cmd_migrate() {
     preflight_provider_base "$TARGET" claude
     preflight_provider_base "$TARGET" opencode
     preflight_provider_base "$TARGET" agents
+    preflight_repo_skills
+    local repo_skill_index
+    repo_skill_index="$(git -C "$TARGET" ls-files -s -- .claude/skills .agents/skills)"
     inspect_anchor "$TARGET"
     [ "$ANCHOR_HEALTH" != broken ] && [ "$ANCHOR_HEALTH" != invalid ] \
         || die "refusing migration with $ANCHOR_HEALTH anchor"
@@ -2898,7 +3064,7 @@ cmd_migrate() {
                 skill_discovery_shape "$provider" "$shape"
                 shape="$DISCOVERY_SHAPE"
                 path="$TARGET/$PROVIDER_ROOT/skills/$skill"
-                if [ "$shape" = generic ]; then
+                if [ "$shape" = generic ] || [ -L "$path" ]; then
                     if recognized_source_root "$path" "$skill" ""; then
                         inferred_root="$RECOGNIZED_ROOT"
                         break
@@ -2970,8 +3136,11 @@ cmd_migrate() {
     MIGRATE_COPY_IGNORE_IDS=()
     MIGRATE_COPY_RUNTIME=()
     MIGRATE_LEGACY_ROOT=""
+    MIGRATE_HYBRID_PATHS=()
+    MIGRATE_HYBRID_SKILLS=()
+    MIGRATE_HYBRID_ROOTS=()
 
-    local changed=0 destination expected canonical_present ignore_pattern ignore_id
+    local changed=0 destination expected canonical_present ignore_pattern ignore_id whole
     while IFS='|' read -r kind skill shape assets rest; do
         [ "$kind" = skill ] && [ "$shape" != template ] || continue
         for provider in claude opencode agents; do
@@ -3025,7 +3194,21 @@ cmd_migrate() {
             else
                 [ -e "$path" ] || [ -L "$path" ] || continue
                 preflight_runtime_ignores "$skill" "$TARGET"
-                [ -d "$path" ] && [ ! -L "$path" ] \
+                whole=no
+                if [ -L "$path" ]; then
+                    preflight_hybrid_link_index "$TARGET" "$PROVIDER_ROOT/skills/$skill"
+                    recognized_hybrid_link "$path" "$skill" \
+                        || die "unrecognized or broken hybrid migration link: $path; reconcile manually"
+                    migration_root_allowed "$RECOGNIZED_ROOT" \
+                        || die "migration links use mixed source roots: $path"
+                    [ "$MIGRATE_DIRECT" = no ] || require_local_path_untracked \
+                        "$TARGET" "$PROVIDER_ROOT/skills/$skill"
+                    MIGRATE_HYBRID_PATHS+=("$path")
+                    MIGRATE_HYBRID_SKILLS+=("$skill")
+                    MIGRATE_HYBRID_ROOTS+=("$RECOGNIZED_ROOT")
+                    whole=yes
+                fi
+                [ -d "$path" ] \
                     || die "migration conflict at hybrid destination: $path"
                 IFS=',' read -ra ASSET_LIST <<< "$assets"
                 canonical_present=no
@@ -3035,7 +3218,7 @@ cmd_migrate() {
                         break
                     fi
                 done
-                [ "$canonical_present" = yes ] || continue
+                [ "$whole" = yes ] || [ "$canonical_present" = yes ] || continue
                 for asset in "${ASSET_LIST[@]}"; do
                     ignore_id="direct:symlink:$provider:$skill"
                     if [ "$MIGRATE_DIRECT" = yes ]; then
@@ -3048,23 +3231,29 @@ cmd_migrate() {
                         require_migration_path_trackable "$TARGET" \
                             "$PROVIDER_ROOT/skills/$skill/$asset" "$ignore_id"
                     fi
-                    [ -L "$path/$asset" ] \
-                        || die "missing or unmanaged hybrid migration asset: $path/$asset"
-                    recognized_source_root "$path/$asset" "$skill" "$asset" \
-                        || die "unrecognized or broken hybrid migration link: $path/$asset"
-                    migration_root_allowed "$RECOGNIZED_ROOT" \
-                        || die "migration links use mixed source roots: $RECOGNIZED_ROOT, ${MIGRATE_LEGACY_ROOT:-none}, and $planned_source"
+                    if [ "$whole" = no ]; then
+                        [ -L "$path/$asset" ] \
+                            || die "missing or unmanaged hybrid migration asset: $path/$asset"
+                        recognized_source_root "$path/$asset" "$skill" "$asset" \
+                            || die "unrecognized or broken hybrid migration link: $path/$asset"
+                        migration_root_allowed "$RECOGNIZED_ROOT" \
+                            || die "migration links use mixed source roots: $RECOGNIZED_ROOT, ${MIGRATE_LEGACY_ROOT:-none}, and $planned_source"
+                    fi
                     [ -e "$planned_source/skills/$skill/$asset" ] \
                         || die "migration target source missing: $planned_source/skills/$skill/$asset"
                     if [ "$MIGRATE_DIRECT" = yes ]; then
                         LINK_TARGET="$planned_source/skills/$skill/$asset"
-                        tracking_description "$TARGET" \
-                            "$PROVIDER_ROOT/skills/$skill/$asset"
+                        if [ "$whole" = yes ]; then
+                            TRACKING=untracked
+                        else
+                            tracking_description "$TARGET" \
+                                "$PROVIDER_ROOT/skills/$skill/$asset"
+                        fi
                     else
                         relative_skill_target hybrid "$skill" "$asset"
                         TRACKING=tracked
                     fi
-                    if [ "$(readlink "$path/$asset")" != "$LINK_TARGET" ] \
+                    if [ "$whole" = yes ] || [ "$(readlink "$path/$asset")" != "$LINK_TARGET" ] \
                         || { [ "$MIGRATE_DIRECT" = yes ] && [ "$TRACKING" != ignored ]; }; then
                         MIGRATE_PATHS+=("$path/$asset")
                         MIGRATE_TARGETS+=("$LINK_TARGET")
@@ -3181,6 +3370,11 @@ cmd_migrate() {
         changed=$((changed + 1))
     done < "$MANIFEST"
 
+    # Recheck owned trees after all canonical deployment preflights.
+    [ "$(git -C "$TARGET" ls-files -s -- .claude/skills .agents/skills)" = "$repo_skill_index" ] \
+        || die "skill index changed after migration preflight; retry inspection"
+    preflight_repo_skills
+    relocate_repo_skills
     [ -n "$planned_source" ] || {
         migration_action "make no anchor change (no recognized source anchor or direct link)"
         migration_action "make no provider link changes"
@@ -3200,6 +3394,9 @@ cmd_migrate() {
             ;;
     esac
     local i relpath
+    for i in "${!MIGRATE_HYBRID_PATHS[@]}"; do
+        migration_action "replace managed hybrid directory link ${MIGRATE_HYBRID_PATHS[$i]#$TARGET/} with a real directory"
+    done
     i=0
     while [ "$i" -lt "${#MIGRATE_PATHS[@]}" ]; do
         relpath="${MIGRATE_PATHS[$i]#$TARGET/}"
@@ -3219,6 +3416,10 @@ cmd_migrate() {
 
     if [ "$MIGRATE_DRY_RUN" = no ]; then
         IGNORE_QUIET=yes
+        for i in "${!MIGRATE_HYBRID_PATHS[@]}"; do
+            replace_hybrid_link "${MIGRATE_HYBRID_PATHS[$i]}" \
+                "${MIGRATE_HYBRID_SKILLS[$i]}" "${MIGRATE_HYBRID_ROOTS[$i]}"
+        done
         if [ "$anchor_action" = local ]; then
             mkdir -p "$TARGET/.ai"
             ln -s "$inferred_root" "$TARGET/$ANCHOR_REL"
@@ -3231,8 +3432,12 @@ cmd_migrate() {
             relocate_legacy_submodule "$TARGET" "$stage"
         fi
         MANAGED_PATHS=()
+        for path in "${MIGRATE_HYBRID_PATHS[@]}"; do
+            record_managed_path "${path#$TARGET/}"
+        done
         i=0
         while [ "$i" -lt "${#MIGRATE_PATHS[@]}" ]; do
+            mkdir -p "$(dirname "${MIGRATE_PATHS[$i]}")"
             [ -e "${MIGRATE_SOURCES[$i]}" ] \
                 || MIGRATE_SOURCES[$i]="$SOURCE_ROOT/${MIGRATE_SOURCES[$i]#$planned_source/}"
             [ -e "${MIGRATE_SOURCES[$i]}" ] \

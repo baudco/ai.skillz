@@ -156,6 +156,18 @@ In legacy layouts, `run-tests` is hybrid: its canonical `SKILL.md` is
 linked while each repository owns `test-harness-reference.md`. Shared
 deployment keeps that repository-owned reference at its existing path.
 
+`deploy.sh migrate <repo> --dry-run` inventories unmanaged legacy Claude
+skills and stops for an explicit decision. Use `--repo-skills move` to
+preview relocation of clean tracked skills into `.agents/skills/` with
+relative Claude adapters, or `--repo-skills preserve` to leave them in
+place, explicitly not migrated. Remove `--dry-run` only after review;
+add `--stage` only to stage exact migration paths. Neither choice bypasses
+canonical-link safeguards. Conflicting or dirty content is never merged
+or overwritten. Recognized stale whole-directory
+hybrid links in Claude/OpenCode are repaired by migration or a same-source
+redeploy; shared `.agents` whole-directory links remain valid. See the
+[migration safety contract](docs/shared-skills.md#coexistence-and-migration).
+
 ### Commands
 
 Provider-specific reusable assets live under `providers/`. For example,

@@ -111,11 +111,66 @@ does not assume loaders merge them. See
 [OpenCode skill discovery](https://opencode.ai/docs/skills/).
 
 The `migrate` command recognizes shared deployments when normalizing
-source anchors. It does not remove legacy discovery roots. Migration
-is non-interactive: a conflicting local discovery directory is
-reported as a blocker and refused rather than replaced. Resolve the
-conflict manually before rerunning, and review the dry-run output
-before applying changes.
+source anchors. Migration is non-interactive: explicit command-line
+choices record owner consent; the script does not prompt for input.
+It inventories unmanaged/repository-owned legacy Claude
+skills, including untracked and ignored definitions. Without an explicit
+choice it exits nonzero with `DECISION REQUIRED`, the affected paths,
+and an agent-ready prompt asking the owner whether to move or preserve.
+This halt precedes mutation and also applies to `--dry-run`; seeing a
+preview, running deployment, or passing `--stage` is not move consent.
+
+Choose `--repo-skills move` only with explicit owner approval. This moves
+clean tracked skills from `.claude/skills/<name>/` into real
+`.agents/skills/<name>/` directories and leaves relative Claude adapters:
+`.claude/skills/<name> -> ../../.agents/skills/<name>`.
+
+Alternatively, `--repo-skills preserve` leaves those sources untouched
+and reports each as `not migrated`, while allowing independent canonical
+deployment migration to proceed if safe. Preservation allows dirty or
+untracked local definitions to remain local; it does not hide canonical
+link conflicts, fix divergent discovery, or promise healthy validation.
+Neither choice permits removal/untracking of unsafe canonical assets.
+The choice is per invocation, applies to the listed inventory, and is
+not saved as blanket consent for future migrations. Repeated or invalid
+`--repo-skills` options are refused. Use the chosen option with
+`--dry-run` first, then repeat without `--dry-run` to apply.
+
+Move candidates have a tracked regular `SKILL.md` and a
+name absent from the deployment manifest. Migration preserves the whole
+tracked tree, file modes, and relative resource links within that tree.
+It requires no source anchor and does not publish local skills into
+`ai.skillz`. Existing correct adapters are left alone on repeat runs.
+
+With the move choice, dirty, staged, untracked, or ignored source
+payloads, existing shared
+destinations, manifest-name collisions, submodules, unsafe parent links,
+escaping resource links, and ignored destination or adapter paths require
+manual reconciliation. Even identical destination copies are refused;
+migration never merges trees or decides which definition wins. Narrow
+user-owned ignore rules yourself before retrying. Runtime state and
+canonical skill deployments are not repository-owned relocation inputs.
+
+Whole-directory links for hybrid skills such as `commit-plan` are valid
+under `.agents`, but stale under `.claude` and `.opencode`. Status reports
+recognized canonical links as repairable and returns nonzero. Migration
+converts them into real directories containing the manifest's asset
+links. A single-skill or bulk deployment performs the same repair for
+links to its selected source. The existing `run-tests` legacy-source
+conversion remains supported. Other-source links require migration;
+broken or unmanaged links require manual reconciliation. No repair
+writes into or removes the linked source directory.
+
+`migrate --dry-run` previews moves, adapters, and link conversions without
+changing the worktree or index. Apply without `--stage` also preserves
+the index; with `--stage`, only the migrated paths and tool-owned ignore
+changes are staged. All selected destinations are preflighted before
+mutation. Pause other writers during migration: checks do not lock the
+filesystem. An interrupted multi-skill apply can leave earlier moves
+complete; inspect those paths before retrying. A failed adapter creation
+attempts to restore that skill's original directory. No command commits,
+rewrites prose or stored paths, migrates runtime data, or changes task
+markers as part of source relocation.
 
 Message archives, test references, configuration, and review context
 use the [shared runtime contract](runtime-state.md). Fresh repositories

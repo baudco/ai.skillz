@@ -239,7 +239,266 @@ test_shared_migration() {
     pass 'shared direct deployments participate in anchor migration'
 }
 
+test_repo_skill_relocation() {
+    # Consumer-owned sources were invisible to manifest-only migration.
+    # A committed fixture proves byte/mode preservation, index isolation,
+    # relative adapters, clone portability, and repeatability.
+    new_repo repo-skill-relocation
+    local name before source_before clone
+    for name in piker-profiling piker-slang pyqtgraph-optimization timeseries-optimization; do
+        mkdir -p "$REPO/.claude/skills/$name"
+        printf '%s\n' '---' "name: $name" 'description: local skill' '---' \
+            > "$REPO/.claude/skills/$name/SKILL.md"
+        printf 'resource\n' > "$REPO/.claude/skills/$name/resource.sh"
+        chmod +x "$REPO/.claude/skills/$name/resource.sh"
+        ln -s resource.sh "$REPO/.claude/skills/$name/resource-link"
+    done
+    git -C "$REPO" add .claude
+    git -C "$REPO" commit -qm 'owned skills fixture'
+    printf 'unrelated staged\n' > "$REPO/unrelated"
+    git -C "$REPO" add unrelated
+    before="$(index_tree "$REPO")"
+    source_before="$(tree_digest "$REPO")"
+    assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run --stage
+    assert_file_contains "$TMP_ROOT/failure.out" 'DECISION REQUIRED'
+    assert_file_contains "$TMP_ROOT/failure.out" 'Agent-ready prompt:'
+    for name in piker-profiling piker-slang pyqtgraph-optimization timeseries-optimization; do
+        assert_file_contains "$TMP_ROOT/failure.out" ".claude/skills/$name"
+    done
+    assert_fails bash "$DEPLOY" migrate "$REPO"
+    bash "$DEPLOY" migrate "$REPO" --repo-skills preserve --dry-run >/dev/null
+    local preserved
+    preserved="$(bash "$DEPLOY" migrate "$REPO" --repo-skills preserve --stage)"
+    assert_contains "$preserved" '(not migrated)'
+    assert_eq "$(index_tree "$REPO")" "$before"
+    assert_eq "$(tree_digest "$REPO")" "$source_before"
+    bash "$DEPLOY" migrate "$REPO" --repo-skills move --dry-run --stage >/dev/null
+    assert_eq "$(index_tree "$REPO")" "$before"
+    assert_eq "$(tree_digest "$REPO")" "$source_before"
+    bash "$DEPLOY" migrate "$REPO" --repo-skills move >/dev/null
+    assert_eq "$(index_tree "$REPO")" "$before"
+    source_before="$(tree_digest "$REPO")"
+    bash "$DEPLOY" migrate "$REPO" >/dev/null
+    assert_eq "$(tree_digest "$REPO")" "$source_before"
+    for name in piker-profiling piker-slang pyqtgraph-optimization timeseries-optimization; do
+        assert_eq "$(readlink "$REPO/.claude/skills/$name")" \
+            "../../.agents/skills/$name"
+        [ -x "$REPO/.agents/skills/$name/resource.sh" ] || fail 'mode lost'
+        assert_eq "$(readlink "$REPO/.agents/skills/$name/resource-link")" resource.sh
+        git -C "$REPO" add ".claude/skills/$name" ".agents/skills/$name"
+    done
+    git -C "$REPO" commit -qm 'relocation fixture'
+    clone="$TMP_ROOT/repo-skill-clone"
+    git clone -q "$REPO" "$clone"
+    [ -f "$clone/.claude/skills/piker-slang/resource-link" ] || fail 'adapter broke in clone'
+    bash "$ROOT/scripts/validate-deployment.sh" "$clone" >/dev/null
+
+    new_repo repo-skill-stage
+    mkdir -p "$REPO/.claude/skills/local-skill"
+    printf 'local\n' > "$REPO/.claude/skills/local-skill/SKILL.md"
+    git -C "$REPO" add .claude
+    git -C "$REPO" commit -qm 'owned fixture'
+    printf 'staged\n' > "$REPO/unrelated"
+    git -C "$REPO" add unrelated
+    before="$(index_entry "$REPO" unrelated)"
+    bash "$DEPLOY" migrate "$REPO" --repo-skills move --stage >/dev/null
+    assert_eq "$(index_entry "$REPO" unrelated)" "$before"
+    assert_contains "$(index_entry "$REPO" .claude/skills/local-skill)" '120000'
+    assert_contains "$(index_entry "$REPO" .agents/skills/local-skill/SKILL.md)" '100644'
+    pass 'repository skills relocate with relative adapters and isolated staging'
+}
+
+test_repo_skill_refusals() {
+    # A valid candidate must not move before a later conflict is found.
+    # Snapshot both trees and the index across dry-run and apply failures.
+    local scenario before index
+    for scenario in dirty staged untracked ignored collision manifest parent external adapter-ignore destination-ignore; do
+        new_repo "repo-skill-$scenario"
+        mkdir -p "$REPO/.claude/skills/local-skill"
+        printf 'local\n' > "$REPO/.claude/skills/local-skill/SKILL.md"
+        git -C "$REPO" add .claude
+        git -C "$REPO" commit -qm 'owned fixture'
+        case "$scenario" in
+            dirty|staged)
+                printf 'changed\n' >> "$REPO/.claude/skills/local-skill/SKILL.md"
+                [ "$scenario" != staged ] || git -C "$REPO" add .claude ;;
+            untracked|ignored)
+                printf secret > "$REPO/.claude/skills/local-skill/secret"
+                [ "$scenario" != ignored ] || printf 'secret\n' > "$REPO/.gitignore" ;;
+            collision) mkdir -p "$REPO/.agents/skills/local-skill" ;;
+            manifest)
+                mkdir -p "$REPO/.claude/skills/commit-msg"
+                printf local > "$REPO/.claude/skills/commit-msg/SKILL.md"
+                git -C "$REPO" add .claude
+                git -C "$REPO" commit -qm collision ;;
+            parent) ln -s "$TMP_ROOT" "$REPO/.agents" ;;
+            adapter-ignore) printf '/.claude/skills/*\n' > "$REPO/.gitignore" ;;
+            destination-ignore) printf '/.agents/\n' > "$REPO/.gitignore" ;;
+            external)
+                ln -s ../../../base.txt "$REPO/.claude/skills/local-skill/escape"
+                git -C "$REPO" add .claude
+                git -C "$REPO" commit -qm escape ;;
+        esac
+        before="$(tree_digest "$REPO")"
+        index="$(index_tree "$REPO")"
+        assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills move --dry-run
+        assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills move --stage
+        assert_eq "$(tree_digest "$REPO")" "$before"
+        assert_eq "$(index_tree "$REPO")" "$index"
+    done
+    pass 'repository skill conflicts refuse without moving or staging content'
+}
+
+test_repo_skill_decision_gate() {
+    # Previously only tracked clean trees were inventoried and moved
+    # implicitly. Untracked/ignored definitions must also demand consent;
+    # preserving them must neither move them nor authorize unsafe links.
+    local scenario before index
+    for scenario in untracked ignored dirty canonical; do
+        new_repo "repo-skill-decision-$scenario"
+        mkdir -p "$REPO/.claude/skills/local-skill"
+        printf local > "$REPO/.claude/skills/local-skill/SKILL.md"
+        case "$scenario" in
+            ignored) printf '/.claude/skills/local-skill/\n' > "$REPO/.gitignore" ;;
+            dirty)
+                git -C "$REPO" add .claude
+                git -C "$REPO" commit -qm 'local definition'
+                printf edited >> "$REPO/.claude/skills/local-skill/SKILL.md" ;;
+            canonical)
+                mkdir -p "$REPO/.claude/skills/commit-msg"
+                ln -s "$ROOT/skills/commit-msg/SKILL.md" \
+                    "$REPO/.claude/skills/commit-msg/SKILL.md"
+                git -C "$REPO" add .claude
+                git -C "$REPO" commit -qm 'unsafe tracked canonical link' ;;
+        esac
+        before="$(tree_digest "$REPO")"
+        index="$(index_tree "$REPO")"
+        assert_fails bash "$DEPLOY" migrate "$REPO" --dry-run
+        assert_file_contains "$TMP_ROOT/failure.out" 'DECISION REQUIRED'
+        assert_fails bash "$DEPLOY" migrate "$REPO"
+        if [ "$scenario" = canonical ]; then
+            assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills preserve
+            assert_file_contains "$TMP_ROOT/failure.out" 'local provider destination is tracked'
+            assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills move
+            assert_file_contains "$TMP_ROOT/failure.out" 'local provider destination is tracked'
+        else
+            bash "$DEPLOY" migrate "$REPO" --repo-skills preserve --dry-run >/dev/null
+            bash "$DEPLOY" migrate "$REPO" --repo-skills preserve --stage >/dev/null
+            assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills move
+        fi
+        assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills
+        assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills yes
+        assert_fails bash "$DEPLOY" migrate "$REPO" --repo-skills move --repo-skills preserve
+        assert_eq "$(tree_digest "$REPO")" "$before"
+        assert_eq "$(index_tree "$REPO")" "$index"
+    done
+    pass 'unmanaged skill consent is explicit and cannot bypass canonical-link guards'
+}
+
+test_managed_hybrid_links() {
+    # Whole-directory commit-plan links used to fail both deploy and
+    # migration. Keep shared links intact while repairing legacy roots.
+    local provider before index asset
+    new_repo managed-hybrid
+    bash "$DEPLOY" all "$REPO" --harness agents >/dev/null
+    bash "$DEPLOY" all "$REPO" --harness all >/dev/null
+    for provider in claude opencode; do
+        rm "$REPO/.$provider/skills/commit-plan/SKILL.md" \
+            "$REPO/.$provider/skills/commit-plan/scripts"
+        rmdir "$REPO/.$provider/skills/commit-plan"
+        ln -s ../../.agents/skills/commit-plan "$REPO/.$provider/skills/commit-plan"
+    done
+    before="$(tree_digest "$REPO")"
+    index="$(index_tree "$REPO")"
+    assert_fails bash "$DEPLOY" status "$REPO"
+    assert_file_contains "$TMP_ROOT/failure.out" 'repairable managed whole-directory hybrid link'
+    bash "$DEPLOY" migrate "$REPO" --dry-run >/dev/null
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    assert_eq "$(index_tree "$REPO")" "$index"
+    bash "$DEPLOY" migrate "$REPO" >/dev/null
+    assert_eq "$(index_tree "$REPO")" "$index"
+    [ -L "$REPO/.agents/skills/commit-plan" ] || fail 'shared link replaced'
+    bash "$ROOT/scripts/validate-deployment.sh" "$REPO" >/dev/null
+    for provider in claude opencode; do
+        rm "$REPO/.$provider/skills/commit-plan/SKILL.md" \
+            "$REPO/.$provider/skills/commit-plan/scripts"
+        rmdir "$REPO/.$provider/skills/commit-plan"
+        ln -s "$ROOT/skills/commit-plan" "$REPO/.$provider/skills/commit-plan"
+    done
+    bash "$DEPLOY" commit-plan "$REPO" --harness all >/dev/null
+    before="$(tree_digest "$REPO")"
+    bash "$DEPLOY" commit-plan "$REPO" --harness all >/dev/null
+    assert_eq "$(tree_digest "$REPO")" "$before"
+    bash "$ROOT/scripts/validate-deployment.sh" "$REPO" >/dev/null
+    pass 'managed hybrid directory links are diagnosed and repaired without changing shared links'
+}
+
+test_hybrid_portable_and_refusals() {
+    # A tracked directory symlink must be removed from the index only
+    # with --stage. A bad OpenCode destination must prevent even the
+    # otherwise safe Claude conversion during a provider-all deploy.
+    local action before index provider scenario clone
+    for action in migrate deploy; do
+        new_repo "portable-hybrid-$action"
+        bash "$DEPLOY" init "$REPO" --method submodule \
+            --url "$SOURCE_URL" --stage >/dev/null
+        bash "$DEPLOY" all "$REPO" --harness all --stage >/dev/null
+        rm "$REPO/.claude/skills/commit-plan/SKILL.md" \
+            "$REPO/.claude/skills/commit-plan/scripts"
+        rmdir "$REPO/.claude/skills/commit-plan"
+        ln -s ../../.ai/ai.skillz/skills/commit-plan \
+            "$REPO/.claude/skills/commit-plan"
+        git -C "$REPO" add .claude/skills/commit-plan
+        git -C "$REPO" commit -qm 'stale portable fixture'
+        if [ "$action" = migrate ]; then
+            before="$(tree_digest "$REPO")"
+            index="$(index_tree "$REPO")"
+            bash "$DEPLOY" migrate "$REPO" --dry-run --stage >/dev/null
+            assert_eq "$(tree_digest "$REPO")" "$before"
+            assert_eq "$(index_tree "$REPO")" "$index"
+            bash "$DEPLOY" migrate "$REPO" --stage >/dev/null
+        else
+            bash "$DEPLOY" commit-plan "$REPO" --harness all --stage >/dev/null
+        fi
+        assert_contains "$(index_entry "$REPO" .claude/skills/commit-plan/SKILL.md)" '120000'
+        assert_eq "$(readlink "$REPO/.claude/skills/commit-plan/scripts")" \
+            '../../../.ai/ai.skillz/skills/commit-plan/scripts'
+        git -C "$REPO" commit -qm 'repaired portable fixture'
+        clone="$TMP_ROOT/portable-hybrid-$action-clone"
+        git -c protocol.file.allow=always clone -q --recurse-submodules "$REPO" "$clone"
+        bash "$ROOT/scripts/validate-deployment.sh" "$clone" >/dev/null
+    done
+    for scenario in broken unmanaged different-source; do
+        new_repo "hybrid-refusal-$scenario"
+        bash "$DEPLOY" all "$REPO" --harness all >/dev/null
+        for provider in claude opencode; do
+            rm "$REPO/.$provider/skills/commit-plan/SKILL.md" \
+                "$REPO/.$provider/skills/commit-plan/scripts"
+            rmdir "$REPO/.$provider/skills/commit-plan"
+        done
+        ln -s "$ROOT/skills/commit-plan" "$REPO/.claude/skills/commit-plan"
+        case "$scenario" in
+            broken) ln -s missing "$REPO/.opencode/skills/commit-plan" ;;
+            unmanaged) ln -s "$REPO" "$REPO/.opencode/skills/commit-plan" ;;
+            different-source) ln -s "$SOURCE_WORK/skills/commit-plan" "$REPO/.opencode/skills/commit-plan" ;;
+        esac
+        before="$(tree_digest "$REPO")"
+        index="$(index_tree "$REPO")"
+        assert_fails bash "$DEPLOY" commit-plan "$REPO" --harness all
+        assert_eq "$(tree_digest "$REPO")" "$before"
+        assert_fails bash "$DEPLOY" migrate "$REPO"
+        assert_eq "$(tree_digest "$REPO")" "$before"
+        assert_eq "$(index_tree "$REPO")" "$index"
+    done
+    pass 'portable hybrid repairs survive clones and unsafe multi-provider repairs are refused'
+}
+
 run_shared_cases() {
+    test_repo_skill_decision_gate
+    test_hybrid_portable_and_refusals
+    test_repo_skill_relocation
+    test_repo_skill_refusals
+    test_managed_hybrid_links
     test_shared_local_and_commands
     test_shared_global_ownership
     test_shared_portable_clone
