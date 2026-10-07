@@ -231,6 +231,10 @@ Follow these rules:
 - Use at most one primary URL for each forge property. Put additional
   canonical links in checkbox prose and the manifest.
 - Include `WKS` only when the logical workspace is known.
+- For authorized durable executor tracking, use verified `AI_HARNESS`,
+  `AI_DLOG_ID`, `AI_WKT` and `AI_BRANCH`. Dlog and wkt mean dialog and
+  worktree. Omit unknown run/node identities; never overwrite another
+  contributor's execution context.
 - Omit transient worker phase, retry, lease, heartbeat, and session
   details unless the human explicitly wants a durable dialog hint.
 - Do not add `DONE_REF` or `DONE_SRC` to proposed work.

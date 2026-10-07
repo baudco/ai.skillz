@@ -179,3 +179,24 @@ def checkout_location(cwd: str) -> tuple[str, ...]:
         return ()
 
     return paths
+
+
+def checkout_branch(cwd: str) -> str|None:
+    '''
+    Observe the branch at a checkout without inherited Git overrides.
+
+    - Executor bindings use this with `checkout_location()` to retain
+      and recheck the branch of their selected WKT.
+    - Return None for detached HEAD, unavailable directories or
+      failed queries.
+    - `query()` supplies the shared timeout and GIT_* isolation;
+      observing a branch does not change Git metadata.
+
+    '''
+    output: str|None = query(
+        cwd, 'symbolic-ref', '--quiet', '--short', 'HEAD',
+    )
+    if not output:
+        return None
+
+    return output.rstrip('\n')
