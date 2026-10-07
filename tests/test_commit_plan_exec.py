@@ -583,6 +583,89 @@ class CommitPlanExecTests(unittest.TestCase):
             self.tree_two,
         )
 
+    def test_static_checks_run_without_import_probes(self):
+        '''
+        Static tools were forced to invent import probes, allowing
+        version queries to fail only after staging. Omit probes on
+        both boundaries and prove preflight remains read-only while
+        execution still runs each exact-tree check and commits it.
+        Rendering must not invent probe calls or a probe catalog.
+
+        '''
+        def omit(spec: dict) -> None:
+            '''
+            Select static checks without an import-location probe.
+
+            '''
+            for boundary in spec['boundaries']:
+                boundary['project_checks'][0].pop('resolution_argv')
+        self.rewrite_spec(omit)
+        self.invoke('--preflight')
+        self.assertEqual(self.line_count(self.check_count), 0)
+        shown = self.invoke('--render', 'xonsh').stdout
+        self.assertNotIn('|_PROBE>', shown)
+        self.assertNotIn('probe-catalog:', shown)
+        self.invoke('--execute', '1')
+        self.invoke('--execute', '2')
+        self.assertEqual(self.line_count(self.check_count), 2)
+        self.assertEqual(self.commit_count(), 3)
+
+    def test_version_probe_refused_before_staging(self):
+        '''
+        StyLua --version was accepted as a location probe and then
+        reported as escaping the clone. Feed that exact definition
+        to preflight and require a construction error identifying
+        the misuse, with unchanged index, checks and commit count.
+
+        '''
+        def version(spec: dict) -> None:
+            '''
+            Inject the reported tool-version probe into the spec.
+
+            '''
+            spec['boundaries'][0]['project_checks'][0][
+                'resolution_argv'
+            ] = ['stylua', '--version']
+        self.rewrite_spec(version)
+        index = (self.root / '.git/index').read_bytes()
+        result = self.invoke('--preflight', check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            'tool version is not a code path', result.stderr,
+        )
+        self.assertEqual(
+            (self.root / '.git/index').read_bytes(), index,
+        )
+        self.assertEqual(self.line_count(self.check_count), 0)
+        self.assertEqual(self.commit_count(), 1)
+
+    def test_declared_python_probe_resolves_boundary_module(self):
+        '''
+        Handwritten probes confused executable metadata with code
+        origins. Declare fixturepkg and generate its import probe.
+        The fixture check proves isolated imports and exact boundary
+        content, while preflight must not execute either command.
+
+        '''
+        def declare(spec: dict) -> None:
+            '''
+            Select the generated import probe for fixturepkg.
+
+            '''
+            check = spec['boundaries'][0]['project_checks'][0]
+            check.pop('resolution_argv')
+            check['resolution_probe'] = {
+                'kind': 'python-import',
+                'interpreter': sys.executable,
+                'module': 'fixturepkg',
+            }
+        self.rewrite_spec(declare)
+        self.invoke('--preflight')
+        self.assertEqual(self.line_count(self.check_count), 0)
+        result = self.invoke('--execute', '1')
+        self.assertIn('resolve] PASS', result.stdout)
+        self.assertEqual(self.line_count(self.check_count), 1)
+
     def test_strict_and_legacy_branch_refusal(self):
         '''
         Flexible defaults must not weaken shipped pins or --strict.
@@ -4374,6 +4457,80 @@ class CommitPlanExecTests(unittest.TestCase):
             self.tree_one,
         )
         self.assertFalse((self.root / '.git/HEAD.lock').exists())
+
+
+class ResolutionProbeTests(unittest.TestCase):
+    '''
+    Exercise generated import probes without changing project state.
+
+    '''
+    def test_nvim_probe_reports_loaded_function_on_stdout(self):
+        '''
+        Neovim print() writes to stderr, so a valid module path was
+        rejected as missing stdout. Build the declared probe for a
+        real Lua function under a disposable runtimepath and run it.
+        Its sole stdout line must identify that function's file;
+        this proves the generated Lua and output channel together.
+
+        '''
+        nvim: str|None = shutil.which('nvim')
+        if nvim is None:
+            self.skipTest('Neovim is not installed')
+        with tempfile.TemporaryDirectory() as directory:
+            root: Path = Path(directory)
+            (root / 'lua').mkdir()
+            module: Path = root / 'lua' / 'example.lua'
+            module.write_text(
+                'return { setup = function() return true end }\n'
+            )
+            init: Path = root / 'init.lua'
+            quoted: str = json.dumps(str(root))
+            init.write_text(f'vim.opt.rtp:prepend({quoted})\n')
+            probe: list[str] = PLAN_EXEC.resolution_probe({
+                'kind': 'nvim-module',
+                'module': 'example',
+                'symbol': 'setup',
+                'init': str(init),
+                'executable': nvim,
+            }, 'fixture')
+            result = subprocess.run(
+                probe, cwd=root, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                result.stdout.splitlines(), [str(module)],
+            )
+
+    def test_probe_declarations_reject_injected_input(self):
+        '''
+        Generated probes must not concatenate arbitrary Lua/Python
+        expressions supplied as module names. Exercise an injected
+        module, an unknown kind and a second simultaneous resolver.
+        Construction must reject all three before running processes.
+
+        '''
+        probe: dict = {
+            'kind': 'python-import',
+            'module': 'example',
+            'interpreter': sys.executable,
+        }
+        bad: dict
+        for bad in (
+            dict(probe, module='example; print(1)'),
+            dict(probe, kind='tool-version'),
+            dict(probe, unexpected=True),
+        ):
+            with self.subTest(probe=bad):
+                with self.assertRaises(PLAN_EXEC.PlanError):
+                    PLAN_EXEC.resolution_probe(bad, 'fixture')
+        with self.assertRaisesRegex(
+            PLAN_EXEC.PlanError, 'choose resolution_probe',
+        ):
+            PLAN_EXEC.command({
+                'argv': ['tool'],
+                'resolution_probe': probe,
+                'resolution_argv': ['other'],
+            }, 'fixture')
 
 
 if __name__ == '__main__':

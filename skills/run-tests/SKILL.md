@@ -125,6 +125,13 @@ evidenced ones. This is not discovery of every dynamic dependency or
 proof against child environment changes. Do not automatically alter
 `PATH` to bypass missing prerequisites.
 
+When supplying commit-plan checks, distinguish static file inspection
+from imported project code. Static formatters/linters omit resolution
+probes. Importing checks declare the repository module and the same
+interpreter/environment or Neovim init used by the check, through
+`resolution_probe`. Reserve custom `resolution_argv` for a documented
+repository-owned probe. Tool version output is not code resolution.
+
 Start with the override's base command and environment wrapper. Add, in
 order:
 
