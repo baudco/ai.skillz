@@ -39,18 +39,17 @@ def list_dialogs(
     Return metadata; all=True overrides harness and cwd scope.
 
     A None harness selects every supported harness at the given path.
-    Missing stores are skipped in multi-harness discovery. Invalid
-    existing stores raise an error rather than silently losing data.
+    Implicit all-harness discovery skips a missing Codex database.
+    Explicit selections, including lists, report that missing store.
+    Invalid existing stores raise rather than silently losing data.
     `include_archived` adds Codex and OpenCode archived rows for
     manual WKT recording; `all_sources` only widens source filters.
 
     '''
+    discover_all: bool = all or harness is None
     names: list[str] = (
         ['codex', 'opencode', 'claude']
-        if (
-            all
-            or harness is None
-        )
+        if discover_all
         else [harness]
         if isinstance(harness, str)
         else harness
@@ -113,7 +112,7 @@ def list_dialogs(
         if (
             name == 'codex'
             and not (home / 'state_5.sqlite').is_file()
-            and len(names) > 1
+            and discover_all
         ):
             continue
         records.extend(readers[name](

@@ -127,6 +127,37 @@ class HarnessStoresTests(unittest.TestCase):
                 self.assertEqual(rows[0]['name'], 'Valid prompt')
                 self.assertEqual(rows[0]['cwd'], str(self.repo))
 
+    def test_explicit_harness_lists_require_codex_store(
+        self,
+    ) -> None:
+        '''
+        Explicit multi-harness requests silently skipped Codex.
+
+        Point discovery at this fixture's missing Codex database.
+        Both canonical and short-key explicit lists must raise even
+        alongside another harness. Implicit discovery and `all=True`
+        retain their skip behavior; an explicit single selection
+        still reports the same error. No real user stores are read.
+
+        '''
+        harness: str|list[str]
+        for harness in (
+            'codex',
+            ['codex'],
+            ['codex', 'claude'],
+            ['cx', 'cld'],
+            ['claude', 'cx', 'opencode'],
+        ):
+            with self.subTest(harness=harness):
+                with self.assertRaisesRegex(
+                    ValueError, 'Codex session index not found',
+                ):
+                    list_dialogs(path=None, harness=harness)
+        self.assertEqual(list_dialogs(path=None), [])
+        self.assertEqual(list_dialogs(
+            path=None, harness=['cx', 'cld'], all=True,
+        ), [])
+
     def test_legacy_opencode_archive_opt_in(self) -> None:
         '''
         Manual recording must include pre-SQLite archives too.

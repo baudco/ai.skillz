@@ -342,9 +342,11 @@ so you explicitly choose where to continue the dialog.
   or a first-prompt excerpt. This can be
   slower than SQLite for large histories. Partial JSON lines are ignored.
 
-Missing harness stores are skipped during multi-harness discovery.
-An explicitly selected missing Codex database is reported as an error;
-empty or missing Claude/OpenCode stores produce no records. Invalid
+Implicit all-harness discovery skips a missing Codex database
+(`harness=None` or `all=True`). An explicit Codex selection reports
+the missing database as an error, including a harness list such as
+`harness=['codex', 'claude']` or `harness=['cx', 'cld']`.
+Empty or missing Claude/OpenCode stores produce no records. Invalid
 existing databases and indexes fail visibly. These are private harness
 formats; future versions may require reader updates. No new persistent
 cache, transcript export, server, SDK, or model credentials are needed.
