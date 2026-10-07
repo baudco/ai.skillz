@@ -60,7 +60,10 @@ def structured_paths(event: dict) -> Iterator[str]:
             if isinstance(value, str):
                 yield value
         if block.get('type') == 'function_call':
-            if block.get('name', '').rsplit('.', 1)[-1] not in (
+            name: object = block.get('name')
+            if not isinstance(name, str):
+                continue
+            if name.rsplit('.', 1)[-1] not in (
                 'exec_command', 'shell_command', 'shell',
             ):
                 continue

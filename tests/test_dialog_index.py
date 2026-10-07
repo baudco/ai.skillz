@@ -556,6 +556,73 @@ class DialogIndexTests(unittest.TestCase):
             {'old-cx', 'old-oc'},
         )
 
+    def test_non_string_tool_names_do_not_abort_preview(
+        self,
+    ) -> None:
+        '''
+        Null or scalar tool names used to crash history indexing.
+
+        Write malformed function calls before a valid namespaced
+        Codex tool call in the selected dialog's real JSONL log.
+        Invalid names must contribute no argument-path evidence;
+        `preview` must still recover the later valid call's WKT.
+        Exercise both top-level calls and nested response payloads,
+        checking that neither the log nor relations are modified.
+
+        '''
+        self.add('codex', self.cx_id, self.repo)
+        log: Path = self.cx / 'sessions' / (
+            'rollout-' + self.cx_id + '.jsonl'
+        )
+        log.parent.mkdir()
+        nested: bool
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                events: list[dict] = []
+                name: object
+                for name in (None, 42, False, [], {}):
+                    call: dict = {
+                        'type': 'function_call',
+                        'name': name,
+                        'arguments': json.dumps({
+                            'workdir': str(self.second),
+                        }),
+                    }
+                    events.append(
+                        {
+                            'type': 'response_item',
+                            'payload': call,
+                        }
+                        if nested else call
+                    )
+
+                events.append({
+                    'type': 'function_call',
+                    'name': 'functions.exec_command',
+                    'arguments': json.dumps({
+                        'workdir': str(self.first),
+                    }),
+                })
+                event: dict
+                log.write_text('\n'.join(
+                    json.dumps(event) for event in events
+                ))
+                before: bytes = log.read_bytes()
+                plan: dict = preview(str(self.repo))
+                self.assertEqual(plan['warnings'], [])
+                self.assertEqual(len(plan['entries']), 1)
+                self.assertEqual(
+                    plan['entries'][0]['status'], 'ready',
+                )
+                self.assertEqual(
+                    plan['entries'][0]['candidates'][0]['worktree'],
+                    str(self.first),
+                )
+                self.assertEqual(log.read_bytes(), before)
+                self.assertFalse((
+                    self.repo / '.ai/state/dialogs/relations.json'
+                ).exists())
+
     def test_cross_harness_structured_history(self) -> None:
         '''
         Saved main cwd hides later worktree use across harnesses.
