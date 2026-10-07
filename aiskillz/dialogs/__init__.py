@@ -3,7 +3,7 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Dialog APIs for workspace callers and the ai.dlogs CLI.
+Dialog APIs for library callers and the ai.dlogs CLI.
 
 Use `list_dialogs()`, `get_dialog()` and `name2id()` for harness
 metadata. The WKT functions expose the same relation workflow used

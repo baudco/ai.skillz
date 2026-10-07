@@ -163,7 +163,7 @@ def list_wkt_relations(
     '''
     Read saved dialog/WKT relations from any repository checkout.
 
-    Workspace callers can join these records to `list_dialogs()` by
+    Library callers can join these records to `list_dialogs()` by
     `(harness, id)` without invoking the CLI. `path` selects a repo
     through any existing checkout; optional filters narrow its
     records. Harness aliases such as `cx` are accepted. This reads
@@ -173,9 +173,10 @@ def list_wkt_relations(
     Return copies of stored records with a `git_active` boolean
     indicating whether the registered WKT and private Git directory
     match. Removed targets remain available for historical tooling;
-    the table displays only Git-active WKTs. Missing files return an
-    empty list; invalid repos or metadata raise instead of claiming
-    there are no relations. No harness logs are scanned or written.
+    inactive relations retain their recorded paths. Missing files
+    return an empty list; invalid repos or metadata raise instead
+    of claiming there are no relations. No harness logs are scanned
+    or written.
 
     '''
     selected: str|None = (

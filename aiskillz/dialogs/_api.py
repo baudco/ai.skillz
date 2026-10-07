@@ -5,7 +5,7 @@
 '''
 Public dialog discovery and worktree-relation orchestration.
 
-Workspace modules and the CLI call these functions. _readers supplies
+Applications and the CLI call these functions. _readers supplies
 harness metadata; _inspect extracts recorded directories from logs.
 The wkt layer matches those directories to Git worktrees and persists
 relations. Shell parsing belongs to `cli.main()`; terminal table
@@ -78,7 +78,8 @@ def list_dialogs(
     cwd: str|None = None
     if (
         not all
-        and path is not None
+        and
+        path is not None
     ):
         cwd = str(Path(path).expanduser().resolve())
     data: Path = Path(
@@ -118,8 +119,10 @@ def list_dialogs(
         home: Path = homes[name].expanduser().resolve()
         if (
             name == 'codex'
-            and not (home / 'state_5.sqlite').is_file()
-            and discover_all
+            and
+            not (home / 'state_5.sqlite').is_file()
+            and
+            discover_all
         ):
             continue
         records.extend(readers[name](
@@ -130,6 +133,9 @@ def list_dialogs(
     unique: dict[tuple[str, str], dict] = {}
     record: dict
     for record in sorted(records, key=lambda r: r['updated_at']):
+        record.setdefault('provider', None)
+        record.setdefault('model', None)
+        record.setdefault('archived', None)
         unique[record['harness'], record['id']] = record
     return sorted(
         unique.values(),
@@ -140,11 +146,15 @@ def list_dialogs(
 def get_dialog(
     dialog_id: str,
     harness: str|None = None,
+    *,
+    include_archived: bool = False,
+    all_sources: bool = False,
+    environ: Mapping[str, str]|None = None,
 ) -> dict|None:
     '''
     Resolve an opaque dialog ID to its harness metadata record.
 
-    A launcher or workspace module that retained only an ID can call
+    An application that retained only an ID can call
     this to recover `harness`, `name`, saved `cwd`, `source` and
     `updated_at`. Prefer `list_dialogs()` when selecting many dialogs
     at once; this helper currently enumerates the selected readers
@@ -154,7 +164,9 @@ def get_dialog(
     `harness=None` searches all supported harnesses across
     directories; a canonical name or alias narrows that search.
     Default source and archive exclusions from `list_dialogs()` still
-    apply. This returns metadata only, with no transcript, WKT
+    apply unless explicitly widened with matching keyword options.
+    `environ` selects the caller's harness stores without global
+    mutation. This returns metadata only, with no transcript, WKT
     enrichment or harness launch.
 
     Return `None` when no eligible record matches. Raise `ValueError`
@@ -165,12 +177,19 @@ def get_dialog(
     '''
     if (
         not isinstance(dialog_id, str)
-        or not dialog_id
+        or
+        not dialog_id
     ):
         raise ValueError('dialog_id must be a nonempty string')
     row: dict
     matches: list[dict] = [
-        row for row in list_dialogs(path=None, harness=harness)
+        row for row in list_dialogs(
+            path=None,
+            harness=harness,
+            include_archived=include_archived,
+            all_sources=all_sources,
+            environ=environ,
+        )
         if row['id'] == dialog_id
     ]
     if len(matches) > 1:
@@ -212,7 +231,8 @@ def name2id(
             name = f'{name} [{backend}:{did}]'
             while (
                 name in reserved
-                or name in result
+                or
+                name in result
             ):
                 name += '#'
 

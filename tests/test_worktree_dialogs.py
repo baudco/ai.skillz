@@ -13,7 +13,8 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
 
 from aiskillz.wkt._lookup import WktLookup
 
@@ -67,21 +68,26 @@ class DialogWorktreeTests(unittest.TestCase):
         }))
         return root
 
-    def test_removed_relation_suppresses_saved_checkout(
+    def test_removed_relation_warns_and_resumes_saved_checkout(
         self,
     ) -> None:
         '''
-        A removed recorded WKT used to revive an older saved cwd.
+        A removed recorded WKT used to block a valid dialog resume.
 
         Record a new WKT for a dialog saved in another live linked
         checkout, then remove the new WKT's Git file. Lookup must
         retain the recorded identity but return no active path.
-        Resume must refuse automatic launch, while --cwd permits
-        an explicit choice. Other dialogs retain ordinary fallback.
+        Resume must name the unavailable WKT and continue using the
+        existing saved cwd instead of requiring an override.
+        Listing must distinguish this relation from an unknown WKT.
+        Remove the Git backlink to reproduce failed verification;
+        assert both CLI outputs and that --cwd still overrides it.
+        Other dialogs retain ordinary fallback.
 
         '''
         from aiskillz import record_wkt_relation
         from aiskillz._resume import resume_target
+        from aiskillz.cli import format_dialog_table, resume_main
 
         old: Path = self.linked('old', {})
         new: Path = self.linked('new', {})
@@ -97,6 +103,10 @@ class DialogWorktreeTests(unittest.TestCase):
             lookup.has_relation(str(old), 'claude', 'dialog'),
         )
         self.assertEqual(
+            lookup.recorded_roots(str(old), 'claude', 'dialog'),
+            {str(new)},
+        )
+        self.assertEqual(
             lookup.roots(str(old), 'claude', 'unrecorded'),
             {str(old)},
         )
@@ -106,12 +116,37 @@ class DialogWorktreeTests(unittest.TestCase):
             'harness': 'claude',
             'cwd': str(old),
         }
+        self.assertIn(
+            'new (unavailable)', format_dialog_table([dialog]),
+        )
         with patch(
             'aiskillz._resume.dialogs.list_dialogs',
             return_value=[dialog],
         ):
-            with self.assertRaisesRegex(ValueError, 'use --cwd'):
-                resume_target('Example')
+            target: dict = resume_target('Example')
+            self.assertEqual(target['cwd'], str(old))
+            self.assertIn(str(new), target['warnings'][0])
+            stderr: Mock
+            with (
+                patch(
+                    'aiskillz.cli.resume_target',
+                    return_value=target,
+                ),
+                patch('aiskillz.cli.sys.stderr') as stderr,
+            ):
+                with patch(
+                    'aiskillz.cli.shutil.which',
+                    return_value='/bin/claude',
+                ):
+                    with patch('aiskillz.cli.subprocess.run') as run:
+                        run.return_value.returncode = 0
+                        self.assertEqual(resume_main(['Example']), 0)
+                        self.assertEqual(
+                            run.call_args.kwargs['cwd'], str(old),
+                        )
+                self.assertIn(
+                    str(new), str(stderr.write.call_args_list),
+                )
             self.assertEqual(
                 resume_target('Example', cwd=str(old))['cwd'],
                 str(old),

@@ -48,6 +48,34 @@ class WktLookup:
         self.relations: dict[
             str, dict[tuple[str, str], set[str]]
         ] = {}
+        self.recorded_relations: dict[
+            str, dict[tuple[str, str], set[str]]
+        ] = {}
+
+    def recorded_roots(
+        self,
+        cwd: str,
+        harness: str,
+        dialog_id: str,
+    ) -> set[str]:
+        '''
+        Return explicit relation paths, including unavailable WKTs.
+
+        `roots()` still returns only verified live worktrees.
+        CLI display and resume errors use `recorded_roots()` to
+        explain a removed or unregistered WKT without treating it
+        as a valid launch directory. The returned set is a copy of
+        `WktLookup.recorded_relations`, populated by `_read()`.
+
+        '''
+        self.roots(cwd, harness, dialog_id)
+        paths: tuple[str, ...] = self.locations.get(cwd, ())
+        if len(paths) != 3:
+            return set()
+        records: dict[tuple[str, str], set[str]] = (
+            self.recorded_relations.get(paths[2], {})
+        )
+        return set(records.get((harness, dialog_id), set()))
 
     def roots(
         self,
@@ -75,7 +103,8 @@ class WktLookup:
         common: str = paths[2]
         if (
             harness
-            and dialog_id
+            and
+            dialog_id
         ):
             if common not in self.relations:
                 self.relations[common] = self._read(cwd, common)
@@ -97,8 +126,8 @@ class WktLookup:
         Whether explicit relation metadata identifies this dialog.
 
         `resume_target()` uses this after `roots()` returns no WKTs
-        to require an explicit launch directory instead of reviving
-        an older saved cwd. `roots()` populates WktLookup.relations;
+        to warn about a recorded but unavailable worktree before
+        using saved cwd. `roots()` populates WktLookup.relations;
         an empty set there preserves a removed WKT's recorded ID.
 
         '''
@@ -140,6 +169,7 @@ class WktLookup:
         digest: str
         store, digest = read(resolved)
         result: dict[tuple[str, str], set[str]] = {}
+        self.recorded_relations[common] = {}
         confirmed: set[tuple[str, str]] = set()
         record: dict
         for record in store['records']:
@@ -147,6 +177,7 @@ class WktLookup:
             confirmed.add(key)
             result[key] = set()
             root: str = record['worktree']
+            self.recorded_relations[common][key] = {root}
             if inventory.get(root) == record['git_dir']:
                 result[key] = {root}
 

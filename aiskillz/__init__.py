@@ -22,6 +22,10 @@ from .dialogs import (
     save_wkt_preview as save_wkt_preview,
     apply_wkt_preview as apply_wkt_preview,
 )
+from ._resume import (
+    resume_target as resume_target,
+    codex_supports_no_daemon as codex_supports_no_daemon,
+)
 
 # Preserve imports from the first local WKT indexing prototype.
 list_worktree_associations = list_wkt_relations

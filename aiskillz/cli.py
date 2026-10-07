@@ -28,7 +28,7 @@ if __package__ in (None, ''):
     __package__ = 'aiskillz'
 
 from . import dialogs
-from ._resume import resume_target
+from ._resume import resume_target, codex_supports_no_daemon
 from .wkt import WktLookup
 from .wkt._relations import canonical_harness
 
@@ -141,6 +141,17 @@ def format_dialog_table(
             '(multiple)' if len(roots) > 1
             else Path(next(iter(roots))).name if roots else ''
         )
+        if not roots:
+            recorded: set[str] = worktrees.recorded_roots(
+                cwd,
+                display.get('harness', ''),
+                display.get('id', ''),
+            )
+            root: str
+            display['wkt'] = ', '.join(
+                Path(root).name + ' (unavailable)'
+                for root in sorted(recorded)
+            )
         if show_timestamps:
             updated: object = display.get('updated_at')
             display['updated'] = ''
@@ -207,7 +218,8 @@ def format_dialog_table(
         columns.append(('updated', 'UPDATED (UTC)'))
     if (
         show_cwd
-        and not uniform_cwd
+        and
+        not uniform_cwd
     ):
         columns.append(('cwd', 'CWD'))
     key: str
@@ -426,6 +438,15 @@ def resume_main(argv: list[str]|None = None) -> int:
             dialog_id=args.id,
             cwd=args.cwd,
         )
+        if (
+            target['harness'] == 'codex'
+            and
+            codex_supports_no_daemon()
+        ):
+            target['argv'].insert(2, '--no-daemon')
+        warning: str
+        for warning in target.get('warnings', []):
+            print('ai.resume: Warning: ' + warning, file=sys.stderr)
         if args.dry_run:
             print(json.dumps(target, indent=2))
             return 0
@@ -506,8 +527,10 @@ def index_main(argv: list[str]) -> int:
         elif args.record:
             if (
                 not args.worktree
-                or args.sha256
-                or args.choose
+                or
+                args.sha256
+                or
+                args.choose
             ):
                 parser.error('--record requires only --worktree')
             harness: str
@@ -555,8 +578,10 @@ def index_main(argv: list[str]) -> int:
         else:
             if (
                 args.sha256
-                or args.choose
-                or args.worktree
+                or
+                args.choose
+                or
+                args.worktree
             ):
                 parser.error('Apply/record options need their mode')
             data: dict = dialogs.preview_wkt_relations(

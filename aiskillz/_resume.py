@@ -8,11 +8,16 @@ Resolve a dialog name or ID to a harness command and directory.
 `cli.resume_main()` selects a dialog through `dialogs.list_dialogs()`
 and calls `resume_target()` before launching a child process. The
 worktree lookup is shared with `ai.dlogs`, so an active recorded WKT
-can replace a harness's older saved cwd. This module does not spawn.
+can replace a harness's older saved cwd. Resolution does not start
+a harness; the explicit capability probe is a separate operation.
+WKT indexing is optional metadata, never a prerequisite for resume.
+Lookup failures warn and use saved cwd; only an unusable launch
+directory requires the caller to provide --cwd.
 
 '''
 
 from pathlib import Path
+from collections.abc import Mapping
 import re
 import subprocess
 
@@ -20,11 +25,11 @@ from . import dialogs
 from .wkt import WktLookup
 
 
-def _codex_supports_no_daemon() -> bool:
+def codex_supports_no_daemon() -> bool:
     '''
     Check whether this Codex CLI accepts --no-daemon on resume.
 
-    `resume_target()` probes the installed command rather than a
+    The CLI probes the installed command rather than a
     version string because package layouts can differ. A missing,
     failed, or unresponsive CLI keeps the older resume argv; the
     eventual launch reports any executable failure to the caller.
@@ -64,6 +69,9 @@ def resume_target(
     all_repos: bool = False,
     dialog_id: str|None = None,
     cwd: str|None = None,
+    *,
+    codex_no_daemon: bool = False,
+    environ: Mapping[str, str]|None = None,
 ) -> dict:
     '''
     Return one dialog's harness argv and launch directory.
@@ -75,17 +83,26 @@ def resume_target(
     duplicate IDs or names by recency; `dialog_id`, `harness`, and
     `repo` let the caller narrow them. Prefer a registered WKT
     relation from `WktLookup.roots()`. An explicit cwd overrides it.
-    No process starts until `cli.resume_main()` consumes the result.
+    Unavailable, ambiguous or unreadable WKT metadata falls back to
+    saved cwd with diagnostic strings in the returned `warnings`.
+    No harness starts until a caller executes the returned argv.
+    `codex_no_daemon` supplies a previously observed capability;
+    resolution never probes a harness. Task-driven callers validate
+    the intended repository and pass explicit cwd to prevent WKT
+    metadata from choosing another directory.
+    `environ` selects the same harness stores as discovery APIs.
 
     '''
     if (
         not isinstance(name, str)
-        or not name
+        or
+        not name
     ):
         raise ValueError('NAME_OR_ID must be a nonempty string')
     records: list[dict] = dialogs.list_dialogs(
         path=None if all_repos else repo,
         harness=harness,
+        environ=environ,
     )
     record: dict
     matches: list[dict] = [
@@ -99,8 +116,10 @@ def resume_target(
         ]
     if (
         not matches
-        and len(name) == 36
-        and name.endswith('…')
+        and
+        len(name) == 36
+        and
+        name.endswith('…')
     ):
         matches = [
             record for record in records
@@ -136,9 +155,12 @@ def resume_target(
     char: str
     if (
         not isinstance(did, str)
-        or not did
-        or did.startswith('-')
-        or any(not char.isprintable() for char in did)
+        or
+        not did
+        or
+        did.startswith('-')
+        or
+        any(not char.isprintable() for char in did)
     ):
         raise ValueError('Dialog ID is invalid for a harness CLI')
 
@@ -164,7 +186,8 @@ def resume_target(
         raise ValueError('Unsupported harness: ' + provider)
     if (
         provider == 'codex'
-        and _codex_supports_no_daemon()
+        and
+        codex_no_daemon
     ):
         commands['codex'] = [
             'codex',
@@ -176,42 +199,69 @@ def resume_target(
     saved: str = selected.get('cwd', '')
     if (
         cwd is None
-        and not saved
+        and
+        not saved
     ):
         raise ValueError(
             'Dialog has no saved cwd; use --cwd'
         )
 
+    notices: list[str] = []
     if cwd is not None:
         directory: Path = Path(cwd).expanduser().resolve()
     else:
+        directory = Path(saved).expanduser().resolve()
         lookup: WktLookup = WktLookup()
-        roots: set[str] = lookup.roots(
-            saved, provider, did,
-        )
-        if (
-            not roots
-            and lookup.has_relation(saved, provider, did)
-        ):
-            raise ValueError(
-                'Recorded WKT is no longer available; use --cwd'
-            )
-        if len(roots) > 1:
-            raise ValueError(
-                'Several WKTs match this dialog; use --cwd'
-            )
-        directory = Path(
-            next(iter(roots)) if roots else saved
-        ).expanduser().resolve()
+        try:
+            roots: set[str] = lookup.roots(saved, provider, did)
+            if len(roots) == 1:
+                recorded_cwd: Path = Path(
+                    next(iter(roots)),
+                ).resolve()
+                if recorded_cwd.is_dir():
+                    directory = recorded_cwd
+                else:
+                    notices.append(
+                        'Recorded WKT directory is missing: '
+                        + repr(str(recorded_cwd))
+                    )
+            elif len(roots) > 1:
+                notices.append(
+                    'Several WKTs match this dialog; using saved cwd'
+                )
+            elif lookup.has_relation(saved, provider, did):
+                recorded: set[str] = lookup.recorded_roots(
+                    saved, provider, did,
+                )
+                path: str
+                paths: str = ', '.join(
+                    repr(path) for path in sorted(recorded)
+                )
+                notices.append(
+                    f'Recorded WKT is no longer available: {paths}'
+                )
+        except (
+            OSError,
+            ValueError,
+        ) as error:
+            notices.append('Cannot read WKT metadata: ' + str(error))
+        if notices:
+            launch_cwd: str = str(directory)
+            notices.append(f'Resuming in saved cwd: {launch_cwd!r}')
 
     if not directory.is_dir():
         raise ValueError(
             'Launch directory is missing: ' + str(directory)
+            + '\nUse --cwd to choose an existing directory.'
         )
-    return {
+    target: dict = {
         'name': selected['name'],
         'id': did,
         'harness': provider,
         'cwd': str(directory),
+        'saved_cwd': saved,
         'argv': commands[provider],
     }
+    if notices:
+        target['warnings'] = notices
+    return target

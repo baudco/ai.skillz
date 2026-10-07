@@ -109,6 +109,40 @@ class DlogsTests(unittest.TestCase):
             )
             connection.commit()
 
+    def test_public_lookup_preserves_archive_and_unknown_metadata(
+        self,
+    ) -> None:
+        '''
+        Task references can outlive ordinary active-only discovery.
+
+        Use the seeded archived Codex row and a caller-selected
+        environment. Exact lookup must omit it by default, then
+        return it with archived=True on explicit inspection. Provider
+        and model must remain unknown rather than inferred from the
+        harness, and an active row must report archived=False.
+
+        '''
+        from aiskillz import get_dialog
+
+        environment: dict[str, str] = {
+            'CODEX_HOME': str(self.home),
+        }
+        self.assertIsNone(get_dialog(
+            'archived', harness='codex', environ=environment,
+        ))
+        archived: dict = get_dialog(
+            'archived', harness='codex', include_archived=True,
+            environ=environment,
+        )
+        self.assertTrue(archived['archived'])
+        self.assertIsNone(archived['provider'])
+        self.assertIsNone(archived['model'])
+        active: dict = get_dialog(
+            'one', harness='codex', environ=environment,
+        )
+        self.assertFalse(active['archived'])
+        self.assertEqual(active['name'], 'Renamed')
+
     def test_malformed_relation_reports_cli_error(self) -> None:
         '''
         WKT formatting errors used to bypass main()'s error handler.

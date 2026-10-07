@@ -62,9 +62,9 @@ For immediate use in that shell, run
 `source /path/to/ai.skillz/aliases.xsh`; this registers the alias
 without requiring the installed package to be discoverable.
 
-Install into the interpreter running a workspace module as well. If
-that is the same virtualenv as Xonsh, one install covers both. No
-package symlink into the workspace configuration directory is needed.
+Install into the interpreter running your application as well. If
+that is the same virtualenv as Xonsh, one install covers both. Import
+the installed package normally.
 Use a permanent checkout for editable installs.
 
 Add `xontrib load aiskillz` to your Xonsh setup. Installation in one
@@ -118,77 +118,106 @@ must also replace its dependency declaration. The `ai.dlogs` and
 
 ## Python API
 
-```python
-from aiskillz import name2id, list_dialogs
+### List dialogs
 
-dialogs: dict[str, str] = name2id(
-    path='~/repos/example', harness='codex',
+Read saved dialog metadata for a directory:
+
+```python
+from pprint import pprint
+
+from aiskillz import list_dialogs
+
+records: list[dict] = list_dialogs(
+    path='/repos/demo',
+    harness='codex',
 )
-# Every supported harness at this directory:
-dialogs = name2id(path='~/repos/example', harness=None)
-# Explicit subset; oc aliases opencode:
-dialogs = name2id(path='~/repos/example', harness=['oc', 'claude'])
-# Override both directory and harness filtering:
-dialogs = name2id(all=True)
+row: dict
+for row in records:
+    pprint(row, sort_dicts=False)
 ```
 
-Harness aliases work in both the CLI and Python API: `cx` for
-`codex`, `cld` for `claude`, and `oc` for `opencode`.
+Illustrative output for one saved dialog:
 
-`path` defaults to the current directory; `~` and relative paths are
-expanded. Matching uses the exact recorded cwd, with no recursive
-search or Git worktree grouping. A nonexistent historical directory
-can still be queried. `path=None` disables directory filtering while
-retaining the selected harness. `harness` defaults to `None`: every
-supported harness at the selected directory. Bare `ai.dlogs` and
-`name2id()` both list all harnesses scoped to the current directory.
-
-`all=True` selects every harness, cwd, and supported source kind,
-regardless of other filter arguments. Archived Codex/OpenCode sessions
-remain excluded unless `list_dialogs(include_archived=True)` is
-requested explicitly. Manual `index --record` uses that option.
-Normal listings exclude Codex non-interactive sources
-and OpenCode child sessions; `all_sources=True` includes them. Claude
-subagent logs are excluded because their IDs are not independent
-interactive resume targets.
-
-`list_dialogs(environ=...)` accepts a mapping of environment settings
-for locating harness stores. It defaults to the process environment.
-Xonsh completion passes the shell's environment so shell-only
-settings work without changing `os.environ` during Tab completion.
-
-Duplicate names gain a `[harness:id]` suffix. No dialog is overwritten
-because another has the same name. Exact names are retained in
-`list_dialogs(...)`, which accepts the same filters and returns
-records with `harness`, `id`, `name`, `cwd`, `source`, and `updated_at`
-(Unix seconds). Use these records when a launcher needs to identify
-which harness owns an ID. `name2id()` deliberately returns only
-names and IDs; do not parse duplicate-name suffixes for metadata.
-Use `list_dialogs()` when launching the corresponding harness:
-
-```python
-dialogs = list_dialogs(path='~/repos/example')
-for dialog in dialogs:
-    print(dialog['name'], dialog['id'], dialog['harness'])
+```text
+{
+    'harness': 'codex',
+    'id': 'opaque-id',
+    'name': 'Original saved title',
+    'cwd': '/repos/demo',
+    'source': 'cli',
+    'updated_at': 1234567890,
+    'provider': None,
+    'model': None,
+    'archived': False,
+}
 ```
 
-For an exact ID lookup across directories:
+- `harness`: canonical harness name; paired with `id` for identity.
+- `id`: opaque, harness-owned dialog ID.
+- `name`: exact saved name or untitled fallback; tables may truncate.
+- `cwd`: saved directory; may differ from the dialog's recorded WKT.
+- `source`: the harness reader's source label.
+- `updated_at`: Unix timestamp in seconds.
+- `provider`: unknown (`None`); not inferred from the harness.
+- `model`: unknown (`None`); not inferred from the harness.
+- `archived`: boolean for Codex/OpenCode; `None` for Claude.
+
+### Find a dialog by ID
+
+Use the pair `(harness, id)` to identify a dialog:
 
 ```python
 from aiskillz import get_dialog
 
-dialog = get_dialog(dialog_id)
-# Optional harness filter; aliases work here too:
-dialog = get_dialog(dialog_id, harness='cx')
+dialog_id: str = 'opaque-id'
+dialog: dict|None = get_dialog(dialog_id, harness='cx')
 ```
 
-`get_dialog()` returns the same metadata record or `None` when no
-eligible dialog matches. If several harnesses share the ID, it raises
-`ValueError` and requires a harness filter. It uses the existing
-readers and source/archive filters; it does not return a transcript.
-Store errors propagate rather than masquerading as a missing ID.
+The result is the record shown above, or `None` if no eligible dialog
+matches. IDs are opaque strings; OpenCode IDs need not be UUIDs.
 
-OpenCode IDs are not UUIDs.
+### Map names to IDs
+
+For a simple name-to-ID mapping:
+
+```python
+from aiskillz import name2id
+
+names: dict[str, str] = name2id(
+    path='/repos/demo',
+    harness='codex',
+)
+print(names)
+```
+
+Illustrative output:
+
+```text
+{'Original saved title': 'opaque-id'}
+```
+
+Duplicate names gain a `[harness:id]` suffix rather than overwriting
+one another. Use `list_dialogs()` records when you also need the
+harness; do not parse these display labels for identity.
+
+### Filter options
+
+- `path`: exact saved cwd; defaults to the current directory.
+  `None` searches all directories. Relative paths and `~` expand.
+- `harness`: one harness or a list; `None` selects every harness.
+  Aliases: `cx` → Codex, `oc` → OpenCode, `cld` → Claude.
+- `all=True`: overrides directory/harness filters and includes
+  secondary source kinds.
+- `include_archived=True`: includes archived records where supported.
+- `all_sources=True`: includes secondary source kinds.
+- `environ`: caller-provided store-location settings; otherwise use
+  process settings. Xonsh completion supplies its shell environment.
+
+`get_dialog()` also accepts `include_archived`, `all_sources` and
+`environ`. See [harness notes](#harness-notes) for archive/source
+limitations and missing-store behavior.
+
+## Table output
 
 The CLI orders columns as harness, name, WKT, then CWD. Pass
 `--did` to add the full dialog ID after WKT when copying an ID
@@ -205,7 +234,7 @@ directory; `HARNESS` uses the canonical name even when filtered
 with `cx`, `oc`, or `cld`. JSON and Python records keep all fields.
 Codex/OpenCode timestamps come from their stores; Claude uses log
 modification time, which is a proxy for activity.
-`WKT` shows a linked worktree associated with the dialog. For example,
+`WKT` shows a linked worktree used by the dialog. For example,
 a harness may remember that a dialog started in `/repos/demo`, while
 the agent later used `/open-wkt feature` to work in
 `/repos/demo/wkts/feature`. The table can show `feature` even though
@@ -222,7 +251,9 @@ The column checks these sources in order:
 
 These are records of worktree use (for example, from a prior
 `/open-wkt` invocation by the agent). Only worktrees that still exist
-and remain registered with Git appear in the table. A removed/deleted
+and remain registered with Git appear as active WKTs. Recorded paths
+that no longer pass those checks show `NAME (unavailable)` instead.
+A removed/deleted
 saved `cwd` can prevent finding the repository at all; that row's
 worktree column stays blank. The main checkout also has a blank WKT
 column when no linked WKT relation is known.
@@ -268,34 +299,75 @@ repository raises an error.
 The earlier `list_worktree_associations()` import remains an alias
 while callers move to `list_wkt_relations()`.
 
-To attach a relation to a dialog record, match both `harness` and
-`id`: different harnesses may use the same dialog ID string.
-The `**dialog` syntax merges the original dialog dictionary into
-each new dictionary:
+Attach each dialog's recorded WKT using `(harness, id)`:
 
 ```python
-relations: list[dict] = list_wkt_relations('~/repos/demo')
+from pprint import pprint
+
+from aiskillz import (
+    list_dialogs,
+    list_wkt_relations,
+)
+
+repo: str = '/repos/demo'
+relations: list[dict] = list_wkt_relations(repo)
 relation: dict
 by_dialog: dict[tuple[str, str], dict] = {
     (relation['harness'], relation['id']): relation
     for relation in relations
 }
+
 dialog: dict
-dialogs: list[dict] = [
+joined: list[dict] = [
     {
-        # Python's ** unpacking merges the dialog dictionary here.
-        **dialog,
+        **dialog,  # retain the original metadata fields
         'wkt_relation': by_dialog.get(
             (dialog['harness'], dialog['id']),
         ),
     }
-    for dialog in list_dialogs('~/repos/demo')
+    for dialog in list_dialogs(repo)
+]
+pprint(joined, sort_dicts=False)
+```
+
+Illustrative output, with other metadata fields omitted:
+
+```text
+[
+    {
+        'harness': 'opencode',
+        'id': 'ses_feature',
+        'name': 'Feature work',
+        'wkt_relation': {
+            'worktree': '/repos/demo/wkts/feature',
+            'git_active': True,
+        },
+    },
+    {
+        'harness': 'codex',
+        'id': 'older-dialog',
+        'name': 'Earlier work',
+        'wkt_relation': {
+            'worktree': '/repos/demo/wkts/removed',
+            'git_active': False,
+        },
+    },
+    {
+        'harness': 'claude',
+        'id': 'unlinked-dialog',
+        'name': 'Planning',
+        'wkt_relation': None,
+    },
 ]
 ```
 
-Each `wkt_relation` is the matching dictionary or `None`.
-`list_dialogs()` itself reads harness metadata only. The separate
-relation call makes the extra Git and file reads explicit.
+- `wkt_relation`: the saved relation, or `None` if none is recorded.
+- `git_active=True`: Git registers the WKT and its directory exists.
+- `git_active=False`: unavailable WKT; its recorded path stays.
+- `**dialog`: dictionary unpacking preserves the dialog fields.
+
+Only `list_wkt_relations()` reads the relation file and checks Git;
+`list_dialogs()` reads harness metadata.
 
 Displayed names are capped at 36 characters, with an ellipsis for
 truncation. Python and JSON retain full names.
@@ -307,8 +379,8 @@ a nonempty `NO_COLOR` environment variable disable coloring.
 `--json` emits these records;
 `-b` (backend) selects `--harness`; `-h` and `--help` show help.
 `-a` / `--all-repos` disables cwd filtering for the selected harness,
-while `--all` corresponds to Python's `all=True`. Table output neutralizes
-terminal control characters; JSON and Python retain the original names.
+while `--all` corresponds to Python's `all=True`. Tables neutralize
+terminal control characters; JSON/Python keep the original names.
 
 ## Resume a dialog by name or ID
 
@@ -332,7 +404,7 @@ provides an `ai.resume` executable and Xontrib alias; sourcing
 The default search uses the current directory, just like `ai.dlogs`.
 Use `--repo PATH` for another saved cwd or `-a` / `--all-repos` to
 search all saved directories for either names or IDs. Duplicates
-fail with a list of harnesses, IDs, and saved directories; narrow with
+report matching harnesses, IDs and saved directories; narrow with
 `-b` / `--harness`, `--repo`, or `--id`:
 
 ```xsh
@@ -340,49 +412,128 @@ ai.resume 'Quick availability check' -b oc
 ai.resume 'shared name' -a --id ses_example
 ```
 
+**WKT indexing is optional metadata, never a prerequisite for
+resuming a dialog.** Missing, stale, ambiguous or unreadable WKT
+relations must not prevent launch in an existing saved cwd or an
+explicit `--cwd`. Warnings explain fallback; they do not require
+you to repair the index before continuing your dialog.
+
 When one active WKT is recorded for that dialog, the harness starts
 there. Otherwise it starts in the dialog's saved cwd. If several
-WKTs match, or the selected directory no longer exists, use
-`--cwd PATH` to choose a launch directory explicitly. The wrapper
+WKTs match, resume warns and uses the saved cwd. Use `--cwd PATH`
+to choose a launch directory explicitly. The wrapper
 passes an argv list directly to `codex resume ID`,
 `opencode --session ID`, or `claude --resume ID`; it does not
 interpret the dialog name as a shell command.
-For Codex resumes, it checks `codex resume --help` and adds
-`--no-daemon` when that CLI supports the option. Older or unavailable
-Codex installations retain `codex resume ID`; `--dry-run` shows the
-exact argv selected for the current installation. Other harnesses
-are unaffected.
 
 When a recorded WKT is removed or unregistered, its relation remains
-in `relations.json`. The WKT column stays empty instead of showing
-an older saved checkout. `ai.resume` requires `--cwd` in this case
-so you explicitly choose where to continue the dialog.
+in `relations.json`. The WKT column shows `NAME (unavailable)`.
+`ai.resume` warns with the full recorded path and continues in the
+saved cwd. Unreadable WKT metadata warns and uses that directory.
+A missing launch directory still requires `--cwd`; stale indexing
+alone does not block resume. Overrides change the launch, not the
+saved relation.
 
-## Storage and limits
+### Construct a resume command from Python
 
-- Codex: read-only `CODEX_HOME/state_5.sqlite`, default `~/.codex`.
-  The adapter checks required columns and supports title-only indexes.
-- OpenCode: read-only `opencode.db` and `opencode-stable.db` under
-  `$XDG_DATA_HOME/opencode`, default `~/.local/share/opencode`.
-  `OPENCODE_DATA_DIR` is an aiskillz override. Without either DB, use
-  legacy `storage/session/*/*.json` metadata. SQLite is authoritative
-  when present; old JSON copies are not merged back into it.
-- Claude: `$CLAUDE_CONFIG_DIR/projects`, default `~/.claude/projects`.
-  Fresh `sessions-index.json` entries avoid reading corresponding logs.
-  Otherwise scan top-level JSONL logs for cwd and the latest custom
-  or AI title, falling back to the last-prompt metadata, summary,
-  or a first-prompt excerpt. This can be
-  slower than SQLite for large histories. Partial JSON lines are ignored.
+`resume_target()` constructs argv without probing or starting a
+harness. Calling applications execute it separately; they choose
+the intended directory and manage process lifecycle.
 
-Implicit all-harness discovery skips a missing Codex database
-(`harness=None` or `all=True`). An explicit Codex selection reports
-the missing database as an error, including a harness list such as
-`harness=['codex', 'claude']` or `harness=['cx', 'cld']`.
-Empty or missing Claude/OpenCode stores produce no records. Invalid
-existing databases and indexes fail visibly. These are private harness
-formats; future versions may require reader updates. No new persistent
-cache, transcript export, server, SDK, or model credentials are needed.
-Keep real session inventories outside tracked repository files.
+```python
+from pprint import pprint
+
+from aiskillz import resume_target
+
+launch: dict = resume_target(
+    'opaque-id',
+    harness='codex',
+    all_repos=True,
+    cwd='/repos/demo',
+)
+pprint(launch, sort_dicts=False)
+```
+
+Illustrative output, with an existing explicit launch directory:
+
+```text
+{
+    'name': 'Original saved title',
+    'id': 'opaque-id',
+    'harness': 'codex',
+    'cwd': '/repos/demo',
+    'saved_cwd': '/repos/demo',
+    'argv': ['codex', 'resume', 'opaque-id'],
+}
+```
+
+- `saved_cwd`: directory stored by the harness for this dialog.
+- `cwd`: resolved launch directory.
+- `argv`: argument list to execute directly, not shell source text.
+- `warnings`: optional diagnostic strings when WKT lookup falls back.
+
+Directory precedence is explicit `cwd`, one verified existing WKT,
+then saved cwd. Calling applications that require a particular repo
+must validate and pass an explicit directory; interactive fallback
+is not permission to launch work elsewhere. `environ` selects the
+same harness stores as the discovery APIs.
+
+## Harness notes
+
+### Codex
+
+- Storage: read-only `CODEX_HOME/state_5.sqlite`; default `~/.codex`.
+- Missing index: skipped during all-harness discovery. Selecting
+  Codex explicitly, alone or in a harness list, reports an error.
+- Default scope: CLI/editor dialogs; non-interactive sources require
+  `all_sources=True`. Archived rows require `include_archived=True`.
+- Schema: required columns are checked; title-only indexes work.
+
+<details>
+<summary>Implementation detail: Codex resume compatibility</summary>
+
+- `ai.resume` checks `codex resume --help` and adds `--no-daemon`
+  only when supported. Older CLIs retain `codex resume ID`.
+- CLI `--dry-run` includes that check to show the actual launch argv.
+- Library callers can probe with `codex_supports_no_daemon()` and
+  pass the result as `resume_target(codex_no_daemon=...)`. The
+  resolver itself never performs this probe.
+
+</details>
+
+### OpenCode
+
+- Storage: read-only `opencode.db` or `opencode-stable.db` under
+  `$XDG_DATA_HOME/opencode`; default `~/.local/share/opencode`.
+  `OPENCODE_DATA_DIR` overrides this location.
+- Without a DB: read legacy `storage/session/*/*.json` files.
+  When SQLite exists, do not merge old JSON copies into it.
+- Missing or empty storage: no records returned.
+- Default scope: parent dialogs; child sessions require
+  `all_sources=True`. Archived rows require `include_archived=True`.
+- IDs: opaque strings, commonly `ses_...`; not necessarily UUIDs.
+
+### Claude
+
+- Storage: `$CLAUDE_CONFIG_DIR/projects`; default `~/.claude/projects`.
+- Discovery: use fresh index entries, otherwise read top-level logs.
+  Scanning large log histories can be slower than SQLite discovery.
+- Titles: custom/AI title, last-prompt metadata, summary, then a
+  first-prompt excerpt.
+- Malformed log records: skip non-object events/message values and
+  partial JSON lines.
+- Missing or empty storage: no records returned.
+- Scope: subagent logs are excluded; their IDs are not independent
+  interactive resume targets. Archive status is unknown (`None`).
+
+### Lookup errors and limitations
+
+- An ID shared across harnesses needs an explicit harness filter;
+  unqualified `get_dialog()` raises `ValueError`.
+- Invalid databases/indexes report errors rather than a missing ID.
+- A metadata record does not prove the harness can still resume it;
+  its transcript may have been removed.
+- These storage formats are harness-private and can change upstream.
 
 ## Record WKT relations with /open-wkt
 
@@ -628,8 +779,8 @@ environment variables before replacing the current queries. `dulwich`
 can remove discovery subprocesses; it cannot interpret our owner
 files or decide which dialog association takes precedence.
 
-Keep the initial API small until it has been exercised in a workspace
-module. Confirm duplicate-name labels and directory filtering with the
+Keep the initial API small until it has been exercised by a calling
+application. Confirm duplicate-name labels and directory filtering with the
 caller before stabilizing them as a public API. Add typed session
 records when launch integration needs a stronger contract.
 

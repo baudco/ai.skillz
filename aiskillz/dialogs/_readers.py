@@ -68,7 +68,8 @@ def codex_sessions(
                 "'(untitled)')"
             )
         query: str = (
-            f'SELECT id, {name} AS name, cwd, source, updated_at '
+            f'SELECT id, {name} AS name, cwd, source, updated_at, '
+            f'archived '
             f'FROM threads WHERE 1 = 1'
         )
         if not include_archived:
@@ -82,7 +83,11 @@ def codex_sessions(
         query += ' ORDER BY updated_at DESC, id DESC'
         row: sqlite3.Row
         return [
-            {'harness': 'codex', **dict(row)}
+            {
+                'harness': 'codex',
+                **dict(row),
+                'archived': bool(row['archived']),
+            }
             for row in connection.execute(query, parameters)
         ]
 
@@ -119,7 +124,8 @@ def opencode_sessions(
         ) as connection:
             connection.row_factory = sqlite3.Row
             query: str = (
-                'SELECT id, title, directory, time_updated '
+                'SELECT id, title, directory, time_updated, '
+                'time_archived '
                 'FROM session WHERE 1 = 1'
             )
             if not include_archived:
@@ -139,6 +145,7 @@ def opencode_sessions(
                     'cwd': row['directory'],
                     'source': 'opencode',
                     'updated_at': row['time_updated'] / 1000,
+                    'archived': row['time_archived'] is not None,
                 }
                 old: dict = rows.get(item['id'], {})
                 if item['updated_at'] >= old.get('updated_at', 0):
@@ -150,17 +157,20 @@ def opencode_sessions(
             entry: dict = json.loads(path.read_text())
             if (
                 cwd is not None
-                and entry.get('directory') != cwd
+                and
+                entry.get('directory') != cwd
             ):
                 continue
             if (
                 not all_sources
-                and entry.get('parentID')
+                and
+                entry.get('parentID')
             ):
                 continue
             if (
                 not include_archived
-                and entry.get('time', {}).get('archived')
+                and
+                entry.get('time', {}).get('archived')
             ):
                 continue
             rows[entry['id']] = {
@@ -171,6 +181,9 @@ def opencode_sessions(
                 'source': 'opencode',
                 'updated_at': entry.get('time', {}).get('updated', 0)
                 / 1000,
+                'archived': bool(
+                    entry.get('time', {}).get('archived'),
+                ),
             }
 
     return list(rows.values())
@@ -218,7 +231,8 @@ def claude_sessions(
             sidechain: bool = 'subagents' in path.parts
             if (
                 entry
-                and index.stat().st_mtime >= stat.st_mtime
+                and
+                index.stat().st_mtime >= stat.st_mtime
             ):
                 owner = entry.get('projectPath', '')
                 name = (
@@ -265,7 +279,8 @@ def claude_sessions(
                             summary = event.get('summary', '')
                         elif (
                             kind == 'user'
-                            and not prompt
+                            and
+                            not prompt
                         ):
                             message: object = event.get('message')
                             content: object = (
@@ -285,7 +300,8 @@ def claude_sessions(
 
             if (
                 cwd is not None
-                and owner != cwd
+                and
+                owner != cwd
             ):
                 continue
             if sidechain:
