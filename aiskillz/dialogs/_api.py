@@ -15,6 +15,7 @@ formatting belongs to `cli.format_dialog_table()`.
 
 from collections import Counter
 import os
+from collections.abc import Mapping
 from pathlib import Path
 import sqlite3
 
@@ -34,6 +35,7 @@ def list_dialogs(
     all_sources: bool = False,
     *,
     include_archived: bool = False,
+    environ: Mapping[str, str]|None = None,
 ) -> list[dict]:
     '''
     Return metadata; all=True overrides harness and cwd scope.
@@ -44,8 +46,13 @@ def list_dialogs(
     Invalid existing stores raise rather than silently losing data.
     `include_archived` adds Codex and OpenCode archived rows for
     manual WKT recording; `all_sources` only widens source filters.
+    `environ` overrides store-location settings without mutating
+    process state; Xonsh completion supplies its shell environment.
 
     '''
+    environment: Mapping[str, str] = (
+        os.environ if environ is None else environ
+    )
     discover_all: bool = all or harness is None
     names: list[str] = (
         ['codex', 'opencode', 'claude']
@@ -75,26 +82,26 @@ def list_dialogs(
     ):
         cwd = str(Path(path).expanduser().resolve())
     data: Path = Path(
-        os.environ.get(
+        environment.get(
             'XDG_DATA_HOME',
             str(Path.home() / '.local/share'),
         )
     ).expanduser()
     homes: dict[str, Path] = {
         'codex': Path(
-            os.environ.get(
+            environment.get(
                 'CODEX_HOME',
                 str(Path.home() / '.codex'),
             )
         ),
         'opencode': Path(
-            os.environ.get(
+            environment.get(
                 'OPENCODE_DATA_DIR',
                 str(data / 'opencode'),
             )
         ),
         'claude': Path(
-            os.environ.get(
+            environment.get(
                 'CLAUDE_CONFIG_DIR',
                 str(Path.home() / '.claude'),
             )

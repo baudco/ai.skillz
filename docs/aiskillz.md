@@ -30,6 +30,28 @@ ai.dlogs --all
 ai.resume 'dialog name' --dry-run
 ```
 
+`ai.resume` offers saved dialog names when you press Tab at its
+first argument. Completion uses the current directory by default;
+put `-a`, `-b cx` (backend), or `--repo PATH` before the name to
+change the search. Full names are inserted with shell-safe quoting,
+and the completion menu describes their harness, ID and saved cwd.
+Duplicate names still require a backend or ID to resume uniquely.
+Completion reads local metadata afresh without launching a harness.
+Both `xontrib load aiskillz` and sourcing `aliases.xsh` enable it.
+
+Names default to newest first using the harness's saved last-update
+time, the same recency metric as `ai.dlogs`. Set the completion order
+in your Xonsh setup or running shell:
+
+```xsh
+$AI_RESUME_COMPLETION_SORT = 'last-update-time'  # default
+$AI_RESUME_COMPLETION_SORT = 'name'  # alphabetical
+```
+
+Ties use alphabetical order. Duplicate names use their newest
+matching dialog's timestamp. Other commands keep Xonsh's normal
+completion ordering; unloading the Xontrib restores its prior sorter.
+
 Editable installs register import hooks at Python startup. A shell
 already running during installation may report the Xontrib missing.
 Activating a virtualenv can also change subprocess lookup without
@@ -129,6 +151,11 @@ Normal listings exclude Codex non-interactive sources
 and OpenCode child sessions; `all_sources=True` includes them. Claude
 subagent logs are excluded because their IDs are not independent
 interactive resume targets.
+
+`list_dialogs(environ=...)` accepts a mapping of environment settings
+for locating harness stores. It defaults to the process environment.
+Xonsh completion passes the shell's environment so shell-only
+settings work without changing `os.environ` during Tab completion.
 
 Duplicate names gain a `[harness:id]` suffix. No dialog is overwritten
 because another has the same name. Exact names are retained in

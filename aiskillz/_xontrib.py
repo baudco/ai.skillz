@@ -65,6 +65,7 @@ def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
 
     '''
     from xonsh.tools import unthreadable
+    from ._completion import register_resume_completer
 
     command: Any = unthreadable(dlogs_alias)
     if (
@@ -95,6 +96,7 @@ def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
         )
     xsh.ctx['_aiskillz_resume_command'] = resume
     xsh.aliases['ai.resume'] = resume
+    register_resume_completer(xsh)
     return {}
 
 
@@ -103,6 +105,9 @@ def _unload_xontrib_(xsh: Any, **kwargs: Any) -> None:
     Restore the prior alias only if this extension still owns it.
 
     '''
+    from ._completion import unregister_resume_completer
+
+    unregister_resume_completer(xsh)
     command: Any = xsh.ctx.pop(
         '_aiskillz_alias_command', None,
     )
