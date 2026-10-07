@@ -9,6 +9,7 @@ Backfill synthetic harness history without claiming worktree owners.
 
 from contextlib import closing, redirect_stderr, redirect_stdout
 from io import StringIO
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -731,6 +732,65 @@ class DialogIndexTests(unittest.TestCase):
             str(self.repo), path, digest,
             ['cld:cld-one=' + str(self.second)],
         ), 1)
+
+    def test_malformed_preview_has_cli_error_without_writes(
+        self,
+    ) -> None:
+        '''
+        A valid digest authenticates bytes, not preview entry shape.
+
+        The CLI used to call identity() on a JSON string and leak an
+        AttributeError traceback. Hash malformed entry/candidate
+        shapes correctly, including a good entry before a bad one.
+        Apply must produce its normal ValueError diagnostic before
+        publishing a relation or creating a persistent writer guard.
+
+        '''
+        self.add('claude', 'one', self.first)
+        plan: dict = preview(str(self.repo))
+        good: dict = plan['entries'][0]
+        malformed: object
+        for malformed in (
+            None,
+            'bad',
+            [None],
+            ['bad'],
+            [good, 'bad'],
+            [{**good, 'candidates': None}],
+            [{**good, 'candidates': ['bad']}],
+            [{**good, 'candidates': [{}]}],
+            [{**good, 'candidates': [{
+                'worktree': [],
+                'git_dir': 'not-a-path',
+            }]}],
+        ):
+            with self.subTest(entries=malformed):
+                data: dict = {**plan, 'entries': malformed}
+                raw: bytes = json.dumps(data).encode()
+                path: Path = self.base / 'malformed-preview.json'
+                path.write_bytes(raw)
+                digest: str = sha256(raw).hexdigest()
+                stderr: StringIO = StringIO()
+                with redirect_stderr(stderr):
+                    error: Any
+                    with self.assertRaises(SystemExit) as error:
+                        main([
+                            'index',
+                            str(self.repo),
+                            '--apply',
+                            str(path),
+                            '--sha256',
+                            digest,
+                        ])
+                self.assertEqual(error.exception.code, 1)
+                self.assertIn('Invalid preview', stderr.getvalue())
+                self.assertNotIn('Traceback', stderr.getvalue())
+                self.assertEqual(
+                    list_wkt_relations(str(self.repo)), [],
+                )
+                self.assertFalse((
+                    self.repo / '.ai/state/dialogs/write.guard'
+                ).exists())
 
     def test_empty_apply_checks_relation_digest(self) -> None:
         '''

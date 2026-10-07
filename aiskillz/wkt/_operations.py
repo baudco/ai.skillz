@@ -117,6 +117,12 @@ def apply_wkt_preview(
         data.get('common_dir') != str(common)
     ):
         raise ValueError('Preview schema/repository mismatch')
+    entries: object = data.get('entries')
+    if not isinstance(entries, list):
+        raise ValueError('Invalid preview entries: expected list')
+    expected: object = data.get('base_sha256')
+    if not isinstance(expected, str):
+        raise ValueError('Invalid preview base_sha256: expected str')
     selections: dict[tuple[str, str], str] = {}
     selection: str
     for selection in choose:
@@ -133,10 +139,27 @@ def apply_wkt_preview(
             raise ValueError('Duplicate dialog choice')
         selections[key] = str(Path(target).expanduser().resolve())
     additions: list[dict] = []
-    entry: dict
-    for entry in data['entries']:
+    entry: object
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError(
+                'Invalid preview entry: expected object',
+            )
         key = state.identity(entry)
-        choices: list[dict] = entry['candidates']
+        choices: object = entry.get('candidates')
+        if not isinstance(choices, list):
+            raise ValueError(
+                'Invalid preview candidates: expected list',
+            )
+        candidate: object
+        for candidate in choices:
+            if not isinstance(candidate, dict):
+                raise ValueError('Invalid preview candidate: object')
+            if (
+                not isinstance(candidate.get('worktree'), str)
+                or not isinstance(candidate.get('git_dir'), str)
+            ):
+                raise ValueError('Invalid preview candidate paths')
         target: str|None = selections.pop(key, None)
         if (
             target is None
@@ -156,12 +179,15 @@ def apply_wkt_preview(
         if inventory.get(root) != candidate['git_dir']:
             raise ValueError('Worktree changed; preview again')
         additions.append({
-            'harness': key[0], 'id': key[1], **candidate,
-            'source': 'index-preview', 'preview_sha256': digest,
+            'harness': key[0],
+            'id': key[1],
+            **candidate,
+            'source': 'index-preview',
+            'preview_sha256': digest,
         })
     if selections:
         raise ValueError('Choice refers to a dialog outside preview')
-    return state.update(common, additions, data['base_sha256'])
+    return state.update(common, additions, expected)
 
 
 def record_wkt_relation(
