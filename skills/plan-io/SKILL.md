@@ -15,6 +15,18 @@ disable-model-invocation: true
 
 # Plan file I/O conventions
 
+## Work handoffs
+
+Apply the shared
+[store-native handoff contract](../../docs/taken-handoffs.md)
+when a plan
+is handed to another worker. The task subtree owns the bounded objective,
+next action, prerequisites, concerns, execution, verification and handback.
+A technical plan can remain linked evidence under ai/plans; do not create
+another instruction document merely because a handoff was requested.
+This does not authorize store writes or acceptance-state changes.
+Report a saved handoff by its task locator/ID and status before plan links.
+
 ## Directory layout
 
 New durable plan artifacts live under `ai/plans/` in the repo root:

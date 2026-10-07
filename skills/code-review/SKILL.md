@@ -265,6 +265,20 @@ chat. Publication is a separate, human-verified action:
 - Report the resulting review URL or identifier. Publication does not
   authorize source edits, task-state changes, or JSON export.
 
+## Store-native review handoffs
+
+For an explicitly requested work handoff, apply the shared
+[store-native handoff contract](../../docs/taken-handoffs.md).
+Preserve each unresolved human
+question as an obligation mapped to evidence and proposed disposition;
+passing tests does not settle architecture or history concerns. Link
+canonical concern tasks instead of duplicating ownership. Put the bounded
+work instructions in the identified task; reports remain evidence.
+The saved-task locator is a cover note before the findings-first body.
+Review alone still grants no store-write or publication authority.
+Return authorized findings to the originating task with guarded writes,
+without changing task/checklist states or inferring acceptance.
+
 ## 9. Keep Follow-Up Work Separate
 
 - If the user asks to fix accepted findings, begin a normal implementation

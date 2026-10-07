@@ -64,6 +64,23 @@ Tuicr CLI flags. Never copy into every checkout session. Keep original
 replies unmoved and verify each destination. Staging and post-stage
 cleanup remain separate operations; the remote workflow is unchanged.
 
+## Store-native remediation handoffs
+
+When handing remaining review work to another worker, apply the shared
+[store-native handoff contract](../../docs/taken-handoffs.md).
+The task subtree owns the bounded
+assignment, unresolved human concerns, verification and expected handback.
+Map each concern to evidence, findings and proposed disposition; fixed
+published findings or passing tests do not dismiss separate architecture
+or history concerns. Link their canonical tasks rather than duplicating
+ownership. Report the saved task locator/ID and status before artifacts.
+
+The private review context, baseline snapshot and commit-plan package
+retain their operational roles. They are supporting evidence, not the
+only location of worker instructions. Honor scoped store-write authority,
+use the guarded writer for authorized handback and preserve existing
+human-owned states. Remote publication permissions remain separate.
+
 ## 0. Parse input and fetch review data
 
 Before any forge query, require explicit current-prompt network authorization.
