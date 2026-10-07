@@ -121,3 +121,15 @@ SARIF, inline forge annotations, and reviewdog input remain outside this
 contract. Human-verified top-level Markdown review publication uses a
 separate provider adapter; JSON export remains local and is never a
 publication trigger.
+
+## Local Tuicr Handoff
+
+An explicit Tuicr payload export follows
+[`tuicr-export.md`](tuicr-export.md), not the review-result JSON schema.
+State whether payloads are merely prepared or supported CLI additions
+have been verified in a native persisted session. Include the exact
+local scope, session identity or blocker, verified returned IDs, pending
+payloads, and reviewed-state comparison. Never imply that exported JSON
+is injected, that a persisted activity marker proves a live TUI, or that
+persisted comments have been seen by the user. Local draft authorization
+is separate from export preparation and forge publication.

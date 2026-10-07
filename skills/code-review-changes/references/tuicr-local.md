@@ -60,6 +60,13 @@ only `review` commands. Reuse the exact prefix for every command and do not
 extract its internal binary or replace its environment. An absent binary means
 the user must launch their normal TUI wrapper once before retrying.
 
+An empty listing from a default `tuicr` environment does not establish
+that the wrapper's isolated store is empty. Inspect the adapter's
+effective `HOME`/XDG assignments, then reuse its exact prefix for TUI
+session discovery and every CLI operation. Reading the adapter is
+inspection; invoking it may prepare config/state even in no-build mode.
+Do not run a state-preparing wrapper under inspection-only permission.
+
 The quoted absolute `--repo` value and session selector are authoritative, so
 the adapter does not depend on the harness working directory. If the candidate
 is absent or does not declare this interface, use the existing concrete-
@@ -97,6 +104,39 @@ plausible after the exact worktree, anchor, and mode checks.
 After selection, use the absolute session `path` emitted by `review list` for
 every `comments` and `add` command. Never pass a relative session JSON path;
 this keeps session resolution independent of the harness working directory.
+
+### Exact Commit-Range Identity
+
+For local commit-range reviews, additionally verify persisted
+`diff_source: "commit_range"`, null `pr_session_key`, and the complete
+ordered `commit_range` array of full OIDs. In the currently verified
+implementation, `base_commit` stores the newest selected review commit
+(the review head), not the requested lower range boundary. Compare it
+to the full requested head OID; preserve the requested base separately.
+Neither the abbreviated slug's endpoints nor lexical min/max OIDs
+establish the range.
+
+For the validated linear Git range, compare every stored OID and its
+order against `git rev-list --reverse <full-base>..<full-head>`: oldest
+to newest, with all selected commits present. The current Git CLI
+backend actually uses `--topo-order --reverse`; for a branching DAG or
+another backend, inspect the installed range-resolution and diff-base
+contract and reproduce its exact ordering and selection. Do not blindly
+generalize the linear ordering check, infer a merge base from the slug,
+or replace a missing full-range comparison with a count check. Keep
+local session identity separate from provider head/base/diff metadata.
+
+### Missing Native Session
+
+The currently verified `review` CLI has `list`, `add`, and `comments`
+only; it cannot create sessions. If no matching native session exists,
+report the blocker and ask the user to open the exact requested target
+in the same configured TUI environment. Keep an initially empty native
+session open until authorized comments are added: Tuicr auto-persists
+it, but removes an empty ephemeral session on normal exit when it has
+no comments or reviewed state. Never fabricate session JSON or alter
+reviewed markers to keep it alive. Do not silently launch the TUI or
+automate a PTY; native initialization needs explicit authorization.
 
 ### Pasted Export Handoff
 
@@ -169,6 +209,13 @@ Before editing source code:
 
 Keep the original snapshot after edits move source lines. Never relocate a
 response to the comment's apparent new line.
+
+For inline anchors, the storage key is the line number for an ordinary
+single-line comment, whose `line_range` is null. For an explicit range,
+the key is its **end** line and `line_range` stores `{start, end}`,
+including equal-bound ranges. Verify both structures; normalized CLI
+start/end fields alone cannot distinguish the two. Searching only the
+start-line bucket can miss a successful add and cause duplicate retries.
 
 ### Human Authorship Limitation
 
@@ -253,6 +300,13 @@ one appears outside a qualifying response, stop and report the collision. If
 multiple qualifying responses exist, stop and report the duplicate state.
 Never add a duplicate after a retry or interruption.
 
+A qualifying prefix identifies the parent relationship, not exact retry
+equivalence. Compare the entire persisted body with the intended body
+before reusing an existing response, as well as author and full anchor.
+If a qualifying response has different content, stop and report it;
+never silently accept it, edit it, or append another response. Read
+persisted JSON on every refresh for fields absent from CLI output.
+
 For an inline comment, invoke the resolved command with the original anchor:
 
 ```bash
@@ -278,6 +332,12 @@ Add responses sequentially. After each command, refresh comments and verify
 exactly one qualifying response, the returned response ID, full body, explicit
 author in persisted JSON, and target fields equal to the original snapshot.
 Stop on the first failed or ambiguous verification.
+
+Also compare all file/hunk reviewed values after each addition. On a
+failure, preserve successful returned IDs and report the remaining
+batch as pending; reconcile exact persisted identities before retrying.
+Never retry an add solely because verification inspected the wrong
+range storage key, and never repair drift by reverting human state.
 
 ## 6. Refresh And Summarize
 

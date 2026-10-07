@@ -217,6 +217,12 @@ JSON Schema validator is already available; otherwise report that schema
 validation was not run. Reports in this runtime directory remain untracked;
 do not stage them.
 
+For an explicitly requested local Tuicr payload export or injection, read
+`references/tuicr-export.md`. Preparing payloads does not add comments.
+Adding local drafts requires separate current-prompt authorization and a
+verified native session; report persisted additions separately from
+unverified TUI visibility. This is distinct from forge publication below.
+
 Only after a follow-up message explicitly requests preparation for
 publication, write the exact Markdown candidate beneath the same ignored
 reports directory using a `_review.md` suffix. That request authorizes the
@@ -263,8 +269,9 @@ chat. Publication is a separate, human-verified action:
 
 - If the user asks to fix accepted findings, begin a normal implementation
   workflow with separate authorization; the review itself remains unchanged.
-- Use `/code-review-changes` only for triaging and replying to existing remote
-  review comments. Do not turn this review's findings into remote comments
-  automatically.
+- Use `/code-review-changes` for triaging existing remote comments or
+  persisted local Tuicr feedback. Exporting fresh findings into Tuicr uses
+  `references/tuicr-export.md`, not the parent-ID response format. Do not
+  turn this review's findings into comments automatically.
 - Never convert review completion into acceptance, task closure, or checklist
   state changes.
