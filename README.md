@@ -22,6 +22,7 @@ generalized for cross-repo deployment.
 | Skill | Description |
 |-------|-------------|
 | `py-codestyle` | Python code style conventions |
+| `layered-design` | Design public APIs, vocabulary, and module boundaries |
 | `commit-msg` | Git commit message generation |
 | `commit-plan` | Multi-commit orchestration using `commit-msg` messages |
 | `pr-msg` | PR description generation |
