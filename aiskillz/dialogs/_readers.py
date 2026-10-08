@@ -158,11 +158,16 @@ def opencode_sessions(
             if not isinstance(entry, dict):
                 continue
             dialog_id: object = entry.get('id')
+            directory: object = entry.get('directory')
             timing: object = entry.get('time', {})
             if (
                 not isinstance(dialog_id, str)
                 or
                 not dialog_id
+                or
+                not isinstance(directory, str)
+                or
+                not directory
                 or
                 not isinstance(timing, dict)
             ):
@@ -177,7 +182,7 @@ def opencode_sessions(
             if (
                 cwd is not None
                 and
-                entry.get('directory') != cwd
+                directory != cwd
             ):
                 continue
             if (
@@ -196,7 +201,7 @@ def opencode_sessions(
                 'harness': 'opencode',
                 'id': dialog_id,
                 'name': entry.get('title') or '(untitled)',
-                'cwd': entry['directory'],
+                'cwd': directory,
                 'source': 'opencode',
                 'updated_at': updated / 1000,
                 'archived': bool(timing.get('archived')),

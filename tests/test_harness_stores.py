@@ -462,14 +462,16 @@ class HarnessStoresTests(unittest.TestCase):
             path: path.read_bytes() for path in before
         })
 
-    def test_oc_skips_malformed_legacy_time_and_ids(self) -> None:
+    def test_oc_skips_malformed_legacy_fields(self) -> None:
         '''
         Object-shaped legacy records still crashed public discovery.
 
         A scalar or null `time` failed mapping access; a missing or
         unhashable ID failed dictionary insertion. A non-numeric
-        update time also failed timestamp conversion. Place each
-        malformed variant beside a valid dialog in real JSON files.
+        update time failed timestamp conversion. Missing directories
+        raised KeyError on unscoped discovery; non-string directories
+        became invalid public metadata. Place each malformed variant
+        beside a valid dialog in real JSON files.
         Scoped and unscoped reads, including archive opt-in, must
         retain only the valid dialog and leave every file unchanged.
 
@@ -491,6 +493,11 @@ class HarnessStoresTests(unittest.TestCase):
         without_id: dict = dict(good)
         del without_id['id']
         malformed.append(without_id)
+        for value in (None, False, 42, '', [], {}):
+            malformed.append({**good, 'directory': value})
+        without_directory: dict = dict(good)
+        del without_directory['directory']
+        malformed.append(without_directory)
         for value in (None, False, '5000', [], {}):
             malformed.append({
                 **good,
