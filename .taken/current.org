@@ -351,6 +351,79 @@ Do not count a review reply or inherited passing test as final validation.
 - [[file:/home/goodboy/repos/ai.skillz/wkts/pr18_review/docs/dialog-contract.md][Dialog contract and remaining integration decisions]]
 - [[file:../plans/codex/ai-resume-fuzzy-picker.md][Fuzzy dialog picker plan]]
 
+**** TODO Extract reusable Git primitives after PR 18
+:PROPERTIES:
+:ID: f489d534-83e1-4627-9f89-d700f374dd48
+:CREATED: [2026-10-08]
+:CARRIED: 0
+:REPO: ai.skillz/
+:PR: https://github.com/baudco/ai.skillz/pull/18
+:END:
+
+Objective: reuse the Git mechanisms currently embedded in commit-plan
+through aiskillz, preserving workflow-specific authority and safety.
+Next action: re-read the current source/deployment contracts, settle
+package import selection, and design the smallest read-only slice.
+
+***** Context
+- Supporting diagnosis:
+  [[file:../ai/plans/pr18-git-machinery-follow-through.md][PR 18 Git-machinery follow-through]].
+- This task owns the extraction follow-through; its parent owns PR 18
+  landing/review. Treat the source snapshots in the diagnosis as evidence
+  and inspect fresh versions before editing.
+- Link, rather than duplicate, the existing
+  [[id:aiskillz-pm-20261007-executor][commit-plan reliability task]],
+  [[id:aiskillz-pm-20261007-integration][Taken-dialog-Modden integration]],
+  [[id:2ff08348-4dea-48dd-a015-b0df73b70f87][pending-tail revision]] and
+  [[id:18dc9bef-273a-4901-a866-cf83a0ba088b][reviewable amendment]] scopes.
+
+***** Concerns
+- [ ] Preserve distinct Git environment, error and timeout policies:
+  discovery sanitizes/tolerates; planning and execution reject ambient
+  redirection, with deliberately different callback/editor behavior.
+- [ ] Separate observed checkout state from identity validation and
+  authorization; retain full branch refs alongside short display names.
+- [ ] General commit inspection returns all parents; commit-plan owns
+  its single-parent completion rule. Preserve raw-object and OID checks.
+- [ ] Keep unrelated index content, pinned artifacts, editor review,
+  publication CAS and recovery guarantees intact while changing imports.
+- [ ] Preserve source-only deployment without pip and select the package
+  from the same canonical source, not an unrelated installed version.
+
+***** Execution
+- [ ] First bound the import contract and read-only checkout/object API.
+  * Keep git primitives independent of harness, CLI, Taken and plan schema.
+  * Preserve existing linked-worktree discovery and failure semantics.
+- [ ] Extract that first slice with one implementation used by package
+  callers and the planner/executor; preserve entrypoints and spec bytes.
+- [ ] Consolidate process mechanics only behind explicit caller policies.
+  Record actual duplication removed and any repeated-query reduction.
+- [ ] Propose private-index/disposable-checkout reuse as the next bounded
+  slice, then guarded refs only when a second concrete caller needs them.
+- [ ] Keep artifact I/O below Git where justified; preserve serialization
+  and existing-file policies. Do not add a generic journal/lock framework.
+
+***** Verification
+- [ ] Run real Git layout/object/index cases and existing planner/executor
+  regressions appropriate to each extraction; verify untouched staging.
+- [ ] Cover linked, bare and separate metadata; detached/unborn states;
+  SHA-1/SHA-256 IDs; replacement/graft handling and malformed objects.
+- [ ] Check source entrypoints from unrelated cwd, portable/submodule
+  deployment, absent pip install and a conflicting installed package.
+- [ ] Preserve exact artifact/handoff pins, native Xonsh compilation,
+  non-mutating preflight/show and editor-abort/resumption behavior.
+- [ ] Verify layer imports and applicable license/style/deployment checks.
+  Report measured subprocess/performance effects without claiming an
+  unmeasured speedup or caching mutable HEAD/index across review.
+
+***** Handback
+Return the API/policy boundary, migrated callers, exact validation,
+remaining risks and proposed next slice to this task's ID via guarded
+write-back when authorized. Link detailed evidence; do not mark tasks
+accepted, commit/push, or broaden amendment/integration ownership from
+execution success. The read-only ai.git CLI remains a proposal until
+its public contract and implementation are separately selected.
+
 *** TODO Review commit-plan reliability before extending it
 :PROPERTIES:
 :ID: aiskillz-pm-20261007-executor
