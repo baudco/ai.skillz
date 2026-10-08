@@ -532,6 +532,86 @@ class HarnessStoresTests(unittest.TestCase):
             path: path.read_bytes() for path in before
         })
 
+    def test_oc_normalizes_invalid_titles_in_both_stores(
+        self,
+    ) -> None:
+        '''
+        Invalid OpenCode titles escaped as non-string dialog names.
+
+        Legacy lists and objects broke name2id() hashing; SQLite
+        numbers or blobs also violated completion's string contract.
+        Seed both storage formats with invalid and valid titles. Use
+        a SQLite column without TEXT affinity to retain numeric
+        values. Public discovery must normalize only invalid titles
+        to `(untitled)`, and name2id() must preserve every opaque ID.
+
+        '''
+        backend: str
+        for backend in ('sqlite', 'legacy'):
+            with self.subTest(backend=backend):
+                home: Path = self.root / backend
+                folder: Path = home / 'storage/session/project'
+                folder.mkdir(parents=True)
+                titles: list[object] = [None, '', 42, 'Exact name']
+                if backend == 'sqlite':
+                    titles.append(b'not-text')
+                    connection: sqlite3.Connection
+                    with closing(sqlite3.connect(
+                        home / 'opencode.db',
+                    )) as connection:
+                        connection.execute(
+                            'CREATE TABLE session(id, title, '
+                            'directory, parent_id, time_updated, '
+                            'time_archived)',
+                        )
+                        ordinal: int
+                        title: object
+                        for ordinal, title in enumerate(titles):
+                            connection.execute(
+                                'INSERT INTO session '
+                                'VALUES (?, ?, ?, NULL, 1000, NULL)',
+                                (
+                                    f'ses_{ordinal}',
+                                    title,
+                                    str(self.repo),
+                                ),
+                            )
+                        connection.commit()
+                else:
+                    titles.extend([[], {}, ['name']])
+                    for ordinal, title in enumerate(titles):
+                        (folder / f'{ordinal}.json').write_text(
+                            json.dumps({
+                                'id': f'ses_{ordinal}',
+                                'title': title,
+                                'directory': str(self.repo),
+                                'time': {'updated': 1000},
+                            }),
+                        )
+                with patch.dict(os.environ, {
+                    'OPENCODE_DATA_DIR': str(home),
+                }):
+                    rows: list[dict] = list_dialogs(
+                        path=None, harness='oc',
+                    )
+                    row: dict
+                    expected: dict[str, str] = {
+                        f'ses_{ordinal}': (
+                            title if title == 'Exact name'
+                            else '(untitled)'
+                        )
+                        for ordinal, title in enumerate(titles)
+                    }
+                    self.assertEqual({
+                        row['id']: row['name'] for row in rows
+                    }, expected)
+                    mapping: dict[str, str] = name2id(
+                        path=None, harness='oc',
+                    )
+                    self.assertEqual(
+                        set(mapping.values()), set(expected),
+                    )
+
     def test_claude_rename_partial_tail_and_cwd_collision(
         self,
     ) -> None:

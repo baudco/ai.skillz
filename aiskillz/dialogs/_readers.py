@@ -138,10 +138,17 @@ def opencode_sessions(
                 query += ' AND parent_id IS NULL'
             row: sqlite3.Row
             for row in connection.execute(query, parameters):
+                title: object = row['title']
+                if (
+                    not isinstance(title, str)
+                    or
+                    not title
+                ):
+                    title = '(untitled)'
                 item: dict = {
                     'harness': 'opencode',
                     'id': row['id'],
-                    'name': row['title'] or '(untitled)',
+                    'name': title,
                     'cwd': row['directory'],
                     'source': 'opencode',
                     'updated_at': row['time_updated'] / 1000,
@@ -197,10 +204,17 @@ def opencode_sessions(
                 timing.get('archived')
             ):
                 continue
+            title: object = entry.get('title')
+            if (
+                not isinstance(title, str)
+                or
+                not title
+            ):
+                title = '(untitled)'
             rows[dialog_id] = {
                 'harness': 'opencode',
                 'id': dialog_id,
-                'name': entry.get('title') or '(untitled)',
+                'name': title,
                 'cwd': directory,
                 'source': 'opencode',
                 'updated_at': updated / 1000,
