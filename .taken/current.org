@@ -9,6 +9,15 @@
 :CATEGORY: ai.skillz
 :REPO: ai.skillz/
 :END:
+
+** TODO baudco ORG
+:PROPERTIES:
+:CATEGORY: ai.skillz
+:REPO: ai.skillz/
+:END:
+- [ ] take g off the outside-collab list?
+- [ ] mirror taken/ in this org?
+
 ** Cross-provider deployment foundation
 :PROPERTIES:
 :CATEGORY: ai.skillz
@@ -66,13 +75,14 @@
 - [ ] fully remove commands/claude-reply now replaced by ai.reply/
   repo?
 
-** TODO add a /commit-plan skill?
+** WIP add a /commit-plan skill?
 :PROPERTIES:
 :CREATED: [2026-07-27]
 :CARRIED: 18
+:REPO: ai.skillz/
 :END:
-- [ ] depends on /commit-msg obvi
-- [ ] used to mult-commit batched changes
+- [x] depends on /commit-msg obvi
+- [x] used to mult-commit batched changes
 
 ** WIP supervisor dialog
 :PROPERTIES:
@@ -81,6 +91,7 @@
 :REPO: ai.skillz/
 :AI_DIALOG: opencode -s ses_092a25886ffeT0nrIrdkMEcgJK
 :END:
+- [ ] moved to new `ai.resume orger` dlog
 - [ ] breakup this mountain of subs into separate ***hl3s Bp
 - [X] enable /commit-msg natively in opencode dialog
   * [ ] deploy to all subrepos..
