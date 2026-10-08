@@ -508,6 +508,7 @@ same harness stores as the discovery APIs.
   `OPENCODE_DATA_DIR` overrides this location.
 - Without a DB: read legacy `storage/session/*/*.json` files.
   When SQLite exists, do not merge old JSON copies into it.
+- Legacy JSON scalars and arrays: skip these non-record values.
 - Missing or empty storage: no records returned.
 - Default scope: parent dialogs; child sessions require
   `all_sources=True`. Archived rows require `include_archived=True`.

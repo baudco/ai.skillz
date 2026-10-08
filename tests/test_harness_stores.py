@@ -411,6 +411,57 @@ class HarnessStoresTests(unittest.TestCase):
         )
         self.assertEqual(rows[0]['id'], 'ses_l')
 
+    def test_oc_skips_non_object_legacy_records(self) -> None:
+        '''
+        Valid JSON scalars and arrays crashed legacy OpenCode reads.
+
+        Seed real session files alongside null, boolean, numeric,
+        string and array JSON values. Public discovery must skip
+        these non-record values and preserve the valid dialog, both
+        with and without cwd filtering. Snapshot the files to prove
+        that recovering discovery leaves harness metadata untouched.
+
+        '''
+        folder: Path = self.oc / 'storage/session/project'
+        folder.mkdir(parents=True)
+        values: list[object] = [
+            None,
+            False,
+            42,
+            'scalar',
+            [],
+            [1],
+            {
+                'id': 'ses_kept',
+                'title': 'Kept dialog',
+                'directory': str(self.repo),
+                'time': {'updated': 5000},
+            },
+        ]
+        ordinal: int
+        value: object
+        for ordinal, value in enumerate(values):
+            (folder / f'{ordinal}.json').write_text(
+                json.dumps(value),
+            )
+        path: Path
+        before: dict[Path, bytes] = {
+            path: path.read_bytes() for path in folder.glob('*.json')
+        }
+        scope: str|None
+        for scope in (None, str(self.repo)):
+            with self.subTest(scope=scope):
+                rows: list[dict] = list_dialogs(
+                    path=scope, harness='oc',
+                )
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]['id'], 'ses_kept')
+                self.assertEqual(rows[0]['name'], 'Kept dialog')
+                self.assertEqual(rows[0]['cwd'], str(self.repo))
+        self.assertEqual(before, {
+            path: path.read_bytes() for path in before
+        })
+
     def test_claude_rename_partial_tail_and_cwd_collision(
         self,
     ) -> None:

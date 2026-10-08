@@ -154,7 +154,9 @@ def opencode_sessions(
     if not databases:
         path: Path
         for path in (home / 'storage/session').glob('*/*.json'):
-            entry: dict = json.loads(path.read_text())
+            entry: object = json.loads(path.read_text())
+            if not isinstance(entry, dict):
+                continue
             if (
                 cwd is not None
                 and
