@@ -161,7 +161,10 @@ def opencode_sessions(
     if not databases:
         path: Path
         for path in (home / 'storage/session').glob('*/*.json'):
-            entry: object = json.loads(path.read_text())
+            try:
+                entry: object = json.loads(path.read_text())
+            except json.JSONDecodeError:
+                continue
             if not isinstance(entry, dict):
                 continue
             dialog_id: object = entry.get('id')

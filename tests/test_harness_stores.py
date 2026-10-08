@@ -612,6 +612,44 @@ class HarnessStoresTests(unittest.TestCase):
                         set(mapping.values()), set(expected),
                     )
 
+    def test_oc_skips_truncated_legacy_json(self) -> None:
+        '''
+        One partial legacy JSON file aborted all OpenCode discovery.
+
+        Put truncated and invalid JSON files beside one valid dialog.
+        Public discovery must retain the valid dialog regardless of
+        cwd scope, and name2id() must resolve its name. Snapshot each
+        file to prove that readers neither repair nor rewrite logs.
+
+        '''
+        folder: Path = self.oc / 'storage/session/project'
+        folder.mkdir(parents=True)
+        (folder / 'partial.json').write_text('{"id":')
+        (folder / 'invalid.json').write_text('not json')
+        (folder / 'valid.json').write_text(json.dumps({
+            'id': 'ses_kept',
+            'title': 'Kept dialog',
+            'directory': str(self.repo),
+        }))
+        path: Path
+        before: dict[Path, bytes] = {
+            path: path.read_bytes() for path in folder.glob('*.json')
+        }
+        scope: str|None
+        for scope in (None, str(self.repo)):
+            with self.subTest(scope=scope):
+                rows: list[dict] = list_dialogs(
+                    path=scope, harness='oc',
+                )
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]['id'], 'ses_kept')
+                self.assertEqual(name2id(path=scope, harness='oc'), {
+                    'Kept dialog': 'ses_kept',
+                })
+        self.assertEqual(before, {
+            path: path.read_bytes() for path in before
+        })
+
     def test_claude_rename_partial_tail_and_cwd_collision(
         self,
     ) -> None:

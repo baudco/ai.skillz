@@ -509,6 +509,7 @@ same harness stores as the discovery APIs.
 - Without a DB: read legacy `storage/session/*/*.json` files.
   When SQLite exists, do not merge old JSON copies into it.
 - Legacy JSON scalars and arrays: skip these non-record values.
+- Truncated or invalid legacy JSON: skip the file and continue.
 - Missing, empty or non-string titles: use `(untitled)` in both
   SQLite and legacy JSON records.
 - Legacy records with missing/non-string/empty IDs or directories,
