@@ -792,6 +792,39 @@ class DialogIndexTests(unittest.TestCase):
                     self.repo / '.ai/state/dialogs/write.guard'
                 ).exists())
 
+    def test_candidate_cannot_replace_dialog_identity(self) -> None:
+        '''
+        Candidate fields previously overwrote the reviewed identity.
+
+        Add another harness and ID to an otherwise valid candidate
+        and recompute the preview digest. Applying this authenticated
+        artifact must record only the entry's harness and dialog ID,
+        with the validated paths. The injected identity must never
+        become a relation, and candidate extras must not persist.
+
+        '''
+        self.add('claude', 'one', self.first)
+        plan: dict = preview(str(self.repo))
+        candidate: dict = plan['entries'][0]['candidates'][0]
+        candidate.update({
+            'harness': 'codex',
+            'id': 'other-dialog',
+            'extra': 'not-relation-metadata',
+        })
+        path: Path
+        digest: str
+        path, digest = save_preview(plan)
+        self.assertEqual(
+            apply_preview(str(self.repo), path, digest, []), 1,
+        )
+        relations: list[dict] = list_wkt_relations(str(self.repo))
+        self.assertEqual(len(relations), 1)
+        relation: dict = relations[0]
+        self.assertEqual(identity(relation), ('claude', 'one'))
+        self.assertEqual(relation['worktree'], str(self.first))
+        self.assertEqual(relation['git_dir'], candidate['git_dir'])
+        self.assertNotIn('extra', relation)
+
     def test_empty_apply_checks_relation_digest(self) -> None:
         '''
         Applying no selected relations used to accept stale previews.

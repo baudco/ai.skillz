@@ -181,7 +181,8 @@ def apply_wkt_preview(
         additions.append({
             'harness': key[0],
             'id': key[1],
-            **candidate,
+            'worktree': candidate['worktree'],
+            'git_dir': candidate['git_dir'],
             'source': 'index-preview',
             'preview_sha256': digest,
         })
