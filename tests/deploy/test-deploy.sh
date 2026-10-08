@@ -1935,7 +1935,10 @@ test_commit_plan_contract() {
         'escape terminal controls and redact authenticated and inherited'
     assert_file_contains \
         "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
-        "'[{phase}] FAIL exit={result.returncode}'"
+        "label = trace_prefix(phase, sys.stderr)"
+    assert_file_contains \
+        "$ROOT/skills/commit-plan/scripts/plan-exec.py" \
+        "lines = [f'{label} FAIL exit={result.returncode}']"
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
         'partial or complete execution without'
     assert_file_contains "$ROOT/skills/commit-plan/SKILL.md" \
