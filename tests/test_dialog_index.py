@@ -293,6 +293,50 @@ class DialogIndexTests(unittest.TestCase):
             apply_preview(str(self.repo), path, digest, []), 0,
         )
 
+    def test_non_object_relation_json_has_cli_diagnostic(
+        self,
+    ) -> None:
+        '''
+        Non-object relation JSON must not reach mapping operations.
+
+        A review alleged that null or array relation files could
+        escape as AttributeError. The existing read() object guard
+        already rejects them. Protect this boundary using real files
+        containing scalar and array values: public relation lookup
+        must raise ValueError. CLI indexing must report it without a
+        traceback, source rewrites, previews or a writer guard.
+
+        '''
+        directory: Path = self.repo / '.ai/state/dialogs'
+        directory.mkdir(parents=True)
+        path: Path = directory / 'relations.json'
+        value: object
+        for value in (None, [], [1], False, 42, 'scalar'):
+            with self.subTest(value=value):
+                path.write_text(json.dumps(value))
+                before: bytes = path.read_bytes()
+                with self.assertRaisesRegex(
+                    ValueError, 'Unsupported dialog relation file',
+                ):
+                    list_wkt_relations(str(self.repo))
+                error: StringIO = StringIO()
+                with (
+                    redirect_stderr(error),
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    main(['index', str(self.repo)])
+                self.assertEqual(raised.exception.code, 1)
+                self.assertIn(
+                    'Unsupported dialog relation file',
+                    error.getvalue(),
+                )
+                self.assertNotIn('Traceback', error.getvalue())
+                self.assertEqual(path.read_bytes(), before)
+                self.assertFalse(
+                    (directory / 'write.guard').exists(),
+                )
+                self.assertFalse((directory / 'previews').exists())
+
     def test_redirected_relation_directory(self) -> None:
         '''
         A symlinked .ai could redirect writes to another worktree.
