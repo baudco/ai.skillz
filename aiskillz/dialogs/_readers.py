@@ -157,6 +157,23 @@ def opencode_sessions(
             entry: object = json.loads(path.read_text())
             if not isinstance(entry, dict):
                 continue
+            dialog_id: object = entry.get('id')
+            timing: object = entry.get('time', {})
+            if (
+                not isinstance(dialog_id, str)
+                or
+                not dialog_id
+                or
+                not isinstance(timing, dict)
+            ):
+                continue
+            updated: object = timing.get('updated', 0)
+            if (
+                not isinstance(updated, (int, float))
+                or
+                isinstance(updated, bool)
+            ):
+                continue
             if (
                 cwd is not None
                 and
@@ -172,20 +189,17 @@ def opencode_sessions(
             if (
                 not include_archived
                 and
-                entry.get('time', {}).get('archived')
+                timing.get('archived')
             ):
                 continue
-            rows[entry['id']] = {
+            rows[dialog_id] = {
                 'harness': 'opencode',
-                'id': entry['id'],
+                'id': dialog_id,
                 'name': entry.get('title') or '(untitled)',
                 'cwd': entry['directory'],
                 'source': 'opencode',
-                'updated_at': entry.get('time', {}).get('updated', 0)
-                / 1000,
-                'archived': bool(
-                    entry.get('time', {}).get('archived'),
-                ),
+                'updated_at': updated / 1000,
+                'archived': bool(timing.get('archived')),
             }
 
     return list(rows.values())

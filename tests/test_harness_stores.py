@@ -462,6 +462,69 @@ class HarnessStoresTests(unittest.TestCase):
             path: path.read_bytes() for path in before
         })
 
+    def test_oc_skips_malformed_legacy_time_and_ids(self) -> None:
+        '''
+        Object-shaped legacy records still crashed public discovery.
+
+        A scalar or null `time` failed mapping access; a missing or
+        unhashable ID failed dictionary insertion. A non-numeric
+        update time also failed timestamp conversion. Place each
+        malformed variant beside a valid dialog in real JSON files.
+        Scoped and unscoped reads, including archive opt-in, must
+        retain only the valid dialog and leave every file unchanged.
+
+        '''
+        folder: Path = self.oc / 'storage/session/project'
+        folder.mkdir(parents=True)
+        good: dict = {
+            'id': 'ses_kept',
+            'title': 'Kept dialog',
+            'directory': str(self.repo),
+            'time': {'updated': 5000},
+        }
+        malformed: list[dict] = []
+        value: object
+        for value in (None, False, 42, 'scalar', [], [1]):
+            malformed.append({**good, 'time': value})
+        for value in (None, False, 42, '', [], {}):
+            malformed.append({**good, 'id': value})
+        without_id: dict = dict(good)
+        del without_id['id']
+        malformed.append(without_id)
+        for value in (None, False, '5000', [], {}):
+            malformed.append({
+                **good,
+                'time': {'updated': value},
+            })
+        ordinal: int
+        record: dict
+        for ordinal, record in enumerate([good, *malformed]):
+            (folder / f'{ordinal}.json').write_text(
+                json.dumps(record),
+            )
+        path: Path
+        before: dict[Path, bytes] = {
+            path: path.read_bytes() for path in folder.glob('*.json')
+        }
+        scope: str|None
+        for scope in (None, str(self.repo)):
+            include_archived: bool
+            for include_archived in (False, True):
+                with self.subTest(
+                    scope=scope, include_archived=include_archived,
+                ):
+                    rows: list[dict] = list_dialogs(
+                        path=scope,
+                        harness='oc',
+                        include_archived=include_archived,
+                    )
+                    self.assertEqual(len(rows), 1)
+                    self.assertEqual(rows[0]['id'], 'ses_kept')
+                    self.assertEqual(rows[0]['updated_at'], 5)
+        self.assertEqual(before, {
+            path: path.read_bytes() for path in before
+        })
+
     def test_claude_rename_partial_tail_and_cwd_collision(
         self,
     ) -> None:

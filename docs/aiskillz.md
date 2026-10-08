@@ -509,6 +509,8 @@ same harness stores as the discovery APIs.
 - Without a DB: read legacy `storage/session/*/*.json` files.
   When SQLite exists, do not merge old JSON copies into it.
 - Legacy JSON scalars and arrays: skip these non-record values.
+- Legacy records with missing/non-string/empty IDs, non-object
+  `time`, or non-numeric `time.updated`: skip the malformed record.
 - Missing or empty storage: no records returned.
 - Default scope: parent dialogs; child sessions require
   `all_sources=True`. Archived rows require `include_archived=True`.
