@@ -1,0 +1,274 @@
+# Copyright (C) 2025-2026 baudco — Tyler Goodlet and contributors.
+# Licensed under the GNU Affero General Public License v3.0.
+# See LICENSE and LICENSING.md for terms and commercial licensing.
+
+'''
+Public dialog discovery and worktree-relation orchestration.
+
+Applications and the CLI call these functions. _readers supplies
+harness metadata; _inspect extracts recorded directories from logs.
+The wkt layer matches those directories to Git worktrees and persists
+relations. Shell parsing belongs to `cli.main()`; terminal table
+formatting belongs to `cli.format_dialog_table()`.
+
+'''
+
+from collections import Counter
+import os
+from collections.abc import Mapping
+from pathlib import Path
+import sqlite3
+
+from ..wkt import WktIndexer
+from ._inspect import observations
+from ._readers import (
+    codex_sessions,
+    opencode_sessions,
+    claude_sessions,
+)
+
+
+def list_dialogs(
+    path: str|Path|None = '.',
+    harness: str|list[str]|None = None,
+    all: bool = False,
+    all_sources: bool = False,
+    *,
+    include_archived: bool = False,
+    environ: Mapping[str, str]|None = None,
+) -> list[dict]:
+    '''
+    Return metadata; all=True overrides harness and cwd scope.
+
+    A None harness selects every supported harness at the given path.
+    Implicit all-harness discovery skips a missing Codex database.
+    Explicit selections, including lists, report that missing store.
+    Invalid existing stores raise rather than silently losing data.
+    `include_archived` adds Codex and OpenCode archived rows for
+    manual WKT recording; `all_sources` only widens source filters.
+    `environ` overrides store-location settings without mutating
+    process state; Xonsh completion supplies its shell environment.
+
+    '''
+    environment: Mapping[str, str] = (
+        os.environ if environ is None else environ
+    )
+    discover_all: bool = all or harness is None
+    names: list[str] = (
+        ['codex', 'opencode', 'claude']
+        if discover_all
+        else [harness]
+        if isinstance(harness, str)
+        else harness
+    )
+    aliases: dict[str, str] = {
+        'cx': 'codex',
+        'cld': 'claude',
+        'oc': 'opencode',
+    }
+    name: str
+    names = list(
+        dict.fromkeys(
+            aliases.get(name, name) for name in names
+        )
+    )
+    unknown: set[str] = set(names) - {'codex', 'opencode', 'claude'}
+    if unknown:
+        raise ValueError('Unknown harness: ' + ', '.join(unknown))
+    cwd: str|None = None
+    if (
+        not all
+        and
+        path is not None
+    ):
+        cwd = str(Path(path).expanduser().resolve())
+    data: Path = Path(
+        environment.get(
+            'XDG_DATA_HOME',
+            str(Path.home() / '.local/share'),
+        )
+    ).expanduser()
+    homes: dict[str, Path] = {
+        'codex': Path(
+            environment.get(
+                'CODEX_HOME',
+                str(Path.home() / '.codex'),
+            )
+        ),
+        'opencode': Path(
+            environment.get(
+                'OPENCODE_DATA_DIR',
+                str(data / 'opencode'),
+            )
+        ),
+        'claude': Path(
+            environment.get(
+                'CLAUDE_CONFIG_DIR',
+                str(Path.home() / '.claude'),
+            )
+        ),
+    }
+    readers: dict = {
+        'codex': codex_sessions,
+        'opencode': opencode_sessions,
+        'claude': claude_sessions,
+    }
+    records: list[dict] = []
+    name: str
+    for name in names:
+        home: Path = homes[name].expanduser().resolve()
+        if (
+            name == 'codex'
+            and
+            not (home / 'state_5.sqlite').is_file()
+            and
+            discover_all
+        ):
+            continue
+        records.extend(readers[name](
+            home, cwd, all_sources or all,
+            include_archived=include_archived,
+        ))
+
+    unique: dict[tuple[str, str], dict] = {}
+    record: dict
+    for record in sorted(records, key=lambda r: r['updated_at']):
+        record.setdefault('provider', None)
+        record.setdefault('model', None)
+        record.setdefault('archived', None)
+        unique[record['harness'], record['id']] = record
+    return sorted(
+        unique.values(),
+        key=lambda r: (-r['updated_at'], r['harness'], r['id']),
+    )
+
+
+def get_dialog(
+    dialog_id: str,
+    harness: str|None = None,
+    *,
+    include_archived: bool = False,
+    all_sources: bool = False,
+    environ: Mapping[str, str]|None = None,
+) -> dict|None:
+    '''
+    Resolve an opaque dialog ID to its harness metadata record.
+
+    An application that retained only an ID can call
+    this to recover `harness`, `name`, saved `cwd`, `source` and
+    `updated_at`. Prefer `list_dialogs()` when selecting many dialogs
+    at once; this helper currently enumerates the selected readers
+    via `list_dialogs(path=None, harness=harness)` and then matches
+    the ID.
+
+    `harness=None` searches all supported harnesses across
+    directories; a canonical name or alias narrows that search.
+    Default source and archive exclusions from `list_dialogs()` still
+    apply unless explicitly widened with matching keyword options.
+    `environ` selects the caller's harness stores without global
+    mutation. This returns metadata only, with no transcript, WKT
+    enrichment or harness launch.
+
+    Return `None` when no eligible record matches. Raise `ValueError`
+    for an empty/non-string ID or cross-harness ambiguity; callers
+    can resolve ambiguity by supplying the harness. Store errors
+    propagate rather than masquerading as a missing dialog.
+
+    '''
+    if (
+        not isinstance(dialog_id, str)
+        or
+        not dialog_id
+    ):
+        raise ValueError('dialog_id must be a nonempty string')
+    row: dict
+    matches: list[dict] = [
+        row for row in list_dialogs(
+            path=None,
+            harness=harness,
+            include_archived=include_archived,
+            all_sources=all_sources,
+            environ=environ,
+        )
+        if row['id'] == dialog_id
+    ]
+    if len(matches) > 1:
+        raise ValueError('Dialog ID is ambiguous; specify harness')
+    return matches[0] if matches else None
+
+
+def name2id(
+    path: str|Path|None = '.',
+    harness: str|list[str]|None = None,
+    all: bool = False,
+    all_sources: bool = False,
+) -> dict[str, str]:
+    '''
+    Return name-to-dialog-ID mappings without dropping duplicate
+    names.
+
+    Duplicate names gain a [harness:id] suffix. list_dialogs retains
+    exact raw names and harness metadata for callers building
+    launchers.
+
+    '''
+    records: list[dict] = list_dialogs(
+        path,
+        harness,
+        all=all,
+        all_sources=all_sources,
+    )
+    row: dict
+    counts: Counter = Counter(row['name'] for row in records)
+    reserved: set[str] = set(counts)
+    result: dict[str, str] = {}
+    row: dict
+    for row in records:
+        name: str = row['name']
+        if counts[name] > 1:
+            backend: str = row['harness']
+            did: str = row['id']
+            name = f'{name} [{backend}:{did}]'
+            while (
+                name in reserved
+                or
+                name in result
+            ):
+                name += '#'
+
+        result[name] = row['id']
+
+    return result
+
+
+def preview_wkt_relations(
+    path: str = '.',
+    logs: bool = True,
+) -> dict:
+    '''
+    Find possible worktrees for this repository's existing dialogs.
+
+    Called by ai.dlogs index before saving its proposal JSON file.
+    Read each harness independently; report unreadable databases in
+    the proposal's warnings. WktIndexer limits history reads to
+    this repository, then matches those directories to Git worktrees.
+    With logs=False only saved cwd and old owner metadata are used.
+
+    '''
+    dialogs: list[dict] = []
+    warnings: list[str] = []
+    harness: str
+    for harness in ('codex', 'opencode', 'claude'):
+        try:
+            dialogs.extend(list_dialogs(path=None, harness=harness))
+        except (
+            OSError,
+            ValueError,
+            sqlite3.Error,
+        ) as error:
+            warnings.append(harness + ': ' + str(error))
+
+    indexer: WktIndexer = WktIndexer(path)
+    return indexer.suggest(
+        dialogs, observations if logs else None, warnings,
+    )
