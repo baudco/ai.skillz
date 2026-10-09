@@ -5,7 +5,10 @@ The public package lists saved Codex, OpenCode, and Claude dialogs.
 `ai.resume` resolves a name, then starts the chosen harness with its
 dialog ID and selected launch directory.
 See [the package guide](../docs/aiskillz.md#install-and-load) to
-install it into the Python interpreter running Xonsh or an app.
+install it into the Python environment used by your shell or app.
+Xonsh is the primary shell integration; Bash can use the installed
+commands without Xonsh. See [shell support](../docs/aiskillz.md#shell-support)
+for the distinction between CLI commands, aliases and completion.
 
 For `ai.dlogs index`, the flow is:
 

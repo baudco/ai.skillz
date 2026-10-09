@@ -6,10 +6,18 @@ a saved dialog; listing and indexing do not modify harness logs.
 The Python API needs only the standard library; the Xontrib requires
 Xonsh in the environment loading it.
 
+## Shell support
+
+Shell integration targets Xonsh first. The installed CLI also
+supports Bash and other POSIX shells. `ai.dlogs`, `ai.dlogs index`,
+and `ai.resume` share the same arguments across shells.
+
 ## Install and load
 
-Install into the Python environment used by your Xonsh or application.
-An editable installation follows this permanent checkout:
+### Xonsh
+
+Install into the Python environment running Xonsh. Use a permanent
+source checkout for the editable installation:
 
 ```xsh
 import sys
@@ -29,6 +37,27 @@ ai.dlogs --harness all /path/to/repo
 ai.dlogs --all
 ai.resume 'dialog name' --dry-run
 ```
+
+### Bash
+
+Activate an existing Python environment and install the commands:
+
+```bash
+source /path/to/venv/bin/activate
+uv pip install --python "$VIRTUAL_ENV/bin/python" -e /path/to/ai.skillz
+ai.dlogs
+ai.dlogs --did
+ai.dlogs --harness oc
+ai.dlogs --all
+ai.dlogs index
+ai.resume 'dialog name' --dry-run
+```
+
+Xonsh is not required for these installed commands. Bash completion
+is not currently provided. Printed resume/apply commands include
+POSIX-compatible quoting, with separate shell forms where needed.
+
+### Xonsh completion
 
 `ai.resume` offers saved dialog names when you press Tab at its
 first argument. Completion uses the current directory by default;
