@@ -74,6 +74,22 @@ Explain that the user must select only intended hunks. Never claim path-level
 `git add -A` stages only review adjustments when a file contains mixed-owned
 content. Do not stage anything while generating this handoff.
 
+For `-r` flows, normally include verified unstaged reply mirrors under
+[tuicr-mirror.md](tuicr-mirror.md), unless `--no-mirror` was selected.
+Link the source/destination receipt and show the exact staging command
+as a separate human step. Explain that post-stage reconciliation must
+verify which hunks actually entered the index and preserve explanations
+in the staged view before retiring recorded AI copies. If the installed
+Tuicr CLI lacks deletion, disclose that cleanup remains pending; do not
+append an invented cleanup command or manually edit session JSON.
+
+For later review iterations, also identify the persisted human-note
+selection and fresh source baseline. When the human requests carrying
+unstaged notes after staging, read and project those records through
+the same receipt rather than asking for manual comment copying. Report
+copy versus move explicitly, including any originals which cannot yet
+be retired with the installed native CLI.
+
 If no repository content changed, still report the baseline comparison result
 but do not fabricate an empty `git add` command. If an explicitly authorized
 cross-repository flow already committed the fixes, report that commit instead

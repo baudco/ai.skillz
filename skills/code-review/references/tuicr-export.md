@@ -4,6 +4,12 @@ Use this reference when the user explicitly requests Tuicr payloads or
 adding this review's findings as local drafts. A payload export is not
 an injection, and neither action publishes a forge review.
 
+For explicit requests to copy existing remediation responses into
+another native view, use
+[tuicr-mirror.md](../../code-review-changes/references/tuicr-mirror.md).
+Response mirrors preserve source lineage and require a verified
+destination text/anchor projection; do not export them as new findings.
+
 ## Prepare The Handoff
 
 Resolve the user's executable, wrapper environment, and native session

@@ -12,7 +12,7 @@ compatibility: >
 metadata:
   author: goodboy
   version: "0.1"
-argument-hint: "<forge-review> | [-r|--respond] <local-Tuicr-session-or-y-export>"
+argument-hint: "<forge-review> | [-r|--respond] [--mirror|--no-mirror] <local-Tuicr-session-or-y-export>"
 disable-model-invocation: true
 allowed-tools:
   - Bash(gh *)
@@ -55,8 +55,14 @@ A local Tuicr slug/path, or a lowercase-`y` export whose first payload line
 names a local session, selects
 [`references/tuicr-local.md`](references/tuicr-local.md). Forge-prefixed Tuicr
 slugs remain remote input. Local access needs no network authorization and MUST
-NOT create another worktree. `-r`/`--respond` authorizes only the local reply
-sink as defined there; the numbered remote workflow remains unchanged.
+NOT create another worktree. `-r`/`--respond` authorizes local replies
+and normally mirrors eligible responses beside unstaged adjustments.
+Follow [the mirror contract](references/tuicr-mirror.md): `--no-mirror`
+keeps replies only in the source, while `--mirror` requires complete
+eligible-hunk coverage. These are skill invocation options, not native
+Tuicr CLI flags. Never copy into every checkout session. Keep original
+replies unmoved and verify each destination. Staging and post-stage
+cleanup remain separate operations; the remote workflow is unchanged.
 
 ## 0. Parse input and fetch review data
 
