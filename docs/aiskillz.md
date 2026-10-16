@@ -14,6 +14,13 @@ and `ai.resume` share the same arguments across shells.
 
 ## Install and load
 
+The package requires **Python 3.13 or newer**. Keep the minimum
+compatible with supported consuming projects rather than advancing
+it automatically with each Python release. CI covers every stable
+minor release from that minimum through the latest, currently 3.15.
+Review consumer requirements before raising the minimum, and update
+the package requirement and CI matrix together.
+
 ### Xonsh
 
 Install into the Python environment running Xonsh. Use a permanent
@@ -796,9 +803,9 @@ The `Tests` GitHub Actions workflow runs on pull requests and pushes
 to `main`, and supports manual dispatch. Each job prints its tested
 commit and Python version:
 
-- Package: Python 3.10 and 3.13, including installed Xontrib loading,
+- Package: Python 3.13, 3.14 and 3.15, including installed Xontrib loading,
   completion, dialog readers, resume and WKT indexing.
-- Deployment: Python 3.13, skill validation and the full deployment
+- Deployment: Python 3.15, skill validation and the full deployment
   suite, including commit-plan's real-terminal pager/editor tests.
   Optional OpenCode CLI checks skip when that executable is absent.
 

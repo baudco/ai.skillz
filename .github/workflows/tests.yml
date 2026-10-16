@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.10', '3.13']
+        python: ['3.13', '3.14', '3.15']
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,7 +50,7 @@ jobs:
             tests/test_aiskillz_layers.py
 
   deployment:
-    name: Deployment and commit-plan / Python 3.13
+    name: Deployment and commit-plan / Python 3.15
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -60,7 +60,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.15'
       - name: Report tested commit and runtime
         run: |
           git rev-parse HEAD
