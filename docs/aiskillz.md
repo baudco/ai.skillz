@@ -807,6 +807,7 @@ commit and Python version:
   completion, dialog readers, resume and WKT indexing.
 - Deployment: Python 3.15, skill validation and the full deployment
   suite, including commit-plan's real-terminal pager/editor tests.
+  Separate steps cover workflow-state migration and benchmark capture.
   Optional OpenCode CLI checks skip when that executable is absent.
 
 Run the same package selection locally:

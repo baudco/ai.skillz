@@ -75,3 +75,7 @@ jobs:
         run: bash scripts/validate-skills.sh
       - name: Run deployment and embedded workflow tests
         run: bash tests/deploy/test-deploy.sh
+      - name: Test workflow-state migration
+        run: python -B tests/deploy/test-workflow-state.py
+      - name: Test benchmark capture
+        run: python -m unittest tests.test_benchmark_capture
