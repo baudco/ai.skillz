@@ -3413,6 +3413,10 @@ class CommitPlanExecTests(unittest.TestCase):
         environment = os.environ.copy()
         environment['GIT_EDITOR'] = str(editor)
         environment['NO_COLOR'] = '1'
+        # The allocated PTY needs capabilities even if its parent
+        # runs under TERM=dumb. Otherwise less waits for Return
+        # before displaying the diff this fixture waits to inspect.
+        environment['TERM'] = 'xterm'
         if pager is None:
             environment.pop('GIT_PAGER', None)
         else:
@@ -3484,6 +3488,12 @@ class CommitPlanExecTests(unittest.TestCase):
         requiring terminal stdio and `/dev/tty` proves the pager
         exit did not replace the editor-backed commit review.
 
+        Force TERM=dumb in the parent to reproduce the previous
+        timeout: less waited for Return at its terminal warning,
+        while the driver waited for a diff before sending q. The
+        child PTY selects its own capabilities and must complete
+        both pager exit and editor review under that parent setting.
+
         '''
         pager = shutil.which('less')
         if pager is None:
@@ -3506,9 +3516,17 @@ class CommitPlanExecTests(unittest.TestCase):
             f'printf "yes\\n" > "{marker}"\n'
         )
         editor.chmod(0o755)
-        text, status, pager_closed, confirmed = self.run_pty_review(
-            editor, None,
-        )
+        text: str
+        status: int
+        pager_closed: bool
+        confirmed: bool
+        with patch.dict(os.environ, {'TERM': 'dumb'}):
+            (
+                text,
+                status,
+                pager_closed,
+                confirmed,
+            ) = self.run_pty_review(editor, None)
         self.assertEqual(status, 0)
         self.assertEqual(selected.read_text(), 'selected\n')
         self.assertTrue(pager_closed)
