@@ -792,8 +792,32 @@ The existing unittest suites run under pytest without a rewrite;
 new tests can use pytest fixtures as shared setup evolves. Xontrib
 integration tests also require Xonsh in that environment.
 
+The `Tests` GitHub Actions workflow runs on pull requests and pushes
+to `main`, and supports manual dispatch. Each job prints its tested
+commit and Python version:
+
+- Package: Python 3.10 and 3.13, including installed Xontrib loading,
+  completion, dialog readers, resume and WKT indexing.
+- Deployment: Python 3.13, skill validation and the full deployment
+  suite, including commit-plan's real-terminal pager/editor tests.
+  Optional OpenCode CLI checks skip when that executable is absent.
+
+Run the same package selection locally:
+
 ```xsh
-python -m pytest tests/test_dlogs.py tests/test_harness_stores.py tests/test_dialog_timestamps.py tests/test_worktree_dialogs.py tests/test_dialog_index.py tests/test_git_discovery.py tests/test_aiskillz_layers.py
+python -m pytest -p no:xonsh -q \
+    tests/test_dialog_index.py tests/test_dlogs.py \
+    tests/test_harness_stores.py tests/test_worktree_dialogs.py \
+    tests/test_resume.py tests/test_resume_completion.py \
+    tests/test_dialog_timestamps.py tests/test_git_discovery.py \
+    tests/test_aiskillz_layers.py
+```
+
+Deployment checks run separately; package building is optional:
+
+```xsh
+bash scripts/validate-skills.sh
+bash tests/deploy/test-deploy.sh
 uv build
 ```
 
