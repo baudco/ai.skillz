@@ -22,6 +22,7 @@ generalized for cross-repo deployment.
 | Skill | Description |
 |-------|-------------|
 | `py-codestyle` | Python code style conventions |
+| `layered-design` | Design public APIs, vocabulary, and module boundaries |
 | `commit-msg` | Git commit message generation |
 | `commit-plan` | Multi-commit orchestration using `commit-msg` messages |
 | `pr-msg` | PR description generation |
@@ -41,6 +42,45 @@ generalized for cross-repo deployment.
 | `harness-perf` | Diagnose CPU, memory, latency, and hangs in AI coding harnesses |
 | `taken-export` | Export repository work as Taken-compatible Org tasks |
 | `yt-url-lookup` | YouTube URL resolution |
+
+## Shell utilities
+
+`aiskillz` provides fast local session discovery for Codex, OpenCode,
+and Claude Code, with an importable `name2id()` mapping and the
+`ai.dlogs` and `ai.resume` commands. Shell integration targets Xonsh
+first, with in-process aliases and dialog-name Tab completion.
+Bash and other POSIX shells can use the installed commands,
+including `ai.dlogs index`, without Xonsh.
+
+Xonsh:
+
+```xsh
+import sys
+uv pip install --python @(sys.executable) -e /path/to/ai.skillz
+xontrib load aiskillz
+ai.dlogs --harness oc
+ai.dlogs --harness claude
+ai.dlogs --all
+ai.dlogs index  # preview recoverable WKT relations
+ai.resume 'dialog name' --dry-run  # inspect harness and cwd
+```
+
+Bash (using an existing Python environment):
+
+```bash
+source /path/to/venv/bin/activate
+uv pip install --python "$VIRTUAL_ENV/bin/python" -e /path/to/ai.skillz
+ai.dlogs --harness oc
+ai.dlogs --all
+ai.dlogs index
+ai.resume 'dialog name' --dry-run
+```
+
+The no-install `source /path/to/ai.skillz/aliases.xsh` entrypoint
+is Xonsh-specific. Bash completion is not currently provided.
+See [the package guide](docs/aiskillz.md#shell-support)
+for the Python API, filtering, storage limitations, and the handoff
+for subsequent package work.
 
 ## Deployment
 
