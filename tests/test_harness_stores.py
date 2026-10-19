@@ -653,6 +653,64 @@ class HarnessStoresTests(unittest.TestCase):
             path: path.read_bytes() for path in before
         })
 
+    def test_claude_skips_invalid_utf8_records(self) -> None:
+        '''
+        A corrupt byte in one log aborted all Claude discovery.
+
+        Text-stream iteration decoded before the JSON error handler,
+        so a single invalid UTF-8 record hid valid later metadata.
+        Surround a corrupt line with valid records and add another
+        dialog log. Both directory scopes must preserve their exact
+        names and IDs, including the title after the corrupt line.
+        Byte snapshots prove discovery leaves both logs unchanged.
+
+        '''
+        folder: Path = self.claude / 'projects' / re.sub(
+            r'[^a-zA-Z0-9]', '-', str(self.repo),
+        )
+        folder.mkdir(parents=True)
+        first: Path = folder / 'first.jsonl'
+        second: Path = folder / 'second.jsonl'
+        first.write_bytes(
+            json.dumps({
+                'cwd': str(self.repo),
+                'sessionId': 'first',
+            }).encode('utf-8')
+            + b'\n\xff\n'
+            + json.dumps({
+                'type': 'custom-title',
+                'customTitle': 'Title after corruption',
+            }).encode('utf-8')
+            + b'\n'
+        )
+        second.write_text(json.dumps({
+            'cwd': str(self.repo),
+            'sessionId': 'second',
+            'type': 'custom-title',
+            'customTitle': 'Other dialog',
+        }), encoding='utf-8')
+        path: Path
+        before: dict[Path, bytes] = {
+            path: path.read_bytes() for path in (first, second)
+        }
+        scope: str|None
+        for scope in (None, str(self.repo)):
+            with self.subTest(scope=scope):
+                rows: list[dict] = list_dialogs(
+                    path=scope, harness='cld',
+                )
+                row: dict
+                self.assertEqual(
+                    {row['id']: row['name'] for row in rows},
+                    {
+                        'first': 'Title after corruption',
+                        'second': 'Other dialog',
+                    },
+                )
+        self.assertEqual(before, {
+            path: path.read_bytes() for path in before
+        })
+
     def test_claude_rename_partial_tail_and_cwd_collision(
         self,
     ) -> None:

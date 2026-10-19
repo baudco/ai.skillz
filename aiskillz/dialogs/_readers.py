@@ -10,7 +10,7 @@ Offline readers for harness-owned session metadata.
 from contextlib import closing
 import json
 from os import stat_result
-from typing import TextIO
+from typing import BinaryIO
 from pathlib import Path
 import re
 import sqlite3
@@ -320,14 +320,19 @@ def claude_sessions(
                 summary: str = ''
                 prompt: str = ''
                 last_prompt: str = ''
-                stream: TextIO
-                with path.open() as stream:
-                    line: str
+                stream: BinaryIO
+                with path.open('rb') as stream:
+                    line: bytes
                     for line in stream:
                         try:
-                            event: dict = json.loads(line)
-                        except json.JSONDecodeError:
-                            # Active logs may end in a partial line.
+                            event: dict = json.loads(
+                                line.decode('utf-8'),
+                            )
+                        except (
+                            json.JSONDecodeError,
+                            UnicodeDecodeError,
+                        ):
+                            # Isolate corrupt or partial log records.
                             continue
                         if not isinstance(event, dict):
                             continue
