@@ -162,8 +162,13 @@ def opencode_sessions(
         path: Path
         for path in (home / 'storage/session').glob('*/*.json'):
             try:
-                entry: object = json.loads(path.read_text())
-            except json.JSONDecodeError:
+                entry: object = json.loads(
+                    path.read_text(encoding='utf-8'),
+                )
+            except (
+                json.JSONDecodeError,
+                UnicodeDecodeError,
+            ):
                 continue
             if not isinstance(entry, dict):
                 continue

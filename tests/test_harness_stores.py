@@ -616,7 +616,9 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         One partial legacy JSON file aborted all OpenCode discovery.
 
-        Put truncated and invalid JSON files beside one valid dialog.
+        Put truncated, invalid JSON and invalid UTF-8 files beside
+        one valid dialog. Decoding used to fail before JSON parsing,
+        bypassing the malformed-JSON handler and aborting discovery.
         Public discovery must retain the valid dialog regardless of
         cwd scope, and name2id() must resolve its name. Snapshot each
         file to prove that readers neither repair nor rewrite logs.
@@ -626,6 +628,7 @@ class HarnessStoresTests(unittest.TestCase):
         folder.mkdir(parents=True)
         (folder / 'partial.json').write_text('{"id":')
         (folder / 'invalid.json').write_text('not json')
+        (folder / 'invalid-utf8.json').write_bytes(b'\xff\n')
         (folder / 'valid.json').write_text(json.dumps({
             'id': 'ses_kept',
             'title': 'Kept dialog',
