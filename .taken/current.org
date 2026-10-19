@@ -812,3 +812,132 @@ in its original location and leave human-owned states intact.
 - [[file:../skills/yt-url-lookup/ROADMAP.md][Media tooling and package-extraction ideas]]
 - [[file:/home/goodboy/repos/ai.skillz/bigB/pi-extensions-install.md][Pi extension notes]]
 
+*** TODO Extract Dotrc stack engine into aiskillz
+:PROPERTIES:
+:ID: aiskillz-stack-extraction-20261015
+:CREATED: [2026-10-15]
+:CARRIED: 0
+:REPO: ai.skillz/
+:END:
+
+Objective: move the proven Dotrc stack engine into aiskillz, preserving
+its commands and behavior with lazy, in-process Xonsh integration.
+Next action: refresh Dotrc after its pending test-conversion commit,
+inspect the current sources, and propose a small file/public-API map
+before extracting the engine. This is follow-up work outside PR 18;
+recording this task does not start implementation or block landing.
+
+**** Context and source locations
+Source: the Dotrc client handoff supplied by the human on 2026-10-15.
+Paths below are relative to their named repository checkouts:
+- Dotrc: =dotrc/xonsh/git.xsh= (engine), =dotrc/git/tests= (native pytest
+  conversion reported awaiting human commit), =dotrc/xonsh/xonshrc=
+  (dispatch). Re-read the actual committed source before extraction.
+- Modden: =xontrib/git_xompleter.py= (completion).
+- ai.skillz: =aiskillz/git= and =aiskillz/_xontrib.py=.
+- Related scope: [[id:f489d534-83e1-4627-9f89-d700f374dd48][Git-primitives extraction after PR 18]].
+  That task owns commit-plan primitive reuse; this task owns the Dotrc
+  stack engine. Coordinate shared APIs without merging their policies.
+- Review-adapter extraction has its own task:
+  [[id:aiskillz-tuicr-adapter-20261015][portable Tuicr adapter]].
+
+**** Concerns and compatibility
+- Keep short, isolated read-only discovery distinct from long-running
+  rebase execution: timeout, environment, errors and authority differ.
+- Base aiskillz supports Python >=3.10 with no runtime dependencies.
+  Propose a Git dependency extra for =dulwich= or justify another policy.
+  Do not eagerly import the engine or =dulwich= from =git.__init__= or
+  the Xontrib loader; keep unrelated discovery imports lightweight.
+- Preserve source attribution, public command spellings, task states
+  and live branch histories. Use only disposable repos for validation.
+
+**** Execution
+- [ ] Extract the engine first, preserving behavior. Make cwd,
+  environment and output explicit inputs via a per-command context;
+  keep XSH, alias registration, streams and capture in the shell layer.
+- [ ] Preserve BASE-as-destination and independent =--onto DEST BASE
+  [TIP]=, pinned slice order/bounds, worktree ownership, dirty-operation
+  refusal, conflict/resume, partial abort and pinned push selection.
+- [ ] Retain the common-Git =dotrc-rebase-stack.json= location and v1
+  journal compatibility. Never relocate an active operation implicitly.
+- [ ] Register lazy in-process callables with the existing alias
+  ownership/reload/unload contract; never spawn Python/Xonsh per call.
+- [ ] Return a tiny Dotrc compatibility-shim patch preserving
+  =source ~/.config/xonsh/git.xsh= and the current =_git= dispatch hook.
+  Coordinate cross-repo edits with the Dotrc owner rather than editing
+  their checkout or removing the old code before parity is proven.
+- [ ] Move stack-specific completion after engine parity; retain
+  Modden's generic Git alias/ref completion. Migrate remaining
+  push/remote aliases separately, preserving lease regressions.
+
+**** Verification
+- [ ] Run migrated disposable-repository fixtures against the packaged
+  API and compatibility entrypoint before replacing the original code.
+- [ ] Cover same-tip refs, multiple owners, explicit/offline bounds,
+  =--onto= publication scope, conflicts/resume/partial abort, ref drift,
+  message-less reflogs and unchanged journals on invalid evidence.
+- [ ] Check alias reload/unload ownership, redirects/capture, changing
+  environments and repos between calls, and no interpreter spawning
+  on warm calls. Never exercise a live stack to validate extraction.
+- [ ] Compare cold imports, first invocation and repeated warm full-stack
+  timings on the same workload. Report workload and environment context,
+  not a universal performance claim.
+
+**** Handback
+Return the module/API map, dependency decision, compatibility/journal
+strategy, scoped diffs, tests, timings and unresolved questions to this
+task. Propose separate engine and shell/shim commits; keep completion,
+other aliases and the review adapter independently reviewable. Do not
+commit, publish, restack live branches or change acceptance markers
+without a separate human instruction.
+
+*** TODO Extract portable Tuicr review adapter into aiskillz
+:PROPERTIES:
+:ID: aiskillz-tuicr-adapter-20261015
+:CREATED: [2026-10-15]
+:CARRIED: 0
+:REPO: ai.skillz/
+:END:
+
+Objective: package the portable Tuicr invocation adapter independently
+of Dotrc setup and the Git stack engine.
+Next action: inspect the current Dotrc adapter/tests and propose the
+smallest portable API plus a thin Dotrc wrapper patch. This is a
+separate follow-up workstream and commit boundary outside PR 18.
+
+**** Context and ownership
+Source: the Dotrc client handoff supplied by the human on 2026-10-15.
+- Dotrc sources: =dotrc/xonsh/tuicr.xsh= and
+  =dotrc/xonsh/tests/test_tuicr.py=. Commit =9280675= introduced the
+  no-build review adapter; refresh the current source before moving it.
+- Related policy owner:
+  [[id:aiskillz-pm-20261007-reviews][Tuicr review handoffs and response enforcement]].
+  Preserve its unresolved concerns instead of duplicating that scope.
+- Coordinate with [[id:aiskillz-stack-extraction-20261015][the stack extraction]] for shell
+  conventions, without coupling their implementation or landing.
+- Tuicr owns review-store persistence, schema and forge semantics.
+  Invoke its supported CLI; do not add another review-state backend.
+
+**** Execution
+- [ ] Separate reusable binary selection, agent argv validation and
+  state-environment construction from Dotrc paths, builds and aliases.
+- [ ] Migrate portable adapter cases to native pytest in aiskillz.
+  Preserve no-build agent mode, existing-binary reuse, missing-binary
+  errors, review-only commands and exact local/agent argv passthrough.
+- [ ] Keep interactive builds explicit and optional dependencies lazy.
+  Return thin Dotrc =tcr=/=tcrsh= wrapper patches for its owner to apply
+  once the package API is available; do not take over their checkout.
+
+**** Verification
+- [ ] Retain no-build/no-network agent-adapter tests with temporary
+  state and fake/disposable binaries, never real review-store data.
+- [ ] Exercise binary selection, missing binaries, environment changes,
+  rejected non-review agent argv and exact argument forwarding.
+- [ ] Verify wrapper/API parity, source attribution and applicable
+  Python-style/license checks independently from the stack engine.
+
+**** Handback
+Return the portable API, dependency boundary, scoped package/tests diff,
+Dotrc wrapper patch, verification outcomes and remaining limitations.
+Use a separate adapter commit. Preserve human-owned task states; do not
+commit, publish or mutate forge/review data without separate authority.
