@@ -6,8 +6,8 @@
 Dialog APIs for library callers and the ai.dlogs CLI.
 
 Use `list_dialogs()`, `get_dialog()` and `name2id()` for harness
-metadata. The WKT functions expose the same relation workflow used
-by `/open-wkt` and `ai.dlogs index`, without a shell or terminal
+metadata. The WKT functions expose the same relation workflow used by
+`/open-wkt` and `ai.dlogs index`, without a shell or terminal
 formatter.
 
 '''

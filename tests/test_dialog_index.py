@@ -7,7 +7,11 @@ Backfill synthetic harness history without claiming worktree owners.
 
 '''
 
-from contextlib import closing, redirect_stderr, redirect_stdout
+from contextlib import (
+    closing,
+    redirect_stderr,
+    redirect_stdout,
+)
 from io import StringIO
 from hashlib import sha256
 import json
@@ -19,7 +23,8 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
-from typing import Any
+import pytest
+from pytest import ExceptionInfo
 from unittest.mock import patch
 
 from aiskillz import (
@@ -27,7 +32,10 @@ from aiskillz import (
     record_wkt_relation,
 )
 from aiskillz.wkt._relations import identity
-from aiskillz.cli import _shell_commands, main
+from aiskillz.cli import (
+    _shell_commands,
+    main,
+)
 from aiskillz.dialogs import (
     preview_wkt_relations as preview,
     save_wkt_preview as save_preview,
@@ -50,10 +58,12 @@ class DialogIndexTests(unittest.TestCase):
         '''
         A name under the wrong harness was saved as a literal ID.
 
-        Return no OpenCode match for a Codex name selected via `oc`.
-        The CLI must report the missing name and harness, fail, and
-        leave the existing relation bytes unchanged. This includes
-        the old misleading zero-write case for a bogus saved pair.
+        - Return no OpenCode match for a Codex name selected via
+          `oc`.
+        - The CLI must report the missing name and harness, fail, and
+          leave the existing relation bytes unchanged.
+        - This includes the old misleading zero-write case for a
+          bogus saved pair.
 
         '''
         name: str = 'config_schema_mngr'
@@ -96,10 +106,12 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Manual recording formerly used a saved name as the ID.
 
-        Supply a name and an alias with metadata rooted elsewhere.
-        Assert the real ID and canonical harness are persisted, then
-        repeat using the ID to prove unchanged relations return zero.
-        The lookup must include all directories and archive sources.
+        - Supply a name and an alias with metadata rooted elsewhere.
+        - Assert the real ID and canonical harness are persisted,
+          then repeat using the ID to prove unchanged relations
+          return zero.
+        - The lookup must include all directories and archive
+          sources.
 
         '''
         row: dict = {
@@ -109,7 +121,10 @@ class DialogIndexTests(unittest.TestCase):
             'cwd': str(self.second),
         }
         selector: str
-        for selector in (row['name'], row['id']):
+        for selector in (
+            row['name'],
+            row['id'],
+        ):
             output: StringIO = StringIO()
             with (
                 patch('aiskillz.cli.dialogs.list_dialogs',
@@ -141,14 +156,23 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Two saved dialogs can have the same name in one harness.
 
-        Return two distinct IDs for a name. Verify the CLI offers
-        both exact IDs and fails without creating relations.json,
-        rather than silently choosing one dialog or saving its name.
+        - Return two distinct IDs for a name.
+        - Verify the CLI offers both exact IDs and fails without
+          creating relations.json, rather than silently choosing one
+          dialog or saving its name.
 
         '''
         rows: list[dict] = [
-            {'name': 'duplicate', 'id': 'one', 'harness': 'codex'},
-            {'name': 'duplicate', 'id': 'two', 'harness': 'codex'},
+            {
+                'name': 'duplicate',
+                'id': 'one',
+                'harness': 'codex',
+            },
+            {
+                'name': 'duplicate',
+                'id': 'two',
+                'harness': 'codex',
+            },
         ]
         error: StringIO = StringIO()
         with (
@@ -181,14 +205,23 @@ class DialogIndexTests(unittest.TestCase):
         '''
         One dialog's name can equal another dialog's opaque ID.
 
-        Put the name match first in discovery results. Recording
-        must still select the exact ID, matching ai.resume's rule,
-        and leave the other dialog without a WKT relation.
+        - Put the name match first in discovery results.
+        - Recording must still select the exact ID, matching
+          ai.resume's rule, and leave the other dialog without a WKT
+          relation.
 
         '''
         rows: list[dict] = [
-            {'name': self.cx_id, 'id': 'other', 'harness': 'codex'},
-            {'name': 'actual', 'id': self.cx_id, 'harness': 'codex'},
+            {
+                'name': self.cx_id,
+                'id': 'other',
+                'harness': 'codex',
+            },
+            {
+                'name': 'actual',
+                'id': self.cx_id,
+                'harness': 'codex',
+            },
         ]
         with (
             patch('aiskillz.cli.dialogs.list_dialogs',
@@ -213,12 +246,14 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Python callers previously could not read the table's store.
 
-        Record two harnesses sharing an opaque ID through the public
-        writer, then query from a linked checkout with a harness
-        alias. Removing one target must retain its historical record
-        with git_active=False, without altering the other
-        harness's entry.
-        This proves both repo-wide visibility and identity isolation.
+        - Record two harnesses sharing an opaque ID through the
+          public writer, then query from a linked checkout with a
+          harness alias.
+        - Removing one target must retain its historical record with
+          git_active=False, without altering the other harness's
+          entry.
+        - This proves both repo-wide visibility and identity
+          isolation.
 
         '''
         self.assertEqual(record_wkt_relation(
@@ -249,10 +284,11 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Per-checkout files would split dialog/worktree associations.
 
-        Record from one linked checkout and read from another. The
-        single association file must be under the main checkout's
-        .ai directory and retain its bytes on repeated recording.
-        Preview files must use that same shared directory.
+        - Record from one linked checkout and read from another.
+        - The single association file must be under the main
+          checkout's .ai directory and retain its bytes on repeated
+          recording.
+        - Preview files must use that same shared directory.
 
         '''
         record(str(self.first), 'cx', self.cx_id, str(self.first))
@@ -281,19 +317,28 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Non-object relation JSON must not reach mapping operations.
 
-        A review alleged that null or array relation files could
-        escape as AttributeError. The existing read() object guard
-        already rejects them. Protect this boundary using real files
-        containing scalar and array values: public relation lookup
-        must raise ValueError. CLI indexing must report it without a
-        traceback, source rewrites, previews or a writer guard.
+        - A review alleged that null or array relation files could
+          escape as AttributeError.
+        - The existing read() object guard already rejects them.
+        - Protect this boundary using real files containing scalar
+          and array values: public relation lookup must raise
+          ValueError.
+        - CLI indexing must report it without a traceback, source
+          rewrites, previews or a writer guard.
 
         '''
         directory: Path = self.repo / '.ai/state/dialogs'
         directory.mkdir(parents=True)
         path: Path = directory / 'relations.json'
         value: object
-        for value in (None, [], [1], False, 42, 'scalar'):
+        for value in (
+            None,
+            [],
+            [1],
+            False,
+            42,
+            'scalar',
+        ):
             with self.subTest(value=value):
                 path.write_text(json.dumps(value))
                 before: bytes = path.read_bytes()
@@ -306,7 +351,10 @@ class DialogIndexTests(unittest.TestCase):
                     redirect_stderr(error),
                     self.assertRaises(SystemExit) as raised,
                 ):
-                    main(['index', str(self.repo)])
+                    main([
+                        'index',
+                        str(self.repo),
+                    ])
                 self.assertEqual(raised.exception.code, 1)
                 self.assertIn(
                     'Unsupported dialog relation file',
@@ -323,9 +371,10 @@ class DialogIndexTests(unittest.TestCase):
         '''
         A symlinked .ai could redirect writes to another worktree.
 
-        Point the main checkout's .ai at a linked checkout and try to
-        record a pair. Recording must refuse the redirect and leave
-        the other checkout untouched, preserving the shared location.
+        - Point the main checkout's .ai at a linked checkout and try
+          to record a pair.
+        - Recording must refuse the redirect and leave the other
+          checkout untouched, preserving the shared location.
 
         '''
         (self.repo / '.ai').symlink_to(
@@ -339,21 +388,37 @@ class DialogIndexTests(unittest.TestCase):
         '''
         A generic identity error hid which stored field was broken.
 
-        Exercise invalid harness, non-string ID and empty ID cases
-        independently. Each error must identify the offending field
-        and reason so a user can repair metadata without guessing.
-        Non-UUID opaque IDs remain valid.
+        - Exercise invalid harness, non-string ID and empty ID cases
+          independently.
+        - Each error must identify the offending field and reason so
+          a user can repair metadata without guessing.
+        - Non-UUID opaque IDs remain valid.
 
         '''
         with self.assertRaisesRegex(ValueError, 'harness.*wrong'):
-            identity({'harness': 'wrong', 'id': 'ok'})
+            identity({
+                'harness': 'wrong',
+                'id': 'ok',
+            })
         with self.assertRaisesRegex(ValueError, 'id:.*str.*int'):
-            identity({'harness': 'codex', 'id': 123})
+            identity({
+                'harness': 'codex',
+                'id': 123,
+            })
         with self.assertRaisesRegex(ValueError, 'id: empty'):
-            identity({'harness': 'codex', 'id': ''})
+            identity({
+                'harness': 'codex',
+                'id': '',
+            })
         self.assertEqual(
-            identity({'harness': 'opencode', 'id': 'ses_one'}),
-            ('opencode', 'ses_one'),
+            identity({
+                'harness': 'opencode',
+                'id': 'ses_one',
+            }),
+            (
+                'opencode',
+                'ses_one',
+            ),
         )
 
     def setUp(self) -> None:
@@ -382,23 +447,19 @@ class DialogIndexTests(unittest.TestCase):
         self.oc: Path = self.base / 'opencode'
         self.cx.mkdir()
         self.oc.mkdir()
-        self.env: Any = patch.dict(os.environ, {
+        self.enterContext(patch.dict(os.environ, {
             'CODEX_HOME': str(self.cx),
             'CLAUDE_CONFIG_DIR': str(self.cld),
             'OPENCODE_DATA_DIR': str(self.oc),
-        })
-        self.env.start()
-        self.addCleanup(self.env.stop)
+        }))
         self.first: Path = self.linked('first')
         self.second: Path = self.linked('second')
         self.cx_id: str = '01980000-0000-7000-8000-000000000001'
         self.dialogs: list[dict] = []
-        self.reader: Any = patch(
+        self.enterContext(patch(
             'aiskillz.dialogs._api.list_dialogs',
             side_effect=self.rows,
-        )
-        self.reader.start()
-        self.addCleanup(self.reader.stop)
+        ))
 
     def linked(self, name: str) -> Path:
         '''
@@ -447,15 +508,20 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Path containment used to assign nested clones to outer WKTs.
 
-        Place independent Git repositories inside a linked checkout,
-        including one with a .git file like a submodule. Their saved
-        cwd and structured-history paths must not create relations
-        or unresolved rows in the outer repository. An ordinary
-        subdirectory must still identify its enclosing worktree.
+        - Place independent Git repositories inside a linked
+          checkout, including one with a .git file like a submodule.
+        - Their saved cwd and structured-history paths must not
+          create relations or unresolved rows in the outer
+          repository.
+        - An ordinary subdirectory must still identify its enclosing
+          worktree.
 
         '''
         kind: str
-        for kind in ('clone', 'gitfile'):
+        for kind in (
+            'clone',
+            'gitfile',
+        ):
             nested: Path = self.first / kind
             argv: list[str] = [
                 'git',
@@ -507,11 +573,12 @@ class DialogIndexTests(unittest.TestCase):
         '''
         all_sources previously left archive filters enabled.
 
-        Seed archived Codex and OpenCode SQLite rows, then record
-        each by name and by ID through the CLI and real readers.
-        Relations must contain the resolved IDs; ordinary discovery
-        must still hide the archived rows. This verifies manual
-        recording independently of the source-kind filter.
+        - Seed archived Codex and OpenCode SQLite rows, then record
+          each by name and by ID through the CLI and real readers.
+        - Relations must contain the resolved IDs; ordinary discovery
+          must still hide the archived rows.
+        - This verifies manual recording independently of the
+          source-kind filter.
 
         '''
         from aiskillz import list_dialogs
@@ -526,7 +593,14 @@ class DialogIndexTests(unittest.TestCase):
             )
             con.execute(
                 'INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)',
-                ('old-cx', 'Old CX', str(self.repo), 'cli', 1, 1),
+                (
+                    'old-cx',
+                    'Old CX',
+                    str(self.repo),
+                    'cli',
+                    1,
+                    1,
+                ),
             )
             con.commit()
 
@@ -539,7 +613,14 @@ class DialogIndexTests(unittest.TestCase):
             )
             con.execute(
                 'INSERT INTO session VALUES (?, ?, ?, ?, ?, ?)',
-                ('old-oc', 'Old OC', str(self.repo), None, 1, 2),
+                (
+                    'old-oc',
+                    'Old OC',
+                    str(self.repo),
+                    None,
+                    1,
+                    2,
+                ),
             )
             con.commit()
 
@@ -551,8 +632,16 @@ class DialogIndexTests(unittest.TestCase):
             did,
             name,
         ) in (
-            ('codex', 'old-cx', 'Old CX'),
-            ('opencode', 'old-oc', 'Old OC'),
+            (
+                'codex',
+                'old-cx',
+                'Old CX',
+            ),
+            (
+                'opencode',
+                'old-oc',
+                'Old OC',
+            ),
         ):
             self.assertEqual(list_dialogs(
                 path=None, harness=harness, all_sources=True,
@@ -562,7 +651,10 @@ class DialogIndexTests(unittest.TestCase):
                 side_effect=list_dialogs,
             ):
                 selector: str
-                for selector in (name, did):
+                for selector in (
+                    name,
+                    did,
+                ):
                     with redirect_stdout(StringIO()):
                         self.assertEqual(main([
                             'index',
@@ -580,7 +672,10 @@ class DialogIndexTests(unittest.TestCase):
         row: dict
         self.assertEqual(
             {row['id'] for row in saved['records']},
-            {'old-cx', 'old-oc'},
+            {
+                'old-cx',
+                'old-oc',
+            },
         )
 
     def test_non_string_tool_names_do_not_abort_preview(
@@ -589,12 +684,12 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Null or scalar tool names used to crash history indexing.
 
-        Write malformed function calls before a valid namespaced
-        Codex tool call in the selected dialog's real JSONL log.
-        Invalid names must contribute no argument-path evidence;
-        `preview` must still recover the later valid call's WKT.
-        Exercise both top-level calls and nested response payloads,
-        checking that neither the log nor relations are modified.
+        - Write malformed function calls before a valid namespaced
+          Codex tool call in the selected dialog's real JSONL log.
+        - Invalid names must contribute no argument-path evidence;
+          `preview` must still recover the later valid call's WKT.
+        - Exercise both top-level calls and nested response payloads,
+          checking that neither the log nor relations are modified.
 
         '''
         self.add('codex', self.cx_id, self.repo)
@@ -603,11 +698,20 @@ class DialogIndexTests(unittest.TestCase):
         )
         log.parent.mkdir()
         nested: bool
-        for nested in (False, True):
+        for nested in (
+            False,
+            True,
+        ):
             with self.subTest(nested=nested):
                 events: list[dict] = []
                 name: object
-                for name in (None, 42, False, [], {}):
+                for name in (
+                    None,
+                    42,
+                    False,
+                    [],
+                    {},
+                ):
                     call: dict = {
                         'type': 'function_call',
                         'name': name,
@@ -654,10 +758,12 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Saved main cwd hides later worktree use across harnesses.
 
-        Seed Codex tool-workdir, Claude cwd and OpenCode
-        message path.cwd. Preview must recover candidates without
-        writing assignments; apply must preserve ownership and log
-        bytes intact. Repeating the preview must find no new entries.
+        - Seed Codex tool-workdir, Claude cwd and OpenCode message
+          path.cwd.
+        - Preview must recover candidates without writing
+          assignments; apply must preserve ownership and log bytes
+          intact.
+        - Repeating the preview must find no new entries.
 
         '''
         self.add('codex', self.cx_id, self.repo)
@@ -699,7 +805,9 @@ class DialogIndexTests(unittest.TestCase):
             self.common / 'worktrees/first/ai-skillz-wkt/owner.json'
         )
         before: list[bytes] = [
-            owner.read_bytes(), cxlog.read_bytes(), db.read_bytes(),
+            owner.read_bytes(),
+            cxlog.read_bytes(),
+            db.read_bytes(),
         ]
         plan: dict = preview(str(self.repo))
         self.assertEqual(len(plan['entries']), 3)
@@ -718,7 +826,9 @@ class DialogIndexTests(unittest.TestCase):
         )
         self.assertEqual(preview(str(self.repo))['entries'], [])
         self.assertEqual(before, [
-            owner.read_bytes(), cxlog.read_bytes(), db.read_bytes(),
+            owner.read_bytes(),
+            cxlog.read_bytes(),
+            db.read_bytes(),
         ])
         self.assertEqual(
             WktLookup().roots(
@@ -730,9 +840,10 @@ class DialogIndexTests(unittest.TestCase):
         '''
         History can connect one dialog to several worktrees.
 
-        Give a saved cwd and a different structured cwd; applying
-        without a choice must write nothing. Choosing an enumerated
-        candidate succeeds, while an unrelated target is refused.
+        - Give a saved cwd and a different structured cwd; applying
+          without a choice must write nothing.
+        - Choosing an enumerated candidate succeeds, while an
+          unrelated target is refused.
 
         '''
         self.add('claude', 'cld-one', self.first)
@@ -759,17 +870,58 @@ class DialogIndexTests(unittest.TestCase):
             ['cld:cld-one=' + str(self.second)],
         ), 1)
 
+    def test_malformed_choice_identifies_input_without_writes(
+        self,
+    ) -> None:
+        '''
+        Malformed --choose values hid behind tuple-unpacking errors.
+
+        - Create a real proposal and pin its exact bytes.
+        - Try values missing `=` or the harness/ID `:` separator.
+        - Require the rejected value and expected syntax in each
+          error, with no relation write or preview mutation.
+        - Use disposable Git/harness fixtures; no real dialog starts.
+
+        '''
+        self.add('claude', 'choice-dialog', self.first)
+        plan: dict = preview(str(self.repo))
+        path: Path
+        digest: str
+        path, digest = save_preview(plan)
+        before: bytes = path.read_bytes()
+        choice: str
+        for choice in (
+            'missing-equals',
+            'missing-colon=/unused',
+        ):
+            with self.subTest(choice=choice):
+                error: ExceptionInfo[ValueError]
+                with pytest.raises(ValueError) as error:
+                    apply_preview(
+                        str(self.repo), path, digest, [choice],
+                    )
+
+                diagnostic: str = str(error.value)
+                self.assertIn(repr(choice), diagnostic)
+                self.assertIn('HARNESS:ID=', diagnostic)
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(
+                    list_wkt_relations(str(self.repo)), [],
+                )
+
     def test_malformed_preview_has_cli_error_without_writes(
         self,
     ) -> None:
         '''
         A valid digest authenticates bytes, not preview entry shape.
 
-        The CLI used to call identity() on a JSON string and leak an
-        AttributeError traceback. Hash malformed entry/candidate
-        shapes correctly, including a good entry before a bad one.
-        Apply must produce its normal ValueError diagnostic before
-        publishing a relation or creating a persistent writer guard.
+        - The CLI used to call identity() on a JSON string and leak
+          an AttributeError traceback.
+        - Hash malformed entry/candidate shapes correctly, including
+          a good entry before a bad one.
+        - Apply must produce its normal ValueError diagnostic before
+          publishing a relation or creating a persistent writer
+          guard.
 
         '''
         self.add('claude', 'one', self.first)
@@ -781,25 +933,40 @@ class DialogIndexTests(unittest.TestCase):
             'bad',
             [None],
             ['bad'],
-            [good, 'bad'],
-            [{**good, 'candidates': None}],
-            [{**good, 'candidates': ['bad']}],
-            [{**good, 'candidates': [{}]}],
+            [
+                good,
+                'bad',
+            ],
+            [{
+                **good,
+                'candidates': None,
+            }],
+            [{
+                **good,
+                'candidates': ['bad'],
+            }],
+            [{
+                **good,
+                'candidates': [{}],
+            }],
             [{**good, 'candidates': [{
                 'worktree': [],
                 'git_dir': 'not-a-path',
             }]}],
         ):
             with self.subTest(entries=malformed):
-                data: dict = {**plan, 'entries': malformed}
+                data: dict = {
+                    **plan,
+                    'entries': malformed,
+                }
                 raw: bytes = json.dumps(data).encode()
                 path: Path = self.base / 'malformed-preview.json'
                 path.write_bytes(raw)
                 digest: str = sha256(raw).hexdigest()
                 stderr: StringIO = StringIO()
                 with redirect_stderr(stderr):
-                    error: Any
-                    with self.assertRaises(SystemExit) as error:
+                    error: ExceptionInfo[SystemExit]
+                    with pytest.raises(SystemExit) as error:
                         main([
                             'index',
                             str(self.repo),
@@ -808,7 +975,7 @@ class DialogIndexTests(unittest.TestCase):
                             '--sha256',
                             digest,
                         ])
-                self.assertEqual(error.exception.code, 1)
+                self.assertEqual(error.value.code, 1)
                 self.assertIn('Invalid preview', stderr.getvalue())
                 self.assertNotIn('Traceback', stderr.getvalue())
                 self.assertEqual(
@@ -822,11 +989,12 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Candidate fields previously overwrote the reviewed identity.
 
-        Add another harness and ID to an otherwise valid candidate
-        and recompute the preview digest. Applying this authenticated
-        artifact must record only the entry's harness and dialog ID,
-        with the validated paths. The injected identity must never
-        become a relation, and candidate extras must not persist.
+        - Add another harness and ID to an otherwise valid candidate
+          and recompute the preview digest.
+        - Applying this authenticated artifact must record only the
+          entry's harness and dialog ID, with the validated paths.
+        - The injected identity must never become a relation, and
+          candidate extras must not persist.
 
         '''
         self.add('claude', 'one', self.first)
@@ -846,7 +1014,10 @@ class DialogIndexTests(unittest.TestCase):
         relations: list[dict] = list_wkt_relations(str(self.repo))
         self.assertEqual(len(relations), 1)
         relation: dict = relations[0]
-        self.assertEqual(identity(relation), ('claude', 'one'))
+        self.assertEqual(identity(relation), (
+            'claude',
+            'one',
+        ))
         self.assertEqual(relation['worktree'], str(self.first))
         self.assertEqual(relation['git_dir'], candidate['git_dir'])
         self.assertNotIn('extra', relation)
@@ -855,15 +1026,21 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Applying no selected relations used to accept stale previews.
 
-        Exercise both an empty preview and an ambiguous dialog with
-        no choice. Each initially returns zero. Record another dialog
-        after saving the preview, then require stale apply to fail
-        without changing `relations.json` or leaving `write.guard`.
-        This covers the CLI's no-choice path through `apply_preview`.
+        - Exercise both an empty preview and an ambiguous dialog with
+          no choice.
+        - Each initially returns zero.
+        - Record another dialog after saving the preview, then
+          require stale apply to fail without changing
+          `relations.json` or leaving `write.guard`.
+        - This covers the CLI's no-choice path through
+          `apply_preview`.
 
         '''
         ambiguous: bool
-        for ambiguous in (False, True):
+        for ambiguous in (
+            False,
+            True,
+        ):
             with self.subTest(ambiguous=ambiguous):
                 if ambiguous:
                     self.add('claude', 'cld-one', self.first)
@@ -910,9 +1087,10 @@ class DialogIndexTests(unittest.TestCase):
         '''
         A reviewed proposal must not overwrite later assignments.
 
-        Tamper with its digest, then add another confirmed dialog and
-        verify stale apply leaves that store byte-identical. A fresh
-        proposal is also rejected after its target tree disappears.
+        - Tamper with its digest, then add another confirmed dialog
+          and verify stale apply leaves that store byte-identical.
+        - A fresh proposal is also rejected after its target tree
+          disappears.
 
         '''
         self.add('claude', 'one', self.first)
@@ -939,9 +1117,10 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Pinned previews belong to one repo and cannot bypass writers.
 
-        Apply a valid preview from another repository, then create
-        the real store's writer guard. Both attempts must fail before
-        publishing assignments; the existing guard remains untouched.
+        - Apply a valid preview from another repository, then create
+          the real store's writer guard.
+        - Both attempts must fail before publishing assignments; the
+          existing guard remains untouched.
 
         '''
         self.add('claude', 'one', self.first)
@@ -975,9 +1154,10 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Old ownership records can contain an actual saved dialog ID.
 
-        Match both provider and ID against known dialogs, never a
-        generic token. After explicit retargeting, confirmed state
-        must override the legacy owner evidence and survive reindex.
+        - Match both provider and ID against known dialogs, never a
+          generic token.
+        - After explicit retargeting, confirmed state must override
+          the legacy owner evidence and survive reindex.
 
         '''
         self.add('codex', self.cx_id, self.repo)
@@ -1003,9 +1183,10 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Empty previews formerly prompted users to apply nothing.
 
-        Run the actual CLI with no recoverable dialogs and capture
-        its output. It must explain the no-op and retain counts,
-        without an Apply command or an empty candidate-table header.
+        - Run the actual CLI with no recoverable dialogs and capture
+          its output.
+        - It must explain the no-op and retain counts, without an
+          Apply command or an empty candidate-table header.
 
         '''
         output: StringIO = StringIO()
@@ -1025,8 +1206,9 @@ class DialogIndexTests(unittest.TestCase):
         '''
         Keep each dialog's WKT choices readable in terminal output.
 
-        Plain output retains copyable labels and commands. Only TTY
-        output colors labels, dialog identities and WKT paths.
+        - Plain output retains copyable labels and commands.
+        - Only TTY output colors labels, dialog identities and WKT
+          paths.
 
         '''
         class Terminal(StringIO):
@@ -1080,9 +1262,15 @@ class DialogIndexTests(unittest.TestCase):
             patch('aiskillz.cli.dialogs.preview_wkt_relations',
                   return_value=proposal),
             patch('aiskillz.cli.dialogs.save_wkt_preview',
-                  return_value=(preview_path, 'abcd')),
+                  return_value=(
+                      preview_path,
+                      'abcd',
+                  )),
             patch.dict(
-                os.environ, {'TERM': 'xterm', 'NO_COLOR': ''},
+                os.environ, {
+                    'TERM': 'xterm',
+                    'NO_COLOR': '',
+                },
             ),
         ):
             with patch('aiskillz.cli.sys.stdout', plain):
@@ -1169,7 +1357,10 @@ class DialogIndexTests(unittest.TestCase):
         )
         self.assertEqual(
             [label for label, _ in shell_forms],
-            ['Apply (xonsh):', 'Apply (POSIX sh):'],
+            [
+                'Apply (xonsh):',
+                'Apply (POSIX sh):',
+            ],
         )
         self.assertEqual(shlex.split(shell_forms[1][1]), [
             'ai.dlogs',
@@ -1192,9 +1383,14 @@ class DialogIndexTests(unittest.TestCase):
             colored,
         )
         for label in (
-            'Unresolved:', 'Already recorded:', 'Warning:',
-            'Preview:', 'SHA-256:', 'Apply (xonsh/POSIX sh):',
-            'Resume (xonsh/POSIX sh):', 'Resume (xonsh):',
+            'Unresolved:',
+            'Already recorded:',
+            'Warning:',
+            'Preview:',
+            'SHA-256:',
+            'Apply (xonsh/POSIX sh):',
+            'Resume (xonsh/POSIX sh):',
+            'Resume (xonsh):',
             'Resume (POSIX sh):',
         ):
             self.assertIn(f'\x1b[90m{label}\x1b[0m', colored)
@@ -1207,9 +1403,10 @@ class DialogIndexTests(unittest.TestCase):
         '''
         A mentioned worktree is not a dialog assignment.
 
-        Put its path in user text and a shell command. Neither may
-        create candidates. Invoke the actual index CLI dispatcher to
-        verify preview defaults and that JSON remains parseable.
+        - Put its path in user text and a shell command.
+        - Neither may create candidates.
+        - Invoke the actual index CLI dispatcher to verify preview
+          defaults and that JSON remains parseable.
 
         '''
         self.add('claude', 'one', self.repo)

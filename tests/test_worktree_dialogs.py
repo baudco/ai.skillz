@@ -13,7 +13,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import (
+    Mock,
+    patch,
+)
 
 
 from aiskillz.wkt._lookup import WktLookup
@@ -74,20 +77,24 @@ class DialogWorktreeTests(unittest.TestCase):
         '''
         A removed recorded WKT used to block a valid dialog resume.
 
-        Record a new WKT for a dialog saved in another live linked
-        checkout, then remove the new WKT's Git file. Lookup must
-        retain the recorded identity but return no active path.
-        Resume must name the unavailable WKT and continue using the
-        existing saved cwd instead of requiring an override.
-        Listing must distinguish this relation from an unknown WKT.
-        Remove the Git backlink to reproduce failed verification;
-        assert both CLI outputs and that --cwd still overrides it.
-        Other dialogs retain ordinary fallback.
+        - Record a new WKT for a dialog saved in another live linked
+          checkout, then remove the new WKT's Git file.
+        - Lookup must retain the recorded identity but return no
+          active path.
+        - Resume must name the unavailable WKT and continue using the
+          existing saved cwd instead of requiring an override.
+        - Listing must distinguish this relation from an unknown WKT.
+        - Remove the Git backlink to reproduce failed verification;
+          assert both CLI outputs and that --cwd still overrides it.
+        - Other dialogs retain ordinary fallback.
 
         '''
         from aiskillz import record_wkt_relation
         from aiskillz._resume import resume_target
-        from aiskillz.cli import format_dialog_table, resume_main
+        from aiskillz.cli import (
+            format_dialog_table,
+            resume_main,
+        )
 
         old: Path = self.linked('old', {})
         new: Path = self.linked('new', {})
@@ -156,10 +163,12 @@ class DialogWorktreeTests(unittest.TestCase):
         '''
         A dialog opened at main can work in a linked checkout.
 
-        Record its verified ID separately from the generic ownership
-        token. Lookups from main must find that worktree, distinguish
-        harnesses sharing IDs, and retain Git fallback for other IDs.
-        Repeated lookups must reuse this rendering's Git inventory.
+        - Record its verified ID separately from the generic
+          ownership token.
+        - Lookups from main must find that worktree, distinguish
+          harnesses sharing IDs, and retain Git fallback for other
+          IDs.
+        - Repeated lookups must reuse this rendering's Git inventory.
 
         '''
         root: Path = self.linked('feature', {
@@ -192,19 +201,26 @@ class DialogWorktreeTests(unittest.TestCase):
         '''
         One dialog can accumulate two live ownership associations.
 
-        Do not choose by filesystem iteration order. Mark ambiguity,
-        then remove one checkout while leaving stale admin metadata.
-        A fresh rendering must ignore that removed worktree.
+        - Do not choose by filesystem iteration order.
+        - Mark ambiguity, then remove one checkout while leaving
+          stale admin metadata.
+        - A fresh rendering must ignore that removed worktree.
 
         '''
-        dialog: dict = {'harness': 'opencode', 'id': 'ses_one'}
+        dialog: dict = {
+            'harness': 'opencode',
+            'id': 'ses_one',
+        }
         first: Path = self.linked('first', dialog)
         second: Path = self.linked('second', dialog)
         self.assertEqual(
             WktLookup().roots(
                 str(self.root), 'opencode', 'ses_one',
             ),
-            {str(first), str(second)},
+            {
+                str(first),
+                str(second),
+            },
         )
         (second / '.git').unlink()
         second.rmdir()
@@ -219,9 +235,10 @@ class DialogWorktreeTests(unittest.TestCase):
         '''
         Legacy session tokens are not authoritative dialog IDs.
 
-        Null and malformed dialog fields must provide no association,
-        while a cwd inside that worktree still gets the Git fallback.
-        A broken JSON owner file must not prevent table rendering.
+        - Null and malformed dialog fields must provide no
+          association, while a cwd inside that worktree still gets
+          the Git fallback.
+        - A broken JSON owner file must not prevent table rendering.
 
         '''
         root: Path = self.linked('old', None)

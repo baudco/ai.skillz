@@ -6,8 +6,8 @@
 Exercise dialog completion through Xonsh's real context parser.
 
 Use synthetic metadata and a disposable Codex SQLite index to prove
-selection, quoting, live updates and completer lifecycle behavior.
-No harness is launched and no real user dialog store is accessed.
+selection, quoting, live updates and completer lifecycle behavior. No
+harness is launched and no real user dialog store is accessed.
 
 '''
 
@@ -19,17 +19,26 @@ import sqlite3
 import subprocess
 import sys
 from types import SimpleNamespace
-from typing import Any
-from unittest.mock import ANY, patch
+from unittest.mock import (
+    ANY,
+    patch,
+)
 
-from xonsh.parsers.completion_context import CompletionContextParser
+from xonsh.completers.tools import RichCompletion
+from xonsh.parsers.completion_context import (
+    CompletionContextParser,
+)
 
 from aiskillz._completion import (
+    CompletionMethod,
     complete_resume,
     register_resume_completer,
     unregister_resume_completer,
 )
-from aiskillz._xontrib import _load_xontrib_, _unload_xontrib_
+from aiskillz._xontrib import (
+    _load_xontrib_,
+    _unload_xontrib_,
+)
 
 
 def completions(line: str, cursor: int|None = None) -> list|set|None:
@@ -37,21 +46,28 @@ def completions(line: str, cursor: int|None = None) -> list|set|None:
     Parse a real command line and invoke the contextual completer.
 
     '''
-    context = CompletionContextParser().parse(
-        line, len(line) if cursor is None else cursor,
+    if cursor is None:
+        cursor = len(line)
+
+    context = CompletionContextParser().parse(line, cursor)
+    result: tuple[list[RichCompletion], int]|set[str]|None = (
+        complete_resume(context)
     )
-    result: Any = complete_resume(context)
-    return result[0] if isinstance(result, tuple) else result
+    if isinstance(result, tuple):
+        return result[0]
+
+    return result
 
 
 def test_completion_filters_and_selector_position() -> None:
     '''
     Name suggestions must reflect resume's directory/backend scope.
 
-    Pass filters before and after the selector, including equals
-    syntax and an ID disambiguator. Check the actual API arguments
-    and ensure option values, later positionals and unrelated
-    commands never cause metadata discovery.
+    - Pass filters before and after the selector, including equals
+      syntax and an ID disambiguator.
+    - Check the actual API arguments and ensure option values, later
+      positionals and unrelated commands never cause metadata
+      discovery.
 
     '''
     row: dict = {
@@ -63,18 +79,33 @@ def test_completion_filters_and_selector_position() -> None:
     line: str
     expected: dict
     for line, expected in (
-        ('ai.resume Wo', {'path': '.', 'harness': None}),
+        (
+            'ai.resume Wo',
+            {
+                'path': '.',
+                'harness': None,
+            },
+        ),
         (
             'ai.resume -a -b cx Wo',
-            {'path': None, 'harness': 'cx'},
+            {
+                'path': None,
+                'harness': 'cx',
+            },
         ),
         (
             'ai.resume --repo=/repo --harness=cld Wo',
-            {'path': '/repo', 'harness': 'cld'},
+            {
+                'path': '/repo',
+                'harness': 'cld',
+            },
         ),
         (
             'ai.resume --harness=cld -b cx Wo',
-            {'path': '.', 'harness': 'cx'},
+            {
+                'path': '.',
+                'harness': 'cx',
+            },
         ),
     ):
         with patch(
@@ -82,7 +113,7 @@ def test_completion_filters_and_selector_position() -> None:
             return_value=[row],
         ) as listing:
             result: list = completions(line)
-            item: Any
+            item: RichCompletion
             assert {item.display for item in result} == {
                 'Work dialog',
             }
@@ -118,11 +149,12 @@ def test_completed_names_are_literal_shell_arguments(
     '''
     Dialog names can contain syntax and must remain one literal arg.
 
-    Complete a hostile name with spaces, quotes, dollar expansion,
-    backslashes and a newline. Test bare and quoted prefixes,
-    including an existing closing quote behind the cursor. Execute
-    an isolated capture alias in a fresh Xonsh process: its
-    argument JSON must exactly equal the original saved name.
+    - Complete a hostile name with spaces, quotes, dollar expansion,
+      backslashes and a newline.
+    - Test bare and quoted prefixes, including an existing closing
+      quote behind the cursor.
+    - Execute an isolated capture alias in a fresh Xonsh process: its
+      argument JSON must exactly equal the original saved name.
 
     '''
     name: str = 'Odd \'" $HOME $(false) \\ tail\nend'
@@ -135,9 +167,18 @@ def test_completed_names_are_literal_shell_arguments(
     line: str
     cursor: int
     for line, cursor in (
-        ('ai.resume Odd', len('ai.resume Odd')),
-        ("ai.resume 'Odd", len("ai.resume 'Odd")),
-        ('ai.resume "Odd"', len('ai.resume "Odd"')),
+        (
+            'ai.resume Odd',
+            len('ai.resume Odd'),
+        ),
+        (
+            "ai.resume 'Odd",
+            len("ai.resume 'Odd"),
+        ),
+        (
+            'ai.resume "Odd"',
+            len('ai.resume "Odd"'),
+        ),
     ):
         with patch(
             'aiskillz._completion.dialogs.list_dialogs',
@@ -177,16 +218,20 @@ def test_completion_updates_and_shell_environment(
     '''
     Completion must use live local metadata and shell-only overrides.
 
-    Seed an isolated Codex database and expose its location only in
-    Xonsh's environment. Complete, rename the saved dialog, then
-    complete again to prove no stale completion cache is used. Keep
-    the process environment byte-for-byte equivalent after lookup.
-    Then exercise prompt-toolkit's real alias-expanding frontend
-    through both loader paths. The first implementation tested only
-    `Completer` directly, missing this expansion and falling back
-    to file suggestions when a person actually pressed Tab.
-    Seed newer and older names whose alphabetical order disagrees
-    with recency. Verify both configured orders at that frontend.
+    - Seed an isolated Codex database and expose its location only in
+      Xonsh's environment.
+    - Complete, rename the saved dialog, then complete again to prove
+      no stale completion cache is used.
+    - Keep the process environment byte-for-byte equivalent after
+      lookup.
+    - Then exercise prompt-toolkit's real alias-expanding frontend
+      through both loader paths.
+    - The first implementation tested only `Completer` directly,
+      missing this expansion and falling back to file suggestions
+      when a person actually pressed Tab.
+    - Seed newer and older names whose alphabetical order disagrees
+      with recency.
+    - Verify both configured orders at that frontend.
 
     '''
     from xonsh.built_ins import XSH
@@ -200,7 +245,14 @@ def test_completion_updates_and_shell_environment(
         )
         connection.execute(
             'INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)',
-            ('one', 'Initial name', str(tmp_path), 'cli', 1, 0),
+            (
+                'one',
+                'Initial name',
+                str(tmp_path),
+                'cli',
+                1,
+                0,
+            ),
         )
     shell = SimpleNamespace(detype=lambda: os.environ | {
         'CODEX_HOME': str(tmp_path),
@@ -208,7 +260,7 @@ def test_completion_updates_and_shell_environment(
     original: dict[str, str] = dict(os.environ)
     line: str = 'ai.resume --repo ' + str(tmp_path) + ' -b cx '
     with patch.object(XSH, 'env', shell):
-        item: Any
+        item: RichCompletion
         assert {item.display for item in completions(line)} == {
             'Initial name',
         }
@@ -225,8 +277,22 @@ def test_completion_updates_and_shell_environment(
         connection.executemany(
             'INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)',
             [
-                ('old', 'Alpha old', str(tmp_path), 'cli', 0, 0),
-                ('new', 'Zulu recent', str(tmp_path), 'cli', 2, 0),
+                (
+                    'old',
+                    'Alpha old',
+                    str(tmp_path),
+                    'cli',
+                    0,
+                    0,
+                ),
+                (
+                    'new',
+                    'Zulu recent',
+                    str(tmp_path),
+                    'cli',
+                    2,
+                    0,
+                ),
             ],
         )
     source: Path = (
@@ -289,8 +355,16 @@ def test_completion_updates_and_shell_environment(
         )
         assert output.returncode == 0, output.stdout + output.stderr
         assert json.loads(output.stdout) == [
-            ['Zulu recent', 'Renamed dialog', 'Alpha old'],
-            ['Alpha old', 'Renamed dialog', 'Zulu recent'],
+            [
+                'Zulu recent',
+                'Renamed dialog',
+                'Alpha old',
+            ],
+            [
+                'Alpha old',
+                'Renamed dialog',
+                'Zulu recent',
+            ],
         ]
 
 
@@ -298,17 +372,20 @@ def test_completer_lifecycle_and_errors() -> None:
     '''
     Reload/unload must preserve prior completers and user overrides.
 
-    Install through the actual Xontrib twice with an existing
-    registry entry, then require its restoration on unload. A user
-    replacement made later must survive unregistering. Store errors
-    during Tab must return no candidates instead of raising.
+    - Install through the actual Xontrib twice with an existing
+      registry entry, then require its restoration on unload.
+    - A user replacement made later must survive unregistering.
+    - Store errors during Tab must return no candidates instead of
+      raising.
 
     '''
     from xonsh.completer import Completer
 
-    original_ordering: Any = Completer.complete_from_context
+    original_ordering: CompletionMethod = (
+        Completer.complete_from_context
+    )
 
-    def prior(context: Any) -> None:
+    def prior(context: object) -> None:
         '''
         Represent an existing user completer.
 
@@ -319,8 +396,14 @@ def test_completer_lifecycle_and_errors() -> None:
         aliases={},
         ctx={},
         completers=OrderedDict([
-            ('aiskillz_resume', prior),
-            ('fallback', prior),
+            (
+                'aiskillz_resume',
+                prior,
+            ),
+            (
+                'fallback',
+                prior,
+            ),
         ]),
     )
     _load_xontrib_(xsh)
@@ -332,7 +415,7 @@ def test_completer_lifecycle_and_errors() -> None:
     assert xsh.ctx == {}
     register_resume_completer(xsh)
 
-    def replacement(context: Any) -> set:
+    def replacement(context: object) -> set:
         '''
         Represent a new completer installed by the user after load.
 

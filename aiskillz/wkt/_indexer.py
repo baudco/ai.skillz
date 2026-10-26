@@ -3,12 +3,12 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Match dialog history to registered Git worktrees for user review.
+Match dialog history to Git WKTs for an indexing preview.
 
-`dialogs` supplies harness metadata and directory observations. This
-module owns repository scoping and relation decisions; `git` owns
-worktree discovery, and `_operations` owns saving and applying
-results.
+- dialogs supplies metadata and a directory-history reader.
+- WktIndexer owns repository scoping and evidence-based suggestions.
+- aiskillz.git owns registration discovery; wkt._operations owns
+  saving previews and writing relations after explicit review.
 
 '''
 
@@ -16,11 +16,15 @@ from collections.abc import Callable
 import json
 from pathlib import Path
 
-from ..git import checkout_location, repository, primary_worktree
+from ..git import (
+    checkout_location,
+    repository,
+    primary_worktree,
+)
 from . import _relations as state
 
 
-HistoryReader = Callable[
+type HistoryReader = Callable[
     [
         list[dict],  # dialogs scoped to this repository
         list[str],  # warnings collected for the preview
@@ -34,24 +38,26 @@ HistoryReader = Callable[
 
 class WktIndexer:
     '''
-    Propose dialog/worktree pairs from Git and supplied dialog
-    history.
+    Propose dialog/WKT pairs for `ai.dlogs index` review.
 
-    `dialogs.preview_wkt_relations()` supplies metadata and a
-    history reader. This class scopes those reads to the repository,
-    matches recorded directories to live Git worktrees and returns a
-    reviewable proposal. It neither parses harness files itself nor
-    writes relations; `_operations` handles preview files and
-    publication after the user invokes --apply or --record.
+    - `dialogs.preview_wkt_relations()` supplies metadata and an
+      optional history reader; this class scopes its reads to one Git
+      repository.
+    - Match saved cwd, owner metadata and structured history to
+      verified linked WKTs from `git.repository()`.
+    - Return a proposal with evidence and unresolved dialog
+      identities.
+    - Leave harness parsing to dialogs._inspect and preview/relation
+      writes to wkt._operations. Suggestion itself is read only.
 
     '''
 
     def __init__(self, path: str) -> None:
         '''
-        Remember the checkout used to identify this Git repository.
+        Remember which checkout identifies the repository to inspect.
 
-        Discovery happens when `suggest()` is called, so repeated
-        calls see changed WKT registrations and relation files.
+        - Defer discovery until `suggest()` so repeated calls see
+          changed Git registrations and relation files.
 
         '''
         self.path: str = path
@@ -65,15 +71,30 @@ class WktIndexer:
         '''
         Suggest WKTs for dialogs without a saved relation.
 
-        One matching WKT is ready for user review; several require a
-        `--choose` selection. Return schema-1 preview data with each
-        matching WKT and its evidence, unresolved dialog IDs and the
-        relation-file digest checked during `--apply`. Supplied
-        history-reader failures append to `warnings`.
+        - Read verified Git WKTs and the current relations.json
+          digest.
+        - Prefer existing saved relations by leaving those dialogs
+          alone.
+        - Gather owner evidence, then inspect only repository-scoped
+          dialogs.
+        - One matching WKT is ready; several require a human
+          --choose. No matching WKT leaves a scoped dialog in
+          `unresolved`.
+        - Return schema-1 entries, evidence, warnings, confirmed
+          count and base_sha256 for `apply_wkt_preview()` to check
+          later.
+        - Copy the supplied warnings list; do not mutate a caller's
+          list or write any preview, relation or ownership file.
 
         '''
         path: str = self.path
-        warnings = [] if warnings is None else list(warnings)
+        # A preview owns its diagnostics; do not mutate a caller's
+        # list.
+        if warnings is None:
+            warnings = []
+        else:
+            warnings = list(warnings)
+
         common: Path
         inventory: dict[str, str]
         common, inventory = repository(path)
@@ -88,6 +109,8 @@ class WktIndexer:
         by_id: dict[tuple[str, str], dict] = {
             state.identity(record): record for record in dialogs
         }
+        # Keep every evidence source per dialog/WKT. Selecting the
+        # newest or first path here would hide a genuine ambiguity.
         candidates: dict[tuple[str, str], dict[str, set[str]]] = {}
         root: str
         private: str
@@ -133,13 +156,17 @@ class WktIndexer:
 
         def belongs(observed: str) -> bool:
             '''
-            Keep directory evidence within this Git repository.
+            Check whether a recorded directory belongs to this repo.
 
-            Existing paths must resolve to the selected common Git
-            directory, excluding nested clones and submodules.
-            Missing historical directories retain containment-based
-            evidence; Git cannot identify their former repository.
-            `scoped_paths` avoids repeating Git queries per dialog.
+            - Require containment under a main/linked checkout.
+            - For existing paths, also compare the common Git
+              directory; nested clones and submodules must not leak
+              into this preview.
+            - For removed paths, retain containment evidence because
+              Git can no longer identify the directory's former
+              repository.
+            - Cache each decision in `scoped_paths` for this suggest
+              call only.
 
             '''
             if observed not in scoped_paths:
@@ -173,10 +200,11 @@ class WktIndexer:
                 or belongs(record.get('cwd', ''))
             )
         ]
-        history: dict[tuple[str, str], set[str]] = (
-            inspect_paths(scoped, warnings) if inspect_paths else {}
-        )
+        history: dict[tuple[str, str], set[str]] = {}
+        if inspect_paths:
+            history = inspect_paths(scoped, warnings)
         unresolved: list[dict] = []
+        # Prefer the most specific registered root when WKTs nest.
         roots: list[str] = sorted(inventory, key=len, reverse=True)
         record: dict
         for record in scoped:
@@ -185,17 +213,19 @@ class WktIndexer:
                 continue
             cwd: str = record.get('cwd', '')
             observed: str
-            for observed in {cwd, *history.get(key, set())}:
+            for observed in {
+                cwd,
+                *history.get(key, set()),
+            }:
                 if not belongs(observed):
                     continue
                 observed_path: Path = Path(observed).resolve()
                 root: str
                 for root in roots:
                     if observed_path.is_relative_to(root):
-                        source = (
-                            'saved-cwd' if observed == cwd
-                            else 'structured-cwd-or-tool-workdir'
-                        )
+                        source = 'structured-cwd-or-tool-workdir'
+                        if observed == cwd:
+                            source = 'saved-cwd'
                         candidates.setdefault(key, {}).setdefault(
                             root, set(),
                         ).add(source)
@@ -218,13 +248,15 @@ class WktIndexer:
         key: tuple[str, str]
         choices: dict[str, set[str]]
         for key, choices in sorted(candidates.items()):
+            status: str = 'ambiguous'
+            if len(choices) == 1:
+                status = 'ready'
+
             entries.append({
                 'harness': key[0],
                 'id': key[1],
                 'name': by_id.get(key, {}).get('name', '(metadata)'),
-                'status': (
-                    'ready' if len(choices) == 1 else 'ambiguous'
-                ),
+                'status': status,
                 'candidates': [
                     {
                         'worktree': root,

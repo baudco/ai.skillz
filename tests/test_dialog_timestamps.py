@@ -44,7 +44,12 @@ class DialogTimestampTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root: Path = Path(self.temp.name) / 'main'
         subprocess.run(
-            ['git', 'init', '--quiet', str(self.root)],
+            [
+                'git',
+                'init',
+                '--quiet',
+                str(self.root),
+            ],
             capture_output=True, check=True,
         )
 
@@ -54,18 +59,24 @@ class DialogTimestampTests(unittest.TestCase):
         Feed reversed store records through list_dialogs, then render
         known Unix times. The newest must come first even when the
         timestamp column is hidden. Opting in shows UTC minutes;
-        original fractional values stay untouched. Missing times
-        in caller-provided rows render blank.
+        original fractional values stay untouched. Missing times in
+        caller-provided rows render blank.
 
         '''
         records: list[dict] = [
             {
-                'name': 'old', 'id': 'one', 'cwd': str(self.root),
-                'harness': 'claude', 'updated_at': 0.0,
+                'name': 'old',
+                'id': 'one',
+                'cwd': str(self.root),
+                'harness': 'claude',
+                'updated_at': 0.0,
             },
             {
-                'name': 'new', 'id': 'two', 'cwd': str(self.root),
-                'harness': 'claude', 'updated_at': 60.5,
+                'name': 'new',
+                'id': 'two',
+                'cwd': str(self.root),
+                'harness': 'claude',
+                'updated_at': 60.5,
             },
         ]
         with patch(
@@ -90,7 +101,9 @@ class DialogTimestampTests(unittest.TestCase):
         self.assertIn('1970-01-01 00:00', lines[6])
         self.assertEqual(records[1]['updated_at'], 60.5)
         self.assertNotIn('1970', table([{
-            'name': 'missing', 'id': 'three', 'harness': 'claude',
+            'name': 'missing',
+            'id': 'three',
+            'harness': 'claude',
         }], show_timestamps=True))
 
         with patch(

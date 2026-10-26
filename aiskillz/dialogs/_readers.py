@@ -16,6 +16,15 @@ import re
 import sqlite3
 
 
+# SQLite readers wait briefly for an index writer, never for a model
+# turn.
+_SQLITE_BUSY_TIMEOUT_SECONDS: int = 2
+_MILLISECONDS_PER_SECOND: int = 1000
+# Only the untitled-dialog fallback uses prompt text, bounded for
+# display.
+_CLAUDE_PROMPT_FALLBACK_LENGTH: int = 120
+
+
 def codex_sessions(
     home: Path,
     cwd: str|None,
@@ -23,11 +32,15 @@ def codex_sessions(
     include_archived: bool = False,
 ) -> list[dict]:
     '''
-    Read the Codex 0.153.2 session index without modifying it.
+    Read Codex saved-dialog metadata from its local SQLite index.
 
-    The private state_5.sqlite schema is deliberately isolated here.
-    Named sessions prefer `name`; older schemas fall back to `title`.
-    Manual recording opts into archived rows with include_archived.
+    - Isolate the private `state_5.sqlite`/threads schema in this
+      reader.
+    - Prefer a saved name; older schemas fall back to title.
+    - Filter exact saved cwd, source and archive state in SQL.
+    - `include_archived` supports explicit historical WKT recording.
+    - Use a read-only connection with a bounded busy timeout; close
+      it before returning. Missing/unsupported indexes raise visibly.
 
     '''
     database: Path = home / 'state_5.sqlite'
@@ -40,7 +53,7 @@ def codex_sessions(
         sqlite3.connect(
             database.as_uri() + '?mode=ro',
             uri=True,
-            timeout=2,
+            timeout=_SQLITE_BUSY_TIMEOUT_SECONDS,
         )
     ) as connection:
         connection.row_factory = sqlite3.Row
@@ -60,7 +73,12 @@ def codex_sessions(
             'archived',
         }
         if not required.issubset(columns):
-            raise ValueError('Unsupported Codex threads schema')
+            missing: list[str] = sorted(required - columns)
+            database_text: str = str(database)
+            raise ValueError(
+                f'Unsupported Codex threads schema: '
+                f'database={database_text!r}, missing={missing!r}'
+            )
         name: str = "COALESCE(NULLIF(title, ''), '(untitled)')"
         if 'name' in columns:
             name = (
@@ -99,17 +117,28 @@ def opencode_sessions(
     include_archived: bool = False,
 ) -> list[dict]:
     '''
-    Read SQLite indexes, falling back to pre-SQLite session JSON.
+    Read OpenCode dialogs from SQLite or its older JSON layout.
 
-    include_archived widens both formats for manual WKT recording;
-    normal discovery retains the archive filter.
+    - Prefer available opencode.db/opencode-stable.db databases; keep
+      the newest row per dialog ID across them.
+    - Use storage/session JSON only when neither database exists.
+    - Filter exact saved cwd, child sources and archive state in both
+      formats. `include_archived` widens manual WKT recording.
+    - Convert millisecond timestamps to the public seconds
+      convention.
+    - Skip malformed legacy records; database and file-read errors
+      propagate rather than pretending a store is empty.
+    - All connections are read only and bounded by the busy timeout.
 
     '''
     rows: dict[str, dict] = {}
     p: Path
     databases: list[Path] = [
         p
-        for p in (home / 'opencode.db', home / 'opencode-stable.db')
+        for p in (
+            home / 'opencode.db',
+            home / 'opencode-stable.db',
+        )
         if p.is_file()
     ]
     database: Path
@@ -119,7 +148,7 @@ def opencode_sessions(
             sqlite3.connect(
                 database.as_uri() + '?mode=ro',
                 uri=True,
-                timeout=2,
+                timeout=_SQLITE_BUSY_TIMEOUT_SECONDS,
             )
         ) as connection:
             connection.row_factory = sqlite3.Row
@@ -151,7 +180,10 @@ def opencode_sessions(
                     'name': title,
                     'cwd': row['directory'],
                     'source': 'opencode',
-                    'updated_at': row['time_updated'] / 1000,
+                    'updated_at': (
+                        row['time_updated']
+                        / _MILLISECONDS_PER_SECOND
+                    ),
                     'archived': row['time_archived'] is not None,
                 }
                 old: dict = rows.get(item['id'], {})
@@ -165,6 +197,7 @@ def opencode_sessions(
                 entry: object = json.loads(
                     path.read_text(encoding='utf-8'),
                 )
+
             except (
                 json.JSONDecodeError,
                 UnicodeDecodeError,
@@ -189,7 +222,10 @@ def opencode_sessions(
                 continue
             updated: object = timing.get('updated', 0)
             if (
-                not isinstance(updated, (int, float))
+                not isinstance(updated, (
+                    int,
+                    float,
+                ))
                 or
                 isinstance(updated, bool)
             ):
@@ -225,7 +261,7 @@ def opencode_sessions(
                 'name': title,
                 'cwd': directory,
                 'source': 'opencode',
-                'updated_at': updated / 1000,
+                'updated_at': updated / _MILLISECONDS_PER_SECOND,
                 'archived': bool(timing.get('archived')),
             }
 
@@ -239,13 +275,23 @@ def claude_sessions(
     include_archived: bool = False,
 ) -> list[dict]:
     '''
-    Read project indexes and logs, keeping exact cwd ownership.
+    Read Claude dialog names and original cwd from indexes or logs.
 
-    Indexed metadata is used only while at least as fresh as its log.
-    Otherwise scan the log for current titles and the original cwd.
-    No transcript text is returned beyond a fallback first-prompt
-    name. `include_archived` is accepted for the shared reader
-    signature; this Claude metadata format has no archive filter.
+    - Restrict folders by encoded cwd when requested, then verify
+      each record's actual original directory before returning it.
+    - Trust indexed metadata only while the index is at least as
+      fresh as the log; otherwise scan that log for its current
+      title.
+    - Prefer custom/AI title, last prompt, summary, then a bounded
+      first prompt fallback. Returned metadata does not contain
+      transcripts.
+    - Decode JSONL one record at a time; skip malformed/non-object
+      rows so one corrupt event cannot hide later metadata.
+    - Exclude subagent logs: their IDs are not standalone resume
+      targets.
+    - Archive state is unknown in this format. The shared
+      archive/source parameters do not broaden Claude's
+      standalone-dialog selection.
 
     '''
     projects: Path = home / 'projects'
@@ -256,6 +302,7 @@ def claude_sessions(
     folder: Path
     for folder in folders:
         index: Path = folder / 'sessions-index.json'
+        index_text: str = str(index)
         entries: dict[str, dict] = {}
         if index.is_file():
             indexed: object = json.loads(index.read_text())
@@ -265,8 +312,8 @@ def claude_sessions(
                 not isinstance(indexed.get('entries'), list)
             ):
                 raise ValueError(
-                    'Unsupported Claude sessions index: '
-                    + str(index)
+                    f'Unsupported Claude sessions index: '
+                    f'{index_text!r}'
                 )
             item: object
             for item in indexed['entries']:
@@ -328,18 +375,21 @@ def claude_sessions(
                             event: dict = json.loads(
                                 line.decode('utf-8'),
                             )
+
                         except (
                             json.JSONDecodeError,
                             UnicodeDecodeError,
                         ):
                             # Isolate corrupt or partial log records.
                             continue
+
                         if not isinstance(event, dict):
                             continue
                         if not owner:
                             directory: object = event.get('cwd')
                             if isinstance(directory, str):
                                 owner = directory
+
                         identity: object = event.get('sessionId')
                         if (
                             isinstance(identity, str)
@@ -374,13 +424,13 @@ def claude_sessions(
                             not prompt
                         ):
                             message: object = event.get('message')
-                            content: object = (
-                                message.get('content', '')
-                                if isinstance(message, dict)
-                                else ''
-                            )
+                            content: object = ''
+                            if isinstance(message, dict):
+                                content = message.get('content', '')
                             if isinstance(content, str):
-                                prompt = content[:120]
+                                prompt = content[
+                                    :_CLAUDE_PROMPT_FALLBACK_LENGTH
+                                ]
 
                 name = (
                     custom

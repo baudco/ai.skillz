@@ -50,7 +50,10 @@ from xonsh.parsers.completion_context import (
 # selected checkout even when another editable aiskillz installation
 # is already imported. This is a source-loader boundary, not an
 # installed namespace package.
-if __package__ in (None, ''):
+if __package__ in (
+    None,
+    '',
+):
     source_root: str = str(Path(__file__).resolve().parent)
     source_key: str = (
         hashlib.sha256(source_root.encode()).hexdigest()
@@ -72,7 +75,11 @@ from .cli import _display_text
 # API.
 type CompletionBatch = tuple[tuple[str|RichCompletion, ...], int]
 type CompletionMethod = Callable[
-    [Completer, CompletionContext|None, tuple|None],
+    [
+        Completer,
+        CompletionContext|None,
+        tuple|None,
+    ],
     CompletionBatch,
 ]
 
@@ -142,12 +149,19 @@ def complete_resume(
         # Example: `python -m aiskillz resume Wo` becomes `ai.resume
         # Wo`. Adjust the cursor by the number of removed argv words.
         cursor -= len(registered) - 1
-        words = ['ai.resume', *words[len(registered):]]
+        words = [
+            'ai.resume',
+            *words[len(registered):],
+        ]
 
     if (
         cursor < 1
         or command.suffix
-        or command.opening_quote not in ('', "'", '"')
+        or command.opening_quote not in (
+            '',
+            "'",
+            '"',
+        )
     ):
         # Leave command-name completion, mid-word edits and
         # unsupported Python quote prefixes to Xonsh; replacing those
@@ -190,9 +204,16 @@ def complete_resume(
         elif word is None:
             completing_name = not selector_seen
             selector_seen = True
-        elif word in ('-a', '--all-repos'):
+        elif word in (
+            '-a',
+            '--all-repos',
+        ):
             all_repos = True
-        elif word in ('--dry-run', '-h', '--help'):
+        elif word in (
+            '--dry-run',
+            '-h',
+            '--help',
+        ):
             pass
         elif word.startswith('--') and '=' in word:
             option: str
@@ -273,7 +294,10 @@ def complete_resume(
     )
     names: list[str] = sorted(
         groups,
-        key=lambda name: (name.casefold(), name),
+        key=lambda name: (
+            name.casefold(),
+            name,
+        ),
     )
     if sort_by != 'name':
         # Stable sorting preserves alphabetical order for equal
@@ -443,8 +467,7 @@ def register_resume_completer(xsh: XonshSession) -> None:
 
 def unregister_resume_completer(xsh: XonshSession) -> None:
     '''
-    Release owned registrations without overwriting user
-    replacements.
+    Release owned hooks while preserving user replacements.
 
     - Restore the original sorting method only while our wrapper owns
       it.

@@ -5,10 +5,9 @@
 '''
 Manage worktree relations using the read-only Git layer.
 
-WktIndexer consumes supplied dialog records; WktLookup
-reads existing relations. Dialog orchestration supplies harness
-readers, so this package depends on git but never on dialogs or the
-CLI.
+WktIndexer consumes supplied dialog records; WktLookup reads existing
+relations. Dialog orchestration supplies harness readers, so this
+package depends on git but never on dialogs or the CLI.
 
 '''
 

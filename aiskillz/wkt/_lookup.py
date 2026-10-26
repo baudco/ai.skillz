@@ -3,45 +3,50 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Resolve worktree paths for dialog listing without changing metadata.
+Resolve recorded WKT paths for dialog listing and resume.
 
-`cli.format_dialog_table()` uses one WktLookup per invocation.
-It prefers relations.json, falls back to old owner.json dialog
-fields, then to Git discovery at the saved dialog cwd. Python callers
-can use roots() to obtain absolute paths instead of display labels.
+- cli.format_dialog_table() creates one WktLookup per invocation.
+- Prefer relations.json, then owner.json dialog fields, then the Git
+  checkout containing saved cwd. Retain inactive paths for diagnosis.
+- Library callers use roots() for verified absolute paths and
+  recorded_roots() for explicit paths that may be unavailable.
 
 '''
 
 import json
 from pathlib import Path
 
-from ..git import checkout_location, repository
+from ..git import (
+    checkout_location,
+    repository,
+)
 
 
 class WktLookup:
     '''
-    Read worktree paths associated with dialogs, caching one listing.
+    Resolve dialog WKTs during one listing or resume selection.
 
-    `cli.format_dialog_table()` creates one instance and calls
-    `roots()` for each row. `WktLookup.locations` caches Git paths
-    for each saved cwd; `WktLookup.relations` caches dialog/WKT
-    pairs for each
-    repository. Discard the instance after listing to see subsequent
-    file changes.
-
-    Relations written by open-wkt or index --apply take precedence
-    over old owner.json dialog fields. Multiple old relations
-    remain a set of paths; the CLI decides how to display them.
+    - `cli.format_dialog_table()` creates one instance per listing.
+    - Cache Git results by saved cwd in `WktLookup.locations`, and
+      relation results by common Git directory in
+      WktLookup.relations.
+    - Prefer relations.json over old owner.json dialog fields, then
+      fall back to the linked checkout containing the saved cwd.
+    - Keep recorded paths separately in WktLookup.recorded_relations
+      so removed WKTs remain visible without becoming launch targets.
+    - Discard the instance to observe later file/Git changes.
 
     '''
 
     def __init__(self) -> None:
         '''
-        Create empty caches for a single dialog listing.
+        Initialize the per-invocation Git and relation caches.
 
-        `roots()` populates `WktLookup.locations` and
-        `WktLookup.relations` on demand. Construction has no
-        filesystem side effects.
+        - `roots()` populates WktLookup.locations and
+          WktLookup.relations.
+        - `_read()` also fills WktLookup.recorded_relations for
+          diagnostics.
+        - Construction performs no reads or writes.
 
         '''
         self.locations: dict[str, tuple[str, ...]] = {}
@@ -59,13 +64,15 @@ class WktLookup:
         dialog_id: str,
     ) -> set[str]:
         '''
-        Return explicit relation paths, including unavailable WKTs.
+        Return saved relation paths, including unavailable WKTs.
 
-        `roots()` still returns only verified live worktrees.
-        CLI display and resume errors use `recorded_roots()` to
-        explain a removed or unregistered WKT without treating it
-        as a valid launch directory. The returned set is a copy of
-        `WktLookup.recorded_relations`, populated by `_read()`.
+        - Populate this repository's caches through `roots()` first.
+        - Return a copy from WktLookup.recorded_relations, or an
+          empty set when saved cwd cannot identify the Git
+          repository.
+        - Listing/resume use these paths to explain unavailable
+          relations; use `roots()` for verified launch-directory
+          candidates.
 
         '''
         self.roots(cwd, harness, dialog_id)
@@ -75,7 +82,10 @@ class WktLookup:
         records: dict[tuple[str, str], set[str]] = (
             self.recorded_relations.get(paths[2], {})
         )
-        return set(records.get((harness, dialog_id), set()))
+        return set(records.get((
+            harness,
+            dialog_id,
+        ), set()))
 
     def roots(
         self,
@@ -84,15 +94,19 @@ class WktLookup:
         dialog_id: str = '',
     ) -> set[str]:
         '''
-        Return absolute worktree paths for the supplied dialog.
+        Find verified WKTs for a dialog's saved directory.
 
-        Resolve the Git repository containing its saved cwd, then
-        read the relation file once per repository. If no existing
-        relation is recorded, use the linked checkout containing
-        that cwd. A recorded but inactive WKT returns an empty set.
-        The main checkout and missing/deleted cwd paths also return
-        an empty set. These paths describe recorded worktree use,
-        not a running agent cwd.
+        - Cache the Git location by cwd and read each repository
+          once.
+        - Prefer a recorded `(harness, dialog_id)` relation,
+          including an empty set when its WKT is no longer
+          registered.
+        - With no relation, return the linked checkout containing
+          saved cwd.
+        - Return an empty set for the main checkout or an unusable
+          cwd.
+        - These paths describe recorded use, not a running agent's
+          cwd.
 
         '''
         if cwd not in self.locations:
@@ -108,7 +122,10 @@ class WktLookup:
         ):
             if common not in self.relations:
                 self.relations[common] = self._read(cwd, common)
-            key: tuple[str, str] = (harness, dialog_id)
+            key: tuple[str, str] = (
+                harness,
+                dialog_id,
+            )
             if key in self.relations[common]:
                 return set(self.relations[common][key])
 
@@ -123,19 +140,23 @@ class WktLookup:
         dialog_id: str,
     ) -> bool:
         '''
-        Whether explicit relation metadata identifies this dialog.
+        Check whether a dialog has an explicit recorded relation.
 
-        `resume_target()` uses this after `roots()` returns no WKTs
-        to warn about a recorded but unavailable worktree before
-        using saved cwd. `roots()` populates WktLookup.relations;
-        an empty set there preserves a removed WKT's recorded ID.
+        - Populate WktLookup.relations through `roots()` first.
+        - An entry with an empty WKT set still counts: it preserves
+          the recorded dialog identity after removal of the worktree.
+        - `resume_target()` uses this to warn before falling back to
+          saved cwd. Missing Git-location information returns False.
 
         '''
         self.roots(cwd, harness, dialog_id)
         paths: tuple[str, ...] = self.locations.get(cwd, ())
         if len(paths) != 3:
             return False
-        return (harness, dialog_id) in self.relations[paths[2]]
+        return (
+            harness,
+            dialog_id,
+        ) in self.relations[paths[2]]
 
     def _read(
         self,
@@ -143,22 +164,26 @@ class WktLookup:
         common: str,
     ) -> dict[tuple[str, str], set[str]]:
         '''
-        Read relation JSON and old owner files for one repository.
+        Combine saved relations and owner evidence for one repo.
 
-        roots() calls this once per common Git directory. Verify each
-        path against git.repository(). A written relation
-        suppresses older owner.json evidence for the same dialog,
-        even if the worktree was removed. Preserve several old
-        worktree paths as a set.
-
-        Ignore malformed old owner fields; fail visibly for a
-        malformed relations.json file. Generic ownership tokens
-        are not dialog IDs; WktIndexer can match them against
-        known harness IDs when recovering old relations. This
-        method never rewrites owner files.
+        - `roots()` calls this once per common Git directory.
+        - Verify paths through `git.repository()`; preserve recorded
+          paths separately from paths whose WKT/private Git directory
+          still match.
+        - An explicit relation suppresses older owner evidence for
+          that dialog even when its recorded WKT was removed.
+        - Preserve several legacy owner matches as a set; do not
+          choose one.
+        - Ignore malformed legacy owner fields; malformed
+          relations.json raises. WktIndexer separately matches
+          generic legacy owner tokens against known dialog IDs. Never
+          rewrite owner files.
 
         '''
-        from ._relations import read, identity
+        from ._relations import (
+            read,
+            identity,
+        )
 
         resolved: Path
         inventory: dict[str, str]
@@ -175,6 +200,9 @@ class WktLookup:
         for record in store['records']:
             key: tuple[str, str] = identity(record)
             confirmed.add(key)
+            # Keep an explicit empty result when a recorded WKT is
+            # gone. Otherwise roots() would fall through to saved cwd
+            # and accidentally present that as the recorded relation.
             result[key] = set()
             root: str = record['worktree']
             self.recorded_relations[common][key] = {root}

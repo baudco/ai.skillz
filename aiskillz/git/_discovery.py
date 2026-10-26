@@ -3,11 +3,11 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Inspect repositories and registered worktrees through Git.
+Inspect Git repository paths and verified WKT registrations.
 
-This layer owns Git paths, worktree registration and backlink checks.
-It knows nothing about harness dialogs, association JSON or terminal
-output. Worktree indexing and lookup consume these query results.
+- Own common/private Git paths, registration and backlink checks.
+- WKT indexing and lookup consume these read-only results.
+- Harness parsing, relation JSON and terminal output live elsewhere.
 
 '''
 
@@ -18,15 +18,18 @@ from ._commands import query
 
 def repository(path: str) -> tuple[Path, dict[str, str]]:
     '''
-    Return the common Git directory and live linked-worktree paths.
+    Find the common Git directory and verified linked WKTs.
 
-    The mapping is absolute worktree root -> private Git directory.
-    Exclude the main checkout. Association recording and preview
-    apply use it to verify a worktree still exists and belongs to
-    this repo. Git registration, the worktree .git file and the
-    private gitdir backlink must agree. Skip removed or substituted
-    worktrees; reject an inaccessible repository. This function only
-    reads Git metadata.
+    - Return `(common_dir, {absolute_wkt_root: private_git_dir})`.
+    - Exclude the main checkout; callers use `primary_worktree()` for
+      it.
+    - Require worktree registration, the WKT's .git file and the
+      private gitdir backlink to agree. Skip removed/substituted
+      WKTs.
+    - Reject an inaccessible repository with its queried path.
+    - `WktIndexer` and relation writers use this inventory to
+      validate observations before recording them. No Git metadata is
+      changed.
 
     '''
     cwd: str = str(Path(path).expanduser().resolve())
@@ -35,7 +38,8 @@ def repository(path: str) -> tuple[Path, dict[str, str]]:
         '--git-common-dir',
     )
     if not output:
-        raise ValueError('Cannot resolve Git repository: ' + cwd)
+        raise ValueError(f'Cannot resolve Git repository: {cwd!r}')
+
     common: Path = Path(output.rstrip('\n')).resolve()
     roots: set[str] = set(worktree_roots(cwd))
     result: dict[str, str] = {}
@@ -58,26 +62,35 @@ def repository(path: str) -> tuple[Path, dict[str, str]]:
                 admin.is_symlink()
             ):
                 continue
+
+            # Git stores the backlink in the WKT's .git file. A moved
+            # or replaced directory must not inherit its old
+            # relation.
             back: str = gitfile.read_text().strip()
             if not back.startswith('gitdir: '):
                 continue
-            target: Path = (root / back[8:]).resolve()
+            target: Path = (root / back[len('gitdir: '):]).resolve()
             if target != admin.resolve():
                 continue
             result[str(root.resolve())] = str(target)
+
         except OSError:
             continue
+
     return common, result
 
 
 def worktree_roots(path: str) -> list[str]:
     '''
-    Return Git-registered checkout paths, with the main path first.
+    List Git-registered checkout paths, with the main path first.
 
-    `repository()` uses these paths to check registration, and
-    `primary_worktree()` uses the first entry when core.worktree
-    is unset. Prunable paths may be returned;
-    `repository()` separately verifies live linked checkouts.
+    - `repository()` uses this registration list for backlink checks.
+    - `primary_worktree()` uses its first entry when Git has no
+      explicit checkout root, including the bare-repository case.
+    - Prunable paths may appear; registration alone does not prove
+      that a directory is still present.
+    - Raise with the queried path when Git cannot enumerate
+      worktrees.
 
     '''
     cwd: str = str(Path(path).expanduser().resolve())
@@ -85,7 +98,9 @@ def worktree_roots(path: str) -> list[str]:
         cwd, 'worktree', 'list', '--porcelain', '-z',
     )
     if listing is None:
-        raise ValueError('Cannot enumerate registered worktrees')
+        raise ValueError(
+            f'Cannot enumerate registered worktrees: {cwd!r}'
+        )
     field: str
     return [
         field[len('worktree '):]
@@ -96,23 +111,33 @@ def worktree_roots(path: str) -> list[str]:
 
 def primary_worktree(common: Path) -> Path:
     '''
-    Resolve the main checkout, or bare repo directory, using Git.
+    Find the stable main-checkout or bare-repository root.
 
-    `wkt._relations.relation_dir()` appends .ai/state/dialogs
-    here so every linked checkout shares the same association file.
-    Query Git rather than assuming common.parent: separate Git dirs
-    and bare repositories do not have that filesystem layout.
+    - Prefer Git's configured checkout root, then its first
+      registered path. Do not infer this from common.parent: separate
+      Git dirs and bare layouts have different directory
+      relationships.
+    - Reject a non-bare layout with no identifiable main .git entry;
+      the operator can configure core.worktree for a separate Git
+      dir.
+    - `wkt._relations.relation_dir()` places shared .ai/state/dialogs
+      here, so removing a linked WKT does not remove its relations.
 
     '''
-    roots: list[str] = worktree_roots(str(common))
+    common_text: str = str(common)
+    roots: list[str] = worktree_roots(common_text)
     if not roots:
-        raise ValueError('Cannot locate the main Git worktree')
+        raise ValueError(
+            f'Cannot locate the main Git worktree: {common_text!r}'
+        )
     configured: str|None = query(
         str(common), 'rev-parse', '--show-toplevel',
     )
-    root: Path = Path(
-        configured.rstrip('\n') if configured else roots[0],
-    ).resolve()
+    root_text: str = roots[0]
+    if configured:
+        root_text = configured.rstrip('\n')
+
+    root: Path = Path(root_text).resolve()
     bare: bool = query(
         str(common), 'rev-parse', '--is-bare-repository',
     ) == 'true\n'
@@ -121,20 +146,25 @@ def primary_worktree(common: Path) -> Path:
         and
         not (root / '.git').exists()
     ):
+        root_text = str(root)
         raise ValueError(
             'Cannot locate main checkout; set core.worktree for '
-            'a separate Git directory before creating a new index',
+            f'a separate Git directory before creating a new index; '
+            f'common={common_text!r}, root={root_text!r}',
         )
     return root
 
 
 def checkout_location(cwd: str) -> tuple[str, ...]:
     '''
-    Return root, private Git dir and common Git dir for a saved cwd.
+    Locate the root, private Git directory and common directory.
 
-    `WktLookup` caches this result while assembling dialog rows.
-    Return an empty tuple for missing directories, non-repositories
-    or invalid cwd values; callers then leave the worktree unknown.
+    - `WktLookup.locations` retains this tuple for each saved cwd
+      during one listing; the caller decides when to create a fresh
+      lookup.
+    - Return an empty tuple for missing directories, non-repositories
+      or malformed Git output. Listing can then leave WKT unknown.
+    - Query only; do not create directories or change Git metadata.
 
     '''
     output: str|None = query(
@@ -142,4 +172,10 @@ def checkout_location(cwd: str) -> tuple[str, ...]:
         '--show-toplevel', '--git-dir', '--git-common-dir',
     )
     paths: tuple[str, ...] = tuple((output or '').splitlines())
-    return paths if len(paths) == 3 else ()
+    # rev-parse emits one line for each of the three requested paths.
+    # Partial output must not be mistaken for a complete Git
+    # location.
+    if len(paths) != 3:
+        return ()
+
+    return paths

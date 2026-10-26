@@ -5,7 +5,7 @@
 '''
 Read-only repository discovery used by the worktree layer.
 
-Replace Git CLI discovery here when qualifying Dulwich; callers in
+Replace Git CLI discovery here when qualifying `dulwich`; callers in
 `aiskillz.wkt` depend on these values rather than command output.
 
 '''

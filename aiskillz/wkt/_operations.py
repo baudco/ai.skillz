@@ -3,13 +3,14 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Save suggested dialog/WKT pairs and write reviewed relations.
+Save WKT proposals and publish explicitly reviewed relations.
 
-The dialog API calls these operations for ai.dlogs index and
-open-wkt. A preview file contains proposed dialog/worktree pairs and
-a digest of relations.json as it was read. Applying it verifies
-the exact file and current Git registrations before updating
-relations.json.
+- ai.dlogs index saves proposed pairs plus the relations.json digest
+  observed during discovery; it prints the preview's own SHA-256.
+- apply_wkt_preview() verifies those bytes and current Git paths
+  before asking _relations.update() to publish selected pairs.
+- record_wkt_relation() writes one explicit pair for /open-wkt or a
+  human caller. Neither operation transfers lifecycle ownership.
 
 '''
 
@@ -25,29 +26,39 @@ from . import _relations as state
 
 def save_wkt_preview(data: dict) -> tuple[Path, str]:
     '''
-    Publish a deterministic proposal and return its path and digest.
+    Save a proposal file and return its path and SHA-256.
 
-    `cli.index_main()` calls this after building a proposal. Hash
-    its exact bytes and publish `<digest>.json` in the shared
-    relation directory's previews subdirectory. The CLI prints
-    these values for the human's later `--apply`/`--sha256`
-    invocation.
-
-    Use a flushed temporary file and exclusive hard-link publication;
-    an existing identical proposal is reused, while a different file
-    or symlink at the destination is refused. No saved relation
-    is written, including for empty proposals. Only local preview
-    artifacts and their containing directories are created.
+    - `cli.index_main()` calls this with preview_wkt_relations()
+      output.
+    - Hash exact deterministic bytes; publish previews/<digest>.json
+      in the repository's shared relation directory.
+    - Flush a temporary file, then use an exclusive hard link so
+      another writer cannot replace the human-reviewed destination.
+    - Reuse an identical existing preview; reject different bytes or
+      a symlink at that path.
+    - Create preview artifacts only, including for empty proposals;
+      this does not record any dialog/WKT relation.
 
     '''
     raw: bytes = state.encode(data)
     digest: str = sha256(raw).hexdigest()
     directory: Path = state.relation_dir(Path(data['common_dir']))
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.mkdir(
+        mode=state.PRIVATE_STATE_MODE,
+        parents=True,
+        exist_ok=True,
+    )
     directory = directory / 'previews'
     if directory.is_symlink():
-        raise ValueError('Preview directory is a symlink')
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        directory_text: str = str(directory)
+        raise ValueError(
+            f'Preview directory is a symlink: {directory_text!r}'
+        )
+    directory.mkdir(
+        mode=state.PRIVATE_STATE_MODE,
+        parents=True,
+        exist_ok=True,
+    )
     path: Path = directory / (digest + '.json')
     stream: tempfile._TemporaryFileWrapper
     with tempfile.NamedTemporaryFile(
@@ -66,7 +77,10 @@ def save_wkt_preview(data: dict) -> tuple[Path, str]:
                     or
                     path.read_bytes() != raw
                 ):
-                    raise ValueError('Existing preview differs')
+                    path_text: str = str(path)
+                    raise ValueError(
+                        f'Existing preview differs: {path_text!r}'
+                    )
         finally:
             temporary.unlink(missing_ok=True)
     return path, digest
@@ -79,36 +93,52 @@ def apply_wkt_preview(
     choose: list[str],
 ) -> int:
     '''
-    Save WKT relations selected from a human-reviewed preview.
+    Record pairs from a human-reviewed, digest-pinned preview.
 
-    `main()` enters here only for `--apply` with an explicit digest.
-    Authenticate `path` bytes, schema and common repository identity;
-    revalidate each selected root and private Git directory against
-    `git.repository()` before calling its `update()` writer.
+    Validation:
+    - `cli.index_main()` requires --apply and --sha256 before
+      calling.
+    - Check exact bytes, schema and common Git repository identity.
+    - Recheck each selected WKT/private Git directory against the
+      current git.repository() inventory before any relation write.
 
-    Single-candidate entries are selected automatically. Ambiguous
-    entries stay unassigned unless `choose` contains a matching
-    `harness:ID=/path` selection; aliases are accepted. Reject
-    duplicate, unknown or out-of-proposal choices rather than
-    guessing.
+    Selection:
+    - Take single-candidate entries automatically.
+    - Leave ambiguous entries alone unless `choose` supplies an exact
+      harness:ID=/path choice. Harness aliases are accepted.
+    - Reject duplicate, unknown or out-of-proposal selections.
 
-    `update()` checks the preview's `base_sha256` under its guard
-    and refuses a changed relation file or replacement of saved
-    relations. Repeating identical relations returns zero. Return
-    the number of relations written; ownership and the preview file
-    stay untouched. Invalid artifacts or stale targets raise errors
-    for CLI reporting.
+    Publication:
+    - `_relations.update()` checks base_sha256 under its writer guard
+      and refuses replacement of existing relations.
+    - Identical replay returns zero; otherwise return the write
+      count.
+    - Leave the preview file and lifecycle owner metadata unchanged.
+      Invalid or stale inputs raise for CLI reporting.
 
     '''
+    path_text: str = str(path)
     raw: bytes = path.read_bytes()
-    if sha256(raw).hexdigest() != digest:
-        raise ValueError('Preview SHA-256 mismatch')
+    actual_digest: str = sha256(raw).hexdigest()
+    if actual_digest != digest:
+        raise ValueError(
+            f'Preview SHA-256 mismatch: file={path_text!r}; '
+            f'expected={digest!r}, actual={actual_digest!r}'
+        )
     data: dict = json.loads(raw)
     if not isinstance(data, dict):
-        raise ValueError('Invalid preview object')
+        data_type: str = type(data).__name__
+        raise ValueError(
+            f'Invalid preview object: file={path_text!r}, '
+            f'type={data_type!r}'
+        )
     common: Path
     inventory: dict[str, str]
     common, inventory = repository(repo)
+    schema: object = data.get('schema')
+    kind: object = data.get('kind')
+    recorded_common: object = data.get('common_dir')
+    common_text: str = str(common)
     if (
         data.get('schema') != 1
         or
@@ -116,50 +146,87 @@ def apply_wkt_preview(
         or
         data.get('common_dir') != str(common)
     ):
-        raise ValueError('Preview schema/repository mismatch')
+        raise ValueError(
+            f'Preview schema/repository mismatch: '
+            f'file={path_text!r}; '
+            f'schema={schema!r}, '
+            f'kind={kind!r}, '
+            f'common_dir={recorded_common!r}, '
+            f'expected_common={common_text!r}'
+        )
     entries: object = data.get('entries')
     if not isinstance(entries, list):
-        raise ValueError('Invalid preview entries: expected list')
+        raise ValueError(
+            f'Invalid preview entries: expected list, '
+            f'got {entries!r}; '
+            f'file={path_text!r}'
+        )
     expected: object = data.get('base_sha256')
     if not isinstance(expected, str):
-        raise ValueError('Invalid preview base_sha256: expected str')
+        raise ValueError(
+            f'Invalid preview base_sha256: expected str, '
+            f'got {expected!r}; file={path_text!r}'
+        )
     selections: dict[tuple[str, str], str] = {}
     selection: str
     for selection in choose:
         identity: str
         target: str
-        identity, target = selection.split('=', 1)
+        try:
+            identity, target = selection.split('=', 1)
+        except ValueError as error:
+            raise ValueError(
+                f'Invalid dialog choice {selection!r}; '
+                f'expected HARNESS:ID=/absolute/worktree'
+            ) from error
         harness: str
         dialog_id: str
-        harness, dialog_id = identity.split(':', 1)
+        try:
+            harness, dialog_id = identity.split(':', 1)
+        except ValueError as error:
+            raise ValueError(
+                f'Invalid dialog choice {selection!r}; '
+                f'expected HARNESS:ID=/absolute/worktree'
+            ) from error
         key: tuple[str, str] = (
-            state.canonical_harness(harness), dialog_id,
+            state.canonical_harness(harness),
+            dialog_id,
         )
         if key in selections:
-            raise ValueError('Duplicate dialog choice')
+            raise ValueError(
+                f'Duplicate dialog choice: {selection!r}'
+            )
         selections[key] = str(Path(target).expanduser().resolve())
     additions: list[dict] = []
     entry: object
     for entry in entries:
         if not isinstance(entry, dict):
             raise ValueError(
-                'Invalid preview entry: expected object',
+                f'Invalid preview entry: expected object, '
+                f'got {entry!r}',
             )
         key = state.identity(entry)
         choices: object = entry.get('candidates')
         if not isinstance(choices, list):
             raise ValueError(
-                'Invalid preview candidates: expected list',
+                f'Invalid preview candidates: expected list, '
+                f'got {choices!r}; dialog={key!r}',
             )
         candidate: object
         for candidate in choices:
             if not isinstance(candidate, dict):
-                raise ValueError('Invalid preview candidate: object')
+                raise ValueError(
+                    f'Invalid preview candidate: expected object, '
+                    f'got {candidate!r}; dialog={key!r}'
+                )
             if (
                 not isinstance(candidate.get('worktree'), str)
                 or not isinstance(candidate.get('git_dir'), str)
             ):
-                raise ValueError('Invalid preview candidate paths')
+                raise ValueError(
+                    f'Invalid preview candidate paths: '
+                    f'{candidate!r}; dialog={key!r}'
+                )
         target: str|None = selections.pop(key, None)
         if (
             target is None
@@ -170,14 +237,26 @@ def apply_wkt_preview(
         candidate: dict
         matches: list[dict] = [
             candidate for candidate in choices
-            if target in (None, candidate['worktree'])
+            if target in (
+                None,
+                candidate['worktree'],
+            )
         ]
         if len(matches) != 1:
-            raise ValueError('Choice is not a preview candidate')
+            raise ValueError(
+                f'Choice is not a preview candidate: '
+                f'dialog={key!r}, target={target!r}'
+            )
         candidate = matches[0]
         root: str = candidate['worktree']
-        if inventory.get(root) != candidate['git_dir']:
-            raise ValueError('Worktree changed; preview again')
+        current_git: str|None = inventory.get(root)
+        recorded_git: str = candidate['git_dir']
+        if current_git != recorded_git:
+            raise ValueError(
+                f'Worktree changed; preview again: {root!r}; '
+                f'recorded_git={recorded_git!r}, '
+                f'current_git={current_git!r}'
+            )
         additions.append({
             'harness': key[0],
             'id': key[1],
@@ -187,7 +266,10 @@ def apply_wkt_preview(
             'preview_sha256': digest,
         })
     if selections:
-        raise ValueError('Choice refers to a dialog outside preview')
+        raise ValueError(
+            f'Choice refers to a dialog outside preview: '
+            f'{selections!r}'
+        )
     return state.update(common, additions, expected)
 
 
@@ -198,23 +280,20 @@ def record_wkt_relation(
     wkt: str,
 ) -> int:
     '''
-    Record a dialog/WKT relation supplied by a skill or human.
+    Record one explicitly supplied dialog/WKT pair.
 
-    `/open-wkt` verifies the WKT's lifecycle owner, resolves the
-    current harness dialog ID and invokes the source CLI's
-    `--record HARNESS ID` mode. A human may also supply both values
-    explicitly. This function checks Git registration but cannot
-    independently prove that `dialog_id` belongs to the caller's
-    running harness instance.
-
-    Resolve `repo` and `wkt`, require a registered live linked tree,
-    normalize the harness and call
-    `_relations.update(replace=True)`. Retarget only this
-    dialog's relation; retain other dialogs and leave
-    `owner.json` unchanged. Return zero for an identical existing
-    relation or one for a new/changed relation. Invalid WKTs
-    or active writer guards fail visibly without recreating the
-    worktree.
+    - `/open-wkt` verifies lifecycle ownership and finds the current
+      harness dialog ID before calling through --record HARNESS ID. A
+      human can also supply the pair directly.
+    - Resolve repo/WKT, require a verified linked checkout and
+      normalize the harness. This function cannot prove the caller
+      owns the ID.
+    - `_relations.update(replace=True)` retargets only this dialog;
+      other relations and owner.json remain unchanged.
+    - Return zero for an identical relation, one for a new/changed
+      pair.
+    - Invalid WKTs or writer guards raise; never recreate a missing
+      WKT.
 
     '''
     common: Path
@@ -222,10 +301,15 @@ def record_wkt_relation(
     common, inventory = repository(repo)
     root: str = str(Path(wkt).expanduser().resolve())
     if root not in inventory:
-        raise ValueError('Target is not a live linked worktree')
+        raise ValueError(
+            f'Target is not a live linked worktree: {root!r}; '
+            f'repo={repo!r}, harness={harness!r}, id={dialog_id!r}'
+        )
     addition: dict = {
-        'harness': state.canonical_harness(harness), 'id': dialog_id,
-        'worktree': root, 'git_dir': inventory[root],
+        'harness': state.canonical_harness(harness),
+        'id': dialog_id,
+        'worktree': root,
+        'git_dir': inventory[root],
         'source': 'explicit-record',
     }
     state.identity(addition)

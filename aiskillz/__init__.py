@@ -6,9 +6,8 @@
 Convenient public imports for the aiskillz.dialogs API.
 
 Import from `aiskillz` for dialog discovery and WKT relations.
-Implementation is layered as dialogs -> wkt -> git;
-cli.py handles shell arguments and display, while _xontrib.py adapts
-Xonsh streams.
+Implementation is layered as dialogs -> wkt -> git; cli.py handles
+shell arguments and display, while _xontrib.py adapts Xonsh streams.
 
 '''
 

@@ -19,14 +19,32 @@ from aiskillz.cli import resume_main
 
 
 @pytest.mark.parametrize(
-    'selector', ['Build feature', 'dialog-id'],
+    'selector', [
+        'Build feature',
+        'dialog-id',
+    ],
 )
 @pytest.mark.parametrize(
-    ('harness', 'argv'),
+    (
+        'harness',
+        'argv',
+    ),
     [
-        ('codex', ['codex', 'resume', 'dialog-id']),
-        ('opencode', ['opencode', '--session', 'dialog-id']),
-        ('claude', ['claude', '--resume', 'dialog-id']),
+        ('codex', [
+            'codex',
+            'resume',
+            'dialog-id',
+        ]),
+        ('opencode', [
+            'opencode',
+            '--session',
+            'dialog-id',
+        ]),
+        ('claude', [
+            'claude',
+            '--resume',
+            'dialog-id',
+        ]),
     ],
 )
 def test_resume_name_routes_to_harness(
@@ -39,9 +57,10 @@ def test_resume_name_routes_to_harness(
     '''
     Names and IDs must resolve to the same harness command.
 
-    Feed one dialog from a temporary directory and select it by
-    either name or ID. Assert each CLI receives its ID and that
-    both selectors preserve cwd filtering and all-repo opt-in.
+    - Feed one dialog from a temporary directory and select it by
+      either name or ID.
+    - Assert each CLI receives its ID and that both selectors
+      preserve cwd filtering and all-repo opt-in.
 
     '''
     record: dict = {
@@ -77,20 +96,25 @@ def test_resume_id_precedes_name_and_refuses_id_collisions(
     '''
     Treating every selector as a name could launch the wrong dialog.
 
-    Give one dialog an ID that another uses as its name. The CLI
-    dry run must select the exact ID. Then add a cross-harness ID
-    collision: refuse it until a harness filter narrows the result.
-    A conflicting --id must fail instead of falling back to a name.
+    - Give one dialog an ID that another uses as its name.
+    - The CLI dry run must select the exact ID.
+    - Then add a cross-harness ID collision: refuse it until a
+      harness filter narrows the result.
+    - A conflicting --id must fail instead of falling back to a name.
 
     '''
     rows: list[dict] = [
         {
-            'name': 'Actual dialog', 'id': 'shared-id',
-            'harness': 'opencode', 'cwd': str(tmp_path),
+            'name': 'Actual dialog',
+            'id': 'shared-id',
+            'harness': 'opencode',
+            'cwd': str(tmp_path),
         },
         {
-            'name': 'shared-id', 'id': 'other-id',
-            'harness': 'claude', 'cwd': str(tmp_path),
+            'name': 'shared-id',
+            'id': 'other-id',
+            'harness': 'claude',
+            'cwd': str(tmp_path),
         },
     ]
 
@@ -101,36 +125,68 @@ def test_resume_id_precedes_name_and_refuses_id_collisions(
         '''
         return [
             row for row in rows
-            if kwargs['harness'] in (None, row['harness'])
+            if kwargs['harness'] in (
+                None,
+                row['harness'],
+            )
         ]
 
     monkeypatch.setattr(_resume.dialogs, 'list_dialogs', listing)
     monkeypatch.setattr(
         _resume.WktLookup, 'roots', lambda *args: set(),
     )
-    assert resume_main(['shared-id', '--dry-run']) == 0
+    assert resume_main([
+        'shared-id',
+        '--dry-run',
+    ]) == 0
     target: dict = json.loads(capsys.readouterr().out)
     assert target['name'] == 'Actual dialog'
-    assert target['argv'] == ['opencode', '--session', 'shared-id']
+    assert target['argv'] == [
+        'opencode',
+        '--session',
+        'shared-id',
+    ]
     with pytest.raises(ValueError, match='No dialog matching'):
         _resume.resume_target('shared-id', dialog_id='other-id')
 
     rows.append({
-        'name': 'Collision', 'id': 'shared-id',
-        'harness': 'claude', 'cwd': str(tmp_path),
+        'name': 'Collision',
+        'id': 'shared-id',
+        'harness': 'claude',
+        'cwd': str(tmp_path),
     })
     with pytest.raises(ValueError, match='ambiguous'):
         _resume.resume_target('shared-id')
     target = _resume.resume_target('shared-id', harness='claude')
-    assert target['argv'] == ['claude', '--resume', 'shared-id']
+    assert target['argv'] == [
+        'claude',
+        '--resume',
+        'shared-id',
+    ]
 
 
 @pytest.mark.parametrize(
-    ('help_text', 'returncode', 'expected'),
+    (
+        'help_text',
+        'returncode',
+        'expected',
+    ),
     [
-        ('      --no-daemon\n', 0, True),
-        ('      --last\n', 0, False),
-        ('      --no-daemon\n', 1, False),
+        (
+            '      --no-daemon\n',
+            0,
+            True,
+        ),
+        (
+            '      --last\n',
+            0,
+            False,
+        ),
+        (
+            '      --no-daemon\n',
+            1,
+            False,
+        ),
     ],
 )
 def test_codex_resume_probes_help_for_no_daemon(
@@ -144,10 +200,11 @@ def test_codex_resume_probes_help_for_no_daemon(
     '''
     Codex installations differ in daemon flag support.
 
-    Mock the installed CLI's resume help with and without the
-    option, including failed help. `ai.resume --dry-run` must show
-    the same argv a real launch would receive, with the flag only
-    when a successful help response advertises it.
+    - Mock the installed CLI's resume help with and without the
+      option, including failed help.
+    - `ai.resume --dry-run` must show the same argv a real launch
+      would receive, with the flag only when a successful help
+      response advertises it.
 
     '''
     record: dict = {
@@ -171,15 +228,25 @@ def test_codex_resume_probes_help_for_no_daemon(
     ))
     monkeypatch.setattr(_resume.subprocess, 'run', probe)
 
-    assert resume_main(['Feature', '--dry-run']) == 0
+    assert resume_main([
+        'Feature',
+        '--dry-run',
+    ]) == 0
     target: dict = json.loads(capsys.readouterr().out)
-    argv: list[str] = ['codex', 'resume']
+    argv: list[str] = [
+        'codex',
+        'resume',
+    ]
     if expected:
         argv.append('--no-daemon')
     argv.append('dialog-id')
     assert target['argv'] == argv
     probe.assert_called_once_with(
-        ['codex', 'resume', '--help'],
+        [
+            'codex',
+            'resume',
+            '--help',
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -194,11 +261,12 @@ def test_public_resolution_never_probes_a_harness(
     '''
     Workspace previews must not spawn a harness capability probe.
 
-    The old resolver executed codex resume --help as part of argv
-    construction. Resolve an exact ID with explicit task cwd while
-    subprocess.run raises on any invocation. Assert the saved cwd
-    remains distinct and capabilities affect argv only when supplied
-    explicitly by the caller.
+    - The old resolver executed codex resume --help as part of argv
+      construction.
+    - Resolve an exact ID with explicit task cwd while subprocess.run
+      raises on any invocation.
+    - Assert the saved cwd remains distinct and capabilities affect
+      argv only when supplied explicitly by the caller.
 
     '''
     from aiskillz import resume_target
@@ -219,7 +287,11 @@ def test_public_resolution_never_probes_a_harness(
     )
     assert target['cwd'] == str(tmp_path)
     assert target['saved_cwd'] == str(tmp_path / 'old-directory')
-    assert target['argv'] == ['codex', 'resume', 'dialog-id']
+    assert target['argv'] == [
+        'codex',
+        'resume',
+        'dialog-id',
+    ]
     target = resume_target(
         'dialog-id', harness='codex', cwd=str(tmp_path),
         codex_no_daemon=True,
@@ -236,18 +308,23 @@ def test_duplicate_name_requires_explicit_selection(
     '''
     Two harnesses can assign the same name to different dialogs.
 
-    Return both records for one directory. The resolver must not
-    pick the newest or first result, and an ID can select one.
+    - Return both records for one directory.
+    - The resolver must not pick the newest or first result, and an
+      ID can select one.
 
     '''
     rows: list[dict] = [
         {
-            'name': 'Shared', 'id': 'one',
-            'harness': 'codex', 'cwd': str(tmp_path),
+            'name': 'Shared',
+            'id': 'one',
+            'harness': 'codex',
+            'cwd': str(tmp_path),
         },
         {
-            'name': 'Shared', 'id': 'two',
-            'harness': 'opencode', 'cwd': str(tmp_path),
+            'name': 'Shared',
+            'id': 'two',
+            'harness': 'opencode',
+            'cwd': str(tmp_path),
         },
     ]
     monkeypatch.setattr(
@@ -259,7 +336,11 @@ def test_duplicate_name_requires_explicit_selection(
     target: dict = _resume.resume_target(
         'Shared', dialog_id='two',
     )
-    assert target['argv'] == ['opencode', '--session', 'two']
+    assert target['argv'] == [
+        'opencode',
+        '--session',
+        'two',
+    ]
 
 
 def test_copied_short_name_must_identify_one_dialog(
@@ -269,9 +350,9 @@ def test_copied_short_name_must_identify_one_dialog(
     '''
     The table shortens long names that users may copy verbatim.
 
-    Give two dialogs the same 35-character prefix. The visible
-    label must be accepted for a unique record, then refused once
-    another dialog shares that label.
+    - Give two dialogs the same 35-character prefix.
+    - The visible label must be accepted for a unique record, then
+      refused once another dialog shares that label.
 
     '''
     prefix: str = 'x' * 35
@@ -304,9 +385,9 @@ def test_recorded_wkt_or_explicit_cwd_controls_launch(
     '''
     A dialog may start in main and later move to a linked WKT.
 
-    Supply a recorded WKT path and verify it wins over saved cwd.
-    Several paths must warn and use saved cwd rather than block
-    resume or choose an arbitrary worktree. --cwd still overrides.
+    - Supply a recorded WKT path and verify it wins over saved cwd.
+    - Several paths must warn and use saved cwd rather than block
+      resume or choose an arbitrary worktree. --cwd still overrides.
 
     '''
     wkt: Path = tmp_path / 'feature'
@@ -314,8 +395,10 @@ def test_recorded_wkt_or_explicit_cwd_controls_launch(
     other: Path = tmp_path / 'other'
     other.mkdir()
     row: dict = {
-        'name': 'Feature', 'id': 'id',
-        'harness': 'codex', 'cwd': str(tmp_path),
+        'name': 'Feature',
+        'id': 'id',
+        'harness': 'codex',
+        'cwd': str(tmp_path),
     }
     monkeypatch.setattr(
         _resume.dialogs, 'list_dialogs',
@@ -324,7 +407,10 @@ def test_recorded_wkt_or_explicit_cwd_controls_launch(
     lookup: Mock = Mock(return_value={str(wkt)})
     monkeypatch.setattr(_resume.WktLookup, 'roots', lookup)
     assert _resume.resume_target('Feature')['cwd'] == str(wkt)
-    lookup.return_value = {str(wkt), str(other)}
+    lookup.return_value = {
+        str(wkt),
+        str(other),
+    }
     target: dict = _resume.resume_target('Feature')
     assert target['cwd'] == str(tmp_path)
     assert 'Several WKTs' in target['warnings'][0]
@@ -349,11 +435,12 @@ def test_wkt_metadata_failure_cannot_block_resume(
     '''
     Optional WKT lookup used to prevent an otherwise valid resume.
 
-    Make `WktLookup.roots()` raise for corrupt or unreadable relation
-    metadata while the dialog's saved cwd still exists. The CLI
-    must launch the selected harness there, report the metadata
-    warning and return its exit status. An explicit --cwd bypasses
-    lookup entirely and does not emit a metadata warning.
+    - Make `WktLookup.roots()` raise for corrupt or unreadable
+      relation metadata while the dialog's saved cwd still exists.
+    - The CLI must launch the selected harness there, report the
+      metadata warning and return its exit status.
+    - An explicit --cwd bypasses lookup entirely and does not emit a
+      metadata warning.
 
     '''
     row: dict = {
@@ -376,7 +463,11 @@ def test_wkt_metadata_failure_cannot_block_resume(
     monkeypatch.setattr('aiskillz.cli.subprocess.run', launch)
     assert resume_main(['Feature']) == 0
     launch.assert_called_once_with(
-        ['claude', '--resume', 'dialog-id'],
+        [
+            'claude',
+            '--resume',
+            'dialog-id',
+        ],
         cwd=str(tmp_path),
         check=False,
     )
@@ -396,11 +487,12 @@ def test_missing_recorded_directory_uses_saved_cwd(
     '''
     A recorded directory can disappear after Git lookup verifies it.
 
-    Return a nonexistent WKT from `WktLookup.roots()` with an
-    existing saved cwd. The resolver must warn and use saved cwd,
-    preserving optional indexing even when metadata checks race
-    with worktree teardown. If saved cwd is also gone, the remaining
-    failure concerns the launch directory and suggests --cwd.
+    - Return a nonexistent WKT from `WktLookup.roots()` with an
+      existing saved cwd.
+    - The resolver must warn and use saved cwd, preserving optional
+      indexing even when metadata checks race with worktree teardown.
+    - If saved cwd is also gone, the remaining failure concerns the
+      launch directory and suggests --cwd.
 
     '''
     missing: Path = tmp_path / 'gone'
@@ -434,15 +526,19 @@ def test_dry_run_previews_without_starting_process(
     '''
     A name lookup can be reviewed before launching a harness.
 
-    Supply a fixed target and run the CLI in dry-run mode. The
-    printed JSON must contain its cwd and argv, while no child
-    process is created.
+    - Supply a fixed target and run the CLI in dry-run mode.
+    - The printed JSON must contain its cwd and argv, while no child
+      process is created.
 
     '''
     target: dict = {
         'name': 'Feature', 'id': 'id',
         'harness': 'codex', 'cwd': str(tmp_path),
-        'argv': ['codex', 'resume', 'id'],
+        'argv': [
+            'codex',
+            'resume',
+            'id',
+        ],
     }
     resolver: Mock = Mock(return_value=target)
     monkeypatch.setattr('aiskillz.cli.resume_target', resolver)
@@ -452,11 +548,18 @@ def test_dry_run_previews_without_starting_process(
         'aiskillz.cli.codex_supports_no_daemon',
         Mock(return_value=False),
     )
-    assert resume_main(['Feature', '--dry-run']) == 0
+    assert resume_main([
+        'Feature',
+        '--dry-run',
+    ]) == 0
     assert json.loads(capsys.readouterr().out) == target
     assert resolver.call_args.kwargs['repo'] == '.'
     assert resolver.call_args.kwargs['all_repos'] is False
-    assert resume_main(['Feature', '-a', '--dry-run']) == 0
+    assert resume_main([
+        'Feature',
+        '-a',
+        '--dry-run',
+    ]) == 0
     assert json.loads(capsys.readouterr().out) == target
     assert resolver.call_args.kwargs['all_repos'] is True
     launch.assert_not_called()
@@ -469,15 +572,19 @@ def test_resume_launches_exact_argv_and_cwd(
     '''
     A named dialog must spawn only its selected harness process.
 
-    Mock the executable lookup and child runner. The CLI passes a
-    list of arguments without shell interpolation and returns the
-    harness exit status to the caller.
+    - Mock the executable lookup and child runner.
+    - The CLI passes a list of arguments without shell interpolation
+      and returns the harness exit status to the caller.
 
     '''
     target: dict = {
         'name': 'Feature', 'id': 'id',
         'harness': 'claude', 'cwd': str(tmp_path),
-        'argv': ['claude', '--resume', 'id'],
+        'argv': [
+            'claude',
+            '--resume',
+            'id',
+        ],
     }
     monkeypatch.setattr(
         'aiskillz.cli.resume_target',
@@ -490,7 +597,11 @@ def test_resume_launches_exact_argv_and_cwd(
     monkeypatch.setattr('aiskillz.cli.subprocess.run', launch)
     assert resume_main(['Feature']) == 7
     launch.assert_called_once_with(
-        ['claude', '--resume', 'id'],
+        [
+            'claude',
+            '--resume',
+            'id',
+        ],
         cwd=str(tmp_path),
         check=False,
     )
@@ -521,10 +632,12 @@ def test_resume_errors_identify_rejected_dialog(
     '''
     Generic resume errors hid the record a person needed to repair.
 
-    Supply an option-shaped ID and a dialog with no saved directory.
-    Both fail before probing or launching. The public CLI diagnostic
-    must include the saved name, harness and opaque ID, so users can
-    distinguish malformed metadata from a worktree override problem.
+    - Supply an option-shaped ID and a dialog with no saved
+      directory.
+    - Both fail before probing or launching.
+    - The public CLI diagnostic must include the saved name, harness
+      and opaque ID, so users can distinguish malformed metadata from
+      a worktree override problem.
 
     '''
     listing: Mock = Mock(return_value=[record])
@@ -533,7 +646,10 @@ def test_resume_errors_identify_rejected_dialog(
     monkeypatch.setattr(_resume.subprocess, 'run', process)
 
     with pytest.raises(SystemExit) as caught:
-        resume_main(['Broken metadata', '--dry-run'])
+        resume_main([
+            'Broken metadata',
+            '--dry-run',
+        ])
 
     assert caught.value.code == 1
     diagnostic: str = capsys.readouterr().err

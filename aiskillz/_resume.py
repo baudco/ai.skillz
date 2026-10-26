@@ -8,9 +8,9 @@ Resolve a dialog name or ID to a harness command and directory.
 `cli.resume_main()` selects a dialog through `dialogs.list_dialogs()`
 and calls `resume_target()` before launching a child process. The
 worktree lookup is shared with `ai.dlogs`, so an active recorded WKT
-can replace a harness's older saved cwd. Resolution does not start
-a harness; the explicit capability probe is a separate operation.
-WKT indexing is optional metadata, never a prerequisite for resume.
+can replace a harness's older saved cwd. Resolution does not start a
+harness; the explicit capability probe is a separate operation. WKT
+indexing is optional metadata, never a prerequisite for resume.
 Lookup failures warn and use saved cwd; only an unusable launch
 directory requires the caller to provide --cwd.
 
@@ -39,10 +39,10 @@ def codex_supports_no_daemon() -> bool:
     '''
     Check whether this Codex CLI accepts --no-daemon on resume.
 
-    The CLI probes the installed command rather than a
-    version string because package layouts can differ. A missing,
-    failed, or unresponsive CLI keeps the older resume argv; the
-    eventual launch reports any executable failure to the caller.
+    The CLI probes the installed command rather than a version string
+    because package layouts can differ. A missing, failed, or
+    unresponsive CLI keeps the older resume argv; the eventual launch
+    reports any executable failure to the caller.
 
     '''
     try:
@@ -99,8 +99,7 @@ def resume_target(
     - Explicit `cwd`, then one available registered WKT, then saved
       cwd.
     - Unavailable, ambiguous or unreadable WKT metadata adds
-      warnings;
-      indexing alone never prevents resume.
+      warnings; indexing alone never prevents resume.
     - An unusable final directory requires an explicit `cwd`
       override.
     - Orchestrating callers validate and supply their intended repo;
@@ -111,9 +110,9 @@ def resume_target(
     - Return argv, saved cwd, launch cwd and optional warning
       strings.
     - Never probe or launch a harness. `codex_no_daemon` is a
-      capability
-      observation supplied by the caller; `environ` selects metadata
-      directories just as it does for `list_dialogs()`.
+      capability observation supplied by the caller; `environ`
+      selects metadata directories just as it does for
+      `list_dialogs()`.
 
     '''
     if (

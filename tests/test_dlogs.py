@@ -8,7 +8,10 @@ Exercise offline session discovery and the sourceable Xonsh alias.
 '''
 
 from contextlib import closing
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import (
+    redirect_stdout,
+    redirect_stderr,
+)
 import io
 import json
 from importlib.metadata import entry_points
@@ -115,11 +118,13 @@ class DlogsTests(unittest.TestCase):
         '''
         Task references can outlive ordinary active-only discovery.
 
-        Use the seeded archived Codex row and a caller-selected
-        environment. Exact lookup must omit it by default, then
-        return it with archived=True on explicit inspection. Provider
-        and model must remain unknown rather than inferred from the
-        harness, and an active row must report archived=False.
+        - Use the seeded archived Codex row and a caller-selected
+          environment.
+        - Exact lookup must omit it by default, then return it with
+          archived=True on explicit inspection.
+        - Provider and model must remain unknown rather than inferred
+          from the harness, and an active row must report
+          archived=False.
 
         '''
         from aiskillz import get_dialog
@@ -147,10 +152,11 @@ class DlogsTests(unittest.TestCase):
         '''
         WKT formatting errors used to bypass main()'s error handler.
 
-        Use the real Codex reader and Git lookup with malformed
-        relations.json in a temporary repo. The CLI must exit one
-        with its normal diagnostic, leaving the relation untouched.
-        JSON output bypasses WKT formatting and remains usable.
+        - Use the real Codex reader and Git lookup with malformed
+          relations.json in a temporary repo.
+        - The CLI must exit one with its normal diagnostic, leaving
+          the relation untouched.
+        - JSON output bypasses WKT formatting and remains usable.
 
         '''
         subprocess.run(
@@ -197,14 +203,18 @@ class DlogsTests(unittest.TestCase):
         '''
         A launcher must not mix other cwd values or archived IDs.
 
-        Renamed sessions should use their current name, while blank
-        names fall back to titles. Listing must preserve DB bytes.
+        - Renamed sessions should use their current name, while blank
+          names fall back to titles.
+        - Listing must preserve DB bytes.
 
         '''
         before: bytes = self.database.read_bytes()
         rows: list[dict] = codex_sessions(self.home, str(self.repo))
         row: dict
-        self.assertEqual([row['id'] for row in rows], ['two', 'one'])
+        self.assertEqual([row['id'] for row in rows], [
+            'two',
+            'one',
+        ])
         self.assertEqual(rows[1]['name'], 'Renamed')
         self.assertEqual(rows[0]['name'], 'Editor task')
         self.assertEqual(self.database.read_bytes(), before)
@@ -224,8 +234,8 @@ class DlogsTests(unittest.TestCase):
         '''
         Older indexes lack names; missing indexes must stay absent.
 
-        This prevents both an SQL error on a known older layout and
-        accidental creation of a misleading empty Codex database.
+        - This prevents both an SQL error on a known older layout and
+          accidental creation of a misleading empty Codex database.
 
         '''
         connection: sqlite3.Connection
@@ -245,9 +255,9 @@ class DlogsTests(unittest.TestCase):
         '''
         The default table no longer needs wide dialog IDs.
 
-        A session title can contain terminal controls. Keep one
-        logical row, show the full ID with `--did`, and retain the
-        unchanged ID in JSON for callers that need it.
+        - A session title can contain terminal controls.
+        - Keep one logical row, show the full ID with `--did`, and
+          retain the unchanged ID in JSON for callers that need it.
 
         '''
         uuid: str = '01980000-0000-7000-8000-000000000001'
@@ -292,10 +302,11 @@ class DlogsTests(unittest.TestCase):
         '''
         A cwd basename cannot identify its owning linked worktree.
 
-        Build Git's linked-worktree metadata in a disposable repo,
-        without commits, and query a nested cwd. Git must return the
-        worktree root name, while main, missing, and non-Git paths
-        remain blank. No session-owned metadata is modified.
+        - Build Git's linked-worktree metadata in a disposable repo,
+          without commits, and query a nested cwd.
+        - Git must return the worktree root name, while main,
+          missing, and non-Git paths remain blank.
+        - No session-owned metadata is modified.
 
         '''
         subprocess.run(
@@ -335,11 +346,11 @@ class DlogsTests(unittest.TestCase):
         '''
         Long session names previously pushed cwd far off screen.
 
-        Render a long name alongside an exact-boundary name. Check
-        ellipsis truncation and harness/name/WKT order, then
-        stable ID alignment when requested. Preserve the original
-        name in the caller's records.
-        The shared cwd moves above the header instead of repeating.
+        - Render a long name alongside an exact-boundary name.
+        - Check ellipsis truncation and harness/name/WKT order, then
+          stable ID alignment when requested.
+        - Preserve the original name in the caller's records.
+        - The shared cwd moves above the header instead of repeating.
 
         '''
         name: str = 'long' * 40
@@ -365,7 +376,11 @@ class DlogsTests(unittest.TestCase):
         self.assertEqual(lines[2], '')
         self.assertEqual(
             lines[3].split(),
-            ['HARNESS', 'NAME', 'WKT'],
+            [
+                'HARNESS',
+                'NAME',
+                'WKT',
+            ],
         )
         self.assertTrue(lines[4].startswith('claude   '))
         self.assertTrue(lines[5].startswith('codex    '))
@@ -377,7 +392,13 @@ class DlogsTests(unittest.TestCase):
         ).splitlines()
         self.assertEqual(
             with_ids[3].split(),
-            ['HARNESS', 'NAME', 'WKT', 'DIALOG', 'ID'],
+            [
+                'HARNESS',
+                'NAME',
+                'WKT',
+                'DIALOG',
+                'ID',
+            ],
         )
         self.assertEqual(with_ids[4].index('dialog-one'), 52)
         self.assertEqual(with_ids[5].index('dialog-two'), 52)
@@ -387,9 +408,10 @@ class DlogsTests(unittest.TestCase):
         '''
         A single-harness filter used to repeat its value per row.
 
-        Render two dialogs from the same harness and cwd, then a
-        mixed-cwd pair. Only uniform values move into context lines;
-        the remaining CWD column still distinguishes mixed paths.
+        - Render two dialogs from the same harness and cwd, then a
+          mixed-cwd pair.
+        - Only uniform values move into context lines; the remaining
+          CWD column still distinguishes mixed paths.
 
         '''
         rows: list[dict] = [
@@ -424,8 +446,8 @@ class DlogsTests(unittest.TestCase):
         '''
         `-h` previously selected a harness instead of showing help.
 
-        Check the default argparse help and ensure `-b cx` still
-        selects Codex before dialog discovery runs.
+        - Check the default argparse help and ensure `-b cx` still
+          selects Codex before dialog discovery runs.
 
         '''
         output: io.StringIO = io.StringIO()
@@ -447,9 +469,9 @@ class DlogsTests(unittest.TestCase):
         '''
         Context lines precede the terminal table header.
 
-        Simulate a TTY with one filtered dialog. The context must
-        remain plain text and the grey escape must wrap the actual
-        column header, not the first context line.
+        - Simulate a TTY with one filtered dialog.
+        - The context must remain plain text and the grey escape must
+          wrap the actual column header, not the first context line.
 
         '''
         class Terminal(io.StringIO):
@@ -494,11 +516,13 @@ class DlogsTests(unittest.TestCase):
         '''
         A successful pip install must expose the Xontrib outside cwd.
 
-        Source-based tests bypass namespace-package discovery and can
-        hide broken packaging. Start a fresh Xonsh in the disposable
-        repository with no PYTHONPATH or rc files, load the installed
-        extension, and invoke its CLI against the fixture. Skip only
-        when this interpreter has no installed aiskillz entry point.
+        - Source-based tests bypass namespace-package discovery and
+          can hide broken packaging.
+        - Start a fresh Xonsh in the disposable repository with no
+          PYTHONPATH or rc files, load the installed extension, and
+          invoke its CLI against the fixture.
+        - Skip only when this interpreter has no installed aiskillz
+          entry point.
 
         '''
         installed: bool = bool(entry_points(
@@ -531,15 +555,19 @@ class DlogsTests(unittest.TestCase):
         )
         rows: list[dict] = json.loads(result.stdout)
         row: dict
-        self.assertEqual([row['id'] for row in rows], ['two', 'one'])
+        self.assertEqual([row['id'] for row in rows], [
+            'two',
+            'one',
+        ])
 
     @unittest.skipUnless(shutil.which('xonsh'), 'xonsh unavailable')
     def test_alias_uses_invocation_cwd_and_env(self) -> None:
         '''
         A sourced alias must work outside its source checkout.
 
-        Source twice, then invoke from a cwd with spaces and a quote;
-        CODEX_HOME must select the fixture, never the user's index.
+        - Source twice, then invoke from a cwd with spaces and a
+          quote; CODEX_HOME must select the fixture, never the user's
+          index.
 
         '''
         source: str = str(ROOT / 'aliases.xsh')
@@ -568,7 +596,10 @@ class DlogsTests(unittest.TestCase):
         )
         rows: list[dict] = json.loads(result.stdout)
         row: dict
-        self.assertEqual([row['id'] for row in rows], ['two', 'one'])
+        self.assertEqual([row['id'] for row in rows], [
+            'two',
+            'one',
+        ])
 
 
 if __name__ == '__main__':

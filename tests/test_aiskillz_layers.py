@@ -19,22 +19,34 @@ import pytest
 import aiskillz
 
 
-@pytest.mark.parametrize('layer', ['git', 'wkt', 'dialogs'])
+@pytest.mark.parametrize('layer', [
+    'git',
+    'wkt',
+    'dialogs',
+])
 def test_imports_follow_layer_direction(layer: str) -> None:
     '''
     The former modules mixed CLI dispatch, Git and harness readers.
 
-    Resolve every static import in each layer, including function
-    bodies, and reject imports of a higher layer or CLI. This keeps
-    replacing Git discovery independent of harness adapters, and
-    prevents shell presentation from becoming a library dependency.
+    - Resolve every static import in each layer, including function
+      bodies, and reject imports of a higher layer or CLI.
+    - This keeps replacing Git discovery independent of harness
+      adapters, and prevents shell presentation from becoming a
+      library dependency.
 
     '''
     root: Path = Path(aiskillz.__file__).parent
     allowed: set[str] = {
         'git': {'git'},
-        'wkt': {'git', 'wkt'},
-        'dialogs': {'git', 'wkt', 'dialogs'},
+        'wkt': {
+            'git',
+            'wkt',
+        },
+        'dialogs': {
+            'git',
+            'wkt',
+            'dialogs',
+        },
     }[layer]
     source: Path
     for source in (root / layer).glob('*.py'):
@@ -60,7 +72,8 @@ def test_imports_follow_layer_direction(layer: str) -> None:
             for imported in imports:
                 if imported.startswith('aiskillz.'):
                     assert imported.split('.')[1] in allowed, (
-                        source, imported,
+                        source,
+                        imported,
                     )
 
 
@@ -70,10 +83,11 @@ def test_source_and_module_cli_outside_checkout(
     '''
     Moving main() into cli.py must preserve skill source execution.
 
-    Launch the source script from an unrelated directory with no
-    PYTHONPATH, then invoke python -m aiskillz from the checkout.
-    Both must expose the same index options without reading user logs
-    or needing an editable installation of these new subpackages.
+    - Launch the source script from an unrelated directory with no
+      PYTHONPATH, then invoke python -m aiskillz from the checkout.
+    - Both must expose the same index options without reading user
+      logs or needing an editable installation of these new
+      subpackages.
 
     '''
     root: Path = Path(aiskillz.__file__).parent.parent
@@ -82,13 +96,23 @@ def test_source_and_module_cli_outside_checkout(
     env: dict[str, str] = dict(os.environ)
     env.pop('PYTHONPATH', None)
     source: subprocess.CompletedProcess = subprocess.run(
-        [sys.executable, str(root / 'aiskillz/cli.py'),
-         'index', '--help'],
+        [
+            sys.executable,
+            str(root / 'aiskillz/cli.py'),
+            'index',
+            '--help',
+        ],
         cwd=tmp_path, env=env, capture_output=True, text=True,
         check=True,
     )
     package: subprocess.CompletedProcess = subprocess.run(
-        [sys.executable, '-m', 'aiskillz', 'index', '--help'],
+        [
+            sys.executable,
+            '-m',
+            'aiskillz',
+            'index',
+            '--help',
+        ],
         cwd=root, env=env,
         capture_output=True, text=True, check=True,
     )

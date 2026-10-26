@@ -3,11 +3,12 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Execute read-only Git commands for `aiskillz.git` discovery.
+Execute the read-only Git queries used by aiskillz.git discovery.
 
-Keep subprocess invocation and environment isolation here. A future
-Dulwich backend replaces this implementation behind the discovery
-functions; dialogs and worktree indexing consume their Python values.
+- Keep subprocess invocation and environment isolation in this
+  module.
+- A future `dulwich` backend can replace discovery internals while
+  dialogs/WKT callers continue consuming the same Python results.
 
 '''
 
@@ -16,19 +17,31 @@ from pathlib import Path
 import subprocess
 
 
+# Discovery is interactive metadata lookup, not a long-running Git
+# op.
+_GIT_QUERY_TIMEOUT_SECONDS: int = 2
+
+
 def query(cwd: str, *args: str) -> str|None:
     '''
-    Run a read-only Git command at an absolute directory.
+    Run a read-only Git discovery command and return its stdout.
 
-    The discovery module supplies Git arguments and parses stdout.
-    Remove inherited GIT_* variables so shell index/repository
-    overrides cannot redirect these queries. Return None on invalid
-    cwd, failed commands, inaccessible directories or the two-second
-    timeout.
+    - `git._discovery` supplies argv and interprets the returned
+      text.
+    - Require an absolute `cwd`; do not inherit shell directory
+      scope.
+    - Remove inherited GIT_* variables so another index or repository
+      cannot redirect discovery. Leave the caller's environment
+      intact.
+    - Bound the subprocess by `_GIT_QUERY_TIMEOUT_SECONDS`.
+    - Return None for a bad cwd, inaccessible Git, failed command or
+      timeout; the discovery caller chooses whether absence is an
+      error.
 
     '''
     if not Path(cwd).is_absolute():
         return None
+
     key: str
     value: str
     env: dict[str, str] = {
@@ -37,12 +50,22 @@ def query(cwd: str, *args: str) -> str|None:
     }
     try:
         result: subprocess.CompletedProcess = subprocess.run(
-            ['git', *args], cwd=cwd, env=env,
-            capture_output=True, text=True, timeout=2, check=True,
+            [
+                'git',
+                *args,
+            ],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_QUERY_TIMEOUT_SECONDS,
+            check=True,
         )
+
     except (
         OSError,
         subprocess.SubprocessError,
     ):
         return None
+
     return result.stdout

@@ -3,23 +3,17 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Recover structured worktree observations for index previews.
+Extract historical WKT directory evidence for index previews.
 
-`WktIndexer.suggest()` first selects dialogs belonging to the
-target repository, then passes their metadata to `observations()`.
-This module reads those dialogs' local history and returns sets of
-paths keyed by `(harness, id)`. The indexer matches them to
-registered worktrees and presents candidates for human confirmation.
-
-Codex JSONL tool inputs, Claude JSONL cwd fields and OpenCode message
-`path.cwd` values can reveal a worktree even when a dialog's saved
-cwd still names the main checkout. These observations describe
-historical or requested directories, not successful execution or live
-location.
-
-No prompt text or shell-command string is interpreted, no command is
-run, and no harness log is modified. Ordinary `list_dialogs()` and
-`get_dialog()` do not invoke this additional history scan.
+- WktIndexer.suggest() scopes dialogs to the repository before
+  calling observations(); results are path sets by `(harness, id)`.
+- Inspect Codex structured tool inputs, Claude JSONL cwd fields and
+  OpenCode message path.cwd even when saved cwd still names main.
+- Requested/historical directories do not prove successful execution
+  or an agent's current cwd. The indexer verifies Git scope later.
+- Never interpret prompt text or shell-command strings, execute a
+  command or modify a harness log.
+- Normal list_dialogs()/get_dialog() calls do not run this scan.
 
 '''
 
@@ -28,24 +22,30 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from typing import Iterator, TextIO
+from collections.abc import Iterator
+from typing import TextIO
+
+
+# Codex rollout filenames end with a UUID, not a truncated display
+# name.
+_CODEX_ROLLOUT_ID_LENGTH: int = 36
+_SQLITE_BUSY_TIMEOUT_SECONDS: int = 2
 
 
 def structured_paths(event: dict) -> Iterator[str]:
     '''
-    Yield cwd/workdir strings from one supported structured event.
+    Extract recorded directories from one harness log/message object.
 
-    `jsonl_paths()` supplies Codex/Claude objects; `observations()`
-    also supplies decoded OpenCode message data. Inspect the event
-    and its optional payload, recognized Codex tool-call arguments
-    and OpenCode `path.cwd`. Unknown formats simply produce no
-    observations.
-
-    Tool inputs describe a requested directory even if the tool
-    failed. This extractor neither validates Git roots nor chooses a
-    worktree; `WktIndexer.suggest()` does that and preserves
-    ambiguity. Free-form prompts and command text are never treated
-    as path evidence.
+    - `jsonl_paths()` supplies Codex/Claude events; `observations()`
+      also supplies decoded OpenCode message data.
+    - Read cwd/workdir on the event and optional payload, recognized
+      Codex shell-tool arguments, and OpenCode path.cwd.
+    - Ignore unknown shapes and invalid tool-argument JSON.
+    - A tool input is a requested directory, not proof the tool ran.
+      `WktIndexer.suggest()` checks Git scope and preserves
+      ambiguity.
+    - Never interpret prompt text or shell command strings as
+      evidence.
 
     '''
     blocks: list[dict] = [event]
@@ -55,7 +55,10 @@ def structured_paths(event: dict) -> Iterator[str]:
     block: dict
     for block in blocks:
         field: str
-        for field in ('cwd', 'workdir'):
+        for field in (
+            'cwd',
+            'workdir',
+        ):
             value: object = block.get(field)
             if isinstance(value, str):
                 yield value
@@ -64,7 +67,9 @@ def structured_paths(event: dict) -> Iterator[str]:
             if not isinstance(name, str):
                 continue
             if name.rsplit('.', 1)[-1] not in (
-                'exec_command', 'shell_command', 'shell',
+                'exec_command',
+                'shell_command',
+                'shell',
             ):
                 continue
             try:
@@ -75,7 +80,10 @@ def structured_paths(event: dict) -> Iterator[str]:
             ):
                 continue
             if isinstance(args, dict):
-                for field in ('cwd', 'workdir'):
+                for field in (
+                    'cwd',
+                    'workdir',
+                ):
                     value = args.get(field)
                     if isinstance(value, str):
                         yield value
@@ -88,18 +96,17 @@ def structured_paths(event: dict) -> Iterator[str]:
 
 def jsonl_paths(path: Path, dialog_id: str) -> Iterator[str]:
     '''
-    Stream structured paths from one selected dialog's JSONL log.
+    Stream directory evidence from a selected dialog's JSONL file.
 
-    `observations()` chooses files by dialog ID before calling this
-    reader. Ignore malformed/partial JSON lines, non-object records
-    and records whose explicit `sessionId` disagrees with
-    `dialog_id`. Delegate extraction to `structured_paths()` and
-    yield only strings.
-
-    The caller gathers paths and reports file-read failures as
-    preview warnings. No raw events, prompt text or titles are
-    returned here; this is historical evidence for indexing, not
-    transcript export.
+    - `observations()` chooses the file by ID before calling this
+      reader.
+    - Skip partial/malformed JSON, non-object events and explicit
+      sessionId values that disagree with `dialog_id`.
+    - Delegate recognized fields to `structured_paths()`.
+    - Yield strings only; titles and prompt bodies are not exported.
+    - Read/decode failures propagate to `observations()`, which owns
+      preview warnings. This helper neither records nor applies a
+      WKT.
 
     '''
     stream: TextIO
@@ -122,27 +129,28 @@ def observations(
     warnings: list[str],
 ) -> dict[tuple[str, str], set[str]]:
     '''
-    Collect historical directory observations for selected dialogs.
+    Collect directory evidence for repository-scoped dialogs.
 
-    `WktIndexer.suggest()` passes repository-scoped
-    `list_dialogs()` records. Return a mapping from `(harness, id)`
-    to observed path strings; the caller matches these against its
-    live worktree inventory. Respect `CODEX_HOME`,
-    `CLAUDE_CONFIG_DIR` and `OPENCODE_DATA_DIR` (or XDG).
-
-    Scan matching Codex rollouts and top-level Claude logs, then
-    query OpenCode message rows read-only for selected IDs.
-    Missing/pruned logs and absent message tables yield no evidence.
-    File/SQLite read failures append to the caller-owned `warnings`
-    list so a preview can report partial coverage. This does not
-    broaden dialog source eligibility or persist an observation
-    cache.
+    - `WktIndexer.suggest()` supplies selected metadata and a mutable
+      `warnings` list. Return `{(harness, id): set(observed_paths)}`.
+    - Select Codex rollouts and top-level Claude logs by dialog ID;
+      query OpenCode message rows read-only for the selected IDs.
+    - Honor CODEX_HOME, CLAUDE_CONFIG_DIR and OPENCODE_DATA_DIR/XDG.
+    - Missing/pruned logs and missing message tables add no evidence.
+      File/SQLite failures append warnings about partial coverage.
+    - Return historical/requested paths, not live agent locations;
+      the indexer separately checks them against Git registration.
+    - Do not change source eligibility, persist a cache or modify
+      logs.
 
     '''
     result: dict[tuple[str, str], set[str]] = {}
     row: dict
     selected: set[tuple[str, str]] = {
-        (row['harness'], row['id']) for row in dialogs
+        (
+            row['harness'],
+            row['id'],
+        ) for row in dialogs
     }
     codex: Path = Path(os.environ.get(
         'CODEX_HOME', str(Path.home() / '.codex'),
@@ -158,8 +166,16 @@ def observations(
         base,
         pattern,
     ) in (
-        ('codex', codex / 'sessions', '**/*.jsonl'),
-        ('claude', claude / 'projects', '*/*.jsonl'),
+        (
+            'codex',
+            codex / 'sessions',
+            '**/*.jsonl',
+        ),
+        (
+            'claude',
+            claude / 'projects',
+            '*/*.jsonl',
+        ),
     ):
         ids: set[str] = {
             row['id'] for row in dialogs if row['harness'] == harness
@@ -167,18 +183,23 @@ def observations(
         path: Path
         for path in base.glob(pattern):
             # Codex rollout basenames end in the full thread UUID.
-            did: str = path.stem[-36:] if harness == 'codex' else (
-                path.stem
-            )
+            did: str = path.stem
+            if harness == 'codex':
+                did = path.stem[-_CODEX_ROLLOUT_ID_LENGTH:]
             if did not in ids:
                 continue
             try:
-                result.setdefault((harness, did), set()).update(
+                result.setdefault((
+                    harness,
+                    did,
+                ), set()).update(
                     jsonl_paths(path, did),
                 )
-            except OSError:
+            except OSError as error:
+                path_text: str = str(path)
                 warnings.append(
-                    'Could not read transcript: ' + str(path),
+                    f'Could not read transcript: {path_text!r}; '
+                    f'{error}',
                 )
     data: Path = Path(os.environ.get(
         'XDG_DATA_HOME', str(Path.home() / '.local/share'),
@@ -191,7 +212,10 @@ def observations(
     oc_ids: list[str] = [
         did for harness, did in selected if harness == 'opencode'
     ]
-    for database in (oc / 'opencode.db', oc / 'opencode-stable.db'):
+    for database in (
+        oc / 'opencode.db',
+        oc / 'opencode-stable.db',
+    ):
         if not oc_ids:
             break
         if not database.is_file():
@@ -199,7 +223,9 @@ def observations(
         try:
             connection: sqlite3.Connection
             with closing(sqlite3.connect(
-                database.as_uri() + '?mode=ro', uri=True, timeout=2,
+                database.as_uri() + '?mode=ro',
+                uri=True,
+                timeout=_SQLITE_BUSY_TIMEOUT_SECONDS,
             )) as connection:
                 # OpenCode messages carry path.cwd in JSON data.
                 row: tuple
@@ -225,10 +251,15 @@ def observations(
                             continue
                         if isinstance(event, dict):
                             result.setdefault(
-                                ('opencode', did), set(),
+                                (
+                                    'opencode',
+                                    did,
+                                ), set(),
                             ).update(structured_paths(event))
-        except sqlite3.Error:
+        except sqlite3.Error as error:
+            database_text: str = str(database)
             warnings.append(
-                'Could not read message cwd: ' + str(database),
+                f'Could not read message cwd: {database_text!r}; '
+                f'{error}',
             )
     return result

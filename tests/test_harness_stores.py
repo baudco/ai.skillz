@@ -7,7 +7,10 @@ Fixtures for cross-harness discovery and importable dialog mappings.
 
 '''
 
-from contextlib import closing, redirect_stdout
+from contextlib import (
+    closing,
+    redirect_stdout,
+)
 from io import StringIO
 import json
 import os
@@ -15,16 +18,24 @@ from pathlib import Path
 import re
 import sqlite3
 import tempfile
-from typing import Any, TextIO
+from collections.abc import Callable
+from typing import TextIO
 import unittest
 from unittest.mock import patch
 
-from aiskillz import name2id, list_dialogs, get_dialog
+from aiskillz import (
+    name2id,
+    list_dialogs,
+    get_dialog,
+)
 from aiskillz.cli import main
 from aiskillz.dialogs._readers import (
     claude_sessions, opencode_sessions,
 )
-from aiskillz._xontrib import _load_xontrib_, _unload_xontrib_
+from aiskillz._xontrib import (
+    _load_xontrib_,
+    _unload_xontrib_,
+)
 
 
 class HarnessStoresTests(unittest.TestCase):
@@ -48,25 +59,24 @@ class HarnessStoresTests(unittest.TestCase):
         self.oc: Path = self.root / 'oc'
         self.oc.mkdir()
         self.claude: Path = self.root / 'claude'
-        self.env: Any = patch.dict(
+        self.enterContext(patch.dict(
             os.environ,
             {
                 'CODEX_HOME': str(self.root / 'absent-codex'),
                 'OPENCODE_DATA_DIR': str(self.oc),
                 'CLAUDE_CONFIG_DIR': str(self.claude),
             },
-        )
-        self.env.start()
-        self.addCleanup(self.env.stop)
+        ))
 
     def test_claude_skips_non_object_log_records(self) -> None:
         '''
         Valid JSON scalars and arrays used to crash Claude listing.
 
-        Surround one real metadata event with null, scalar, array,
-        and partial JSON records in a temporary log. Discovery must
-        still return the real dialog and its cwd/title instead of
-        aborting the entire harness store on event.get().
+        - Surround one real metadata event with null, scalar, array,
+          and partial JSON records in a temporary log.
+        - Discovery must still return the real dialog and its
+          cwd/title instead of aborting the entire harness store on
+          event.get().
 
         '''
         folder: Path = self.claude / 'projects/fixture'
@@ -94,20 +104,28 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         A truthy list sessionId used to crash public deduplication.
 
-        Write real JSONL events with non-string IDs, titles and cwd,
-        followed by valid metadata. Exercise empty and scalar IDs as
-        well as unhashable values. Listing must recover valid cwd and
-        title while retaining the filename ID until a string ID is
-        supplied. A later malformed title must not poison that name.
-        This protects name completion's string operations as well as
-        dictionary-key construction in `list_dialogs()`.
+        - Write real JSONL events with non-string IDs, titles and
+          cwd, followed by valid metadata.
+        - Exercise empty and scalar IDs as well as unhashable values.
+        - Listing must recover valid cwd and title while retaining
+          the filename ID until a string ID is supplied.
+        - A later malformed title must not poison that name.
+        - This protects name completion's string operations as well
+          as dictionary-key construction in `list_dialogs()`.
 
         '''
         folder: Path = self.claude / 'projects/fixture'
         folder.mkdir(parents=True)
         log: Path = folder / 'fallback-id.jsonl'
         invalid: object
-        for invalid in (['bad'], {'bad': 1}, 42, True, None, ''):
+        for invalid in (
+            ['bad'],
+            {'bad': 1},
+            42,
+            True,
+            None,
+            '',
+        ):
             with self.subTest(invalid=invalid):
                 bad: dict = {
                     'sessionId': invalid,
@@ -122,7 +140,11 @@ class HarnessStoresTests(unittest.TestCase):
                 }
                 event: dict
                 log.write_text('\n'.join(
-                    json.dumps(event) for event in (bad, valid, bad)
+                    json.dumps(event) for event in (
+                        bad,
+                        valid,
+                        bad,
+                    )
                 ))
                 rows: list[dict] = list_dialogs(
                     path=None, harness='cld',
@@ -133,7 +155,10 @@ class HarnessStoresTests(unittest.TestCase):
                 self.assertEqual(rows[0]['name'], 'Recovered title')
                 valid['sessionId'] = 'verified-id'
                 log.write_text('\n'.join(
-                    json.dumps(event) for event in (bad, valid)
+                    json.dumps(event) for event in (
+                        bad,
+                        valid,
+                    )
                 ))
                 rows = list_dialogs(path=None, harness='cld')
                 self.assertEqual(rows[0]['id'], 'verified-id')
@@ -144,11 +169,13 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         Index entries could publish list titles or use list ID keys.
 
-        Create a newer index containing scalar entries and malformed
-        IDs plus one entry for a real log. Ignore invalid identities
-        and choose a valid lower-priority title. Then give its cwd a
-        wrong type: discovery must read the log for valid metadata
-        instead of losing the dialog under exact cwd filtering.
+        - Create a newer index containing scalar entries and
+          malformed IDs plus one entry for a real log.
+        - Ignore invalid identities and choose a valid lower-priority
+          title.
+        - Then give its cwd a wrong type: discovery must read the log
+          for valid metadata instead of losing the dialog under exact
+          cwd filtering.
 
         '''
         folder: Path = self.claude / 'projects/fixture'
@@ -175,13 +202,19 @@ class HarnessStoresTests(unittest.TestCase):
             item,
         ]}))
         stamp: float = log.stat().st_mtime + 10
-        os.utime(index, (stamp, stamp))
+        os.utime(index, (
+            stamp,
+            stamp,
+        ))
         rows: list[dict] = list_dialogs(path=None, harness='cld')
         self.assertEqual(rows[0]['name'], 'From index')
         self.assertEqual(rows[0]['id'], 'dialog')
         item['projectPath'] = ['invalid']
         index.write_text(json.dumps({'entries': [item]}))
-        os.utime(index, (stamp, stamp))
+        os.utime(index, (
+            stamp,
+            stamp,
+        ))
         rows = list_dialogs(path=None, harness='cld')
         self.assertEqual(rows[0]['name'], 'From log')
         self.assertEqual(rows[0]['cwd'], str(self.repo))
@@ -190,19 +223,26 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         A user event's non-object `message` used to abort discovery.
 
-        Read a real JSONL log for each malformed nested value.
-        Without a valid prompt, discovery must return `(untitled)`.
+        - Read a real JSONL log for each malformed nested value.
+        - Without a valid prompt, discovery must return `(untitled)`.
         Append a valid user message and read again:
-        the skipped value must not prevent extracting that prompt.
-        These assertions exercise `claude_sessions` through the
-        public `list_dialogs` API, including null and scalar values.
+        - the skipped value must not prevent extracting that prompt.
+        - These assertions exercise `claude_sessions` through the
+          public `list_dialogs` API, including null and scalar
+          values.
 
         '''
         folder: Path = self.claude / 'projects/fixture'
         folder.mkdir(parents=True)
         log: Path = folder / 'dialog.jsonl'
         message: object
-        for message in (None, [], False, 42, 'scalar'):
+        for message in (
+            None,
+            [],
+            False,
+            42,
+            'scalar',
+        ):
             with self.subTest(message=message):
                 event: dict = {
                     'sessionId': 'dialog',
@@ -231,20 +271,32 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         Explicit multi-harness requests silently skipped Codex.
 
-        Point discovery at this fixture's missing Codex database.
-        Both canonical and short-key explicit lists must raise even
-        alongside another harness. Implicit discovery and `all=True`
-        retain their skip behavior; an explicit single selection
-        still reports the same error. No real user stores are read.
+        - Point discovery at this fixture's missing Codex database.
+        - Both canonical and short-key explicit lists must raise even
+          alongside another harness.
+        - Implicit discovery and `all=True` retain their skip
+          behavior; an explicit single selection still reports the
+          same error.
+        - No real user stores are read.
 
         '''
         harness: str|list[str]
         for harness in (
             'codex',
             ['codex'],
-            ['codex', 'claude'],
-            ['cx', 'cld'],
-            ['claude', 'cx', 'opencode'],
+            [
+                'codex',
+                'claude',
+            ],
+            [
+                'cx',
+                'cld',
+            ],
+            [
+                'claude',
+                'cx',
+                'opencode',
+            ],
         ):
             with self.subTest(harness=harness):
                 with self.assertRaisesRegex(
@@ -253,17 +305,21 @@ class HarnessStoresTests(unittest.TestCase):
                     list_dialogs(path=None, harness=harness)
         self.assertEqual(list_dialogs(path=None), [])
         self.assertEqual(list_dialogs(
-            path=None, harness=['cx', 'cld'], all=True,
+            path=None, harness=[
+                'cx',
+                'cld',
+            ], all=True,
         ), [])
 
     def test_legacy_opencode_archive_opt_in(self) -> None:
         '''
         Manual recording must include pre-SQLite archives too.
 
-        Put an archived session in OpenCode's legacy JSON layout
-        without a database. The same include_archived option used
-        by --record must return it, while all_sources alone must
-        keep it hidden. This prevents backend-dependent behavior.
+        - Put an archived session in OpenCode's legacy JSON layout
+          without a database.
+        - The same include_archived option used by --record must
+          return it, while all_sources alone must keep it hidden.
+        - This prevents backend-dependent behavior.
 
         '''
         folder: Path = self.oc / 'storage/session/project'
@@ -272,7 +328,10 @@ class HarnessStoresTests(unittest.TestCase):
             'id': 'old',
             'title': 'Archived dialog',
             'directory': str(self.repo),
-            'time': {'updated': 1000, 'archived': 2000},
+            'time': {
+                'updated': 1000,
+                'archived': 2000,
+            },
         }))
         self.assertEqual(list_dialogs(
             path=None, harness='oc', all_sources=True,
@@ -329,7 +388,14 @@ class HarnessStoresTests(unittest.TestCase):
                         7000,
                         None,
                     ),
-                    ('old', 'Old', str(self.repo), None, 8000, 9000),
+                    (
+                        'old',
+                        'Old',
+                        str(self.repo),
+                        None,
+                        8000,
+                        9000,
+                    ),
                     (
                         'other',
                         'Elsewhere',
@@ -381,15 +447,19 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         OpenCode uses non-UUID IDs and two storage generations.
 
-        Both readers must preserve IDs, scope by directory, and hide
-        archived sessions without treating child sessions as parents.
+        - Both readers must preserve IDs, scope by directory, and
+          hide archived sessions without treating child sessions as
+          parents.
 
         '''
         self.seed_oc()
         before: bytes = (self.oc / 'opencode-stable.db').read_bytes()
         rows: list[dict] = opencode_sessions(self.oc, str(self.repo))
         r: dict
-        self.assertEqual({r['id'] for r in rows}, {'ses_a', 'ses_b'})
+        self.assertEqual({r['id'] for r in rows}, {
+            'ses_a',
+            'ses_b',
+        })
         self.assertEqual(
             before,
             (self.oc / 'opencode-stable.db').read_bytes(),
@@ -415,11 +485,13 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         Valid JSON scalars and arrays crashed legacy OpenCode reads.
 
-        Seed real session files alongside null, boolean, numeric,
-        string and array JSON values. Public discovery must skip
-        these non-record values and preserve the valid dialog, both
-        with and without cwd filtering. Snapshot the files to prove
-        that recovering discovery leaves harness metadata untouched.
+        - Seed real session files alongside null, boolean, numeric,
+          string and array JSON values.
+        - Public discovery must skip these non-record values and
+          preserve the valid dialog, both with and without cwd
+          filtering.
+        - Snapshot the files to prove that recovering discovery
+          leaves harness metadata untouched.
 
         '''
         folder: Path = self.oc / 'storage/session/project'
@@ -449,7 +521,10 @@ class HarnessStoresTests(unittest.TestCase):
             path: path.read_bytes() for path in folder.glob('*.json')
         }
         scope: str|None
-        for scope in (None, str(self.repo)):
+        for scope in (
+            None,
+            str(self.repo),
+        ):
             with self.subTest(scope=scope):
                 rows: list[dict] = list_dialogs(
                     path=scope, harness='oc',
@@ -466,14 +541,16 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         Object-shaped legacy records still crashed public discovery.
 
-        A scalar or null `time` failed mapping access; a missing or
-        unhashable ID failed dictionary insertion. A non-numeric
-        update time failed timestamp conversion. Missing directories
-        raised KeyError on unscoped discovery; non-string directories
-        became invalid public metadata. Place each malformed variant
-        beside a valid dialog in real JSON files.
-        Scoped and unscoped reads, including archive opt-in, must
-        retain only the valid dialog and leave every file unchanged.
+        - A scalar or null `time` failed mapping access; a missing or
+          unhashable ID failed dictionary insertion.
+        - A non-numeric update time failed timestamp conversion.
+        - Missing directories raised KeyError on unscoped discovery;
+          non-string directories became invalid public metadata.
+        - Place each malformed variant beside a valid dialog in real
+          JSON files.
+        - Scoped and unscoped reads, including archive opt-in, must
+          retain only the valid dialog and leave every file
+          unchanged.
 
         '''
         folder: Path = self.oc / 'storage/session/project'
@@ -486,26 +563,65 @@ class HarnessStoresTests(unittest.TestCase):
         }
         malformed: list[dict] = []
         value: object
-        for value in (None, False, 42, 'scalar', [], [1]):
-            malformed.append({**good, 'time': value})
-        for value in (None, False, 42, '', [], {}):
-            malformed.append({**good, 'id': value})
+        for value in (
+            None,
+            False,
+            42,
+            'scalar',
+            [],
+            [1],
+        ):
+            malformed.append({
+                **good,
+                'time': value,
+            })
+        for value in (
+            None,
+            False,
+            42,
+            '',
+            [],
+            {},
+        ):
+            malformed.append({
+                **good,
+                'id': value,
+            })
         without_id: dict = dict(good)
         del without_id['id']
         malformed.append(without_id)
-        for value in (None, False, 42, '', [], {}):
-            malformed.append({**good, 'directory': value})
+        for value in (
+            None,
+            False,
+            42,
+            '',
+            [],
+            {},
+        ):
+            malformed.append({
+                **good,
+                'directory': value,
+            })
         without_directory: dict = dict(good)
         del without_directory['directory']
         malformed.append(without_directory)
-        for value in (None, False, '5000', [], {}):
+        for value in (
+            None,
+            False,
+            '5000',
+            [],
+            {},
+        ):
             malformed.append({
                 **good,
                 'time': {'updated': value},
             })
         ordinal: int
         record: dict
-        for ordinal, record in enumerate([good, *malformed]):
+        for ordinal, record in enumerate([
+            good,
+            *malformed,
+        ]):
             (folder / f'{ordinal}.json').write_text(
                 json.dumps(record),
             )
@@ -514,9 +630,15 @@ class HarnessStoresTests(unittest.TestCase):
             path: path.read_bytes() for path in folder.glob('*.json')
         }
         scope: str|None
-        for scope in (None, str(self.repo)):
+        for scope in (
+            None,
+            str(self.repo),
+        ):
             include_archived: bool
-            for include_archived in (False, True):
+            for include_archived in (
+                False,
+                True,
+            ):
                 with self.subTest(
                     scope=scope, include_archived=include_archived,
                 ):
@@ -538,21 +660,31 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         Invalid OpenCode titles escaped as non-string dialog names.
 
-        Legacy lists and objects broke name2id() hashing; SQLite
-        numbers or blobs also violated completion's string contract.
-        Seed both storage formats with invalid and valid titles. Use
-        a SQLite column without TEXT affinity to retain numeric
-        values. Public discovery must normalize only invalid titles
-        to `(untitled)`, and name2id() must preserve every opaque ID.
+        - Legacy lists and objects broke name2id() hashing; SQLite
+          numbers or blobs also violated completion's string
+          contract.
+        - Seed both storage formats with invalid and valid titles.
+        - Use a SQLite column without TEXT affinity to retain numeric
+          values.
+        - Public discovery must normalize only invalid titles to
+          `(untitled)`, and name2id() must preserve every opaque ID.
 
         '''
         backend: str
-        for backend in ('sqlite', 'legacy'):
+        for backend in (
+            'sqlite',
+            'legacy',
+        ):
             with self.subTest(backend=backend):
                 home: Path = self.root / backend
                 folder: Path = home / 'storage/session/project'
                 folder.mkdir(parents=True)
-                titles: list[object] = [None, '', 42, 'Exact name']
+                titles: list[object] = [
+                    None,
+                    '',
+                    42,
+                    'Exact name',
+                ]
                 if backend == 'sqlite':
                     titles.append(b'not-text')
                     connection: sqlite3.Connection
@@ -578,7 +710,11 @@ class HarnessStoresTests(unittest.TestCase):
                             )
                         connection.commit()
                 else:
-                    titles.extend([[], {}, ['name']])
+                    titles.extend([
+                        [],
+                        {},
+                        ['name'],
+                    ])
                     for ordinal, title in enumerate(titles):
                         (folder / f'{ordinal}.json').write_text(
                             json.dumps({
@@ -616,12 +752,14 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         One partial legacy JSON file aborted all OpenCode discovery.
 
-        Put truncated, invalid JSON and invalid UTF-8 files beside
-        one valid dialog. Decoding used to fail before JSON parsing,
-        bypassing the malformed-JSON handler and aborting discovery.
-        Public discovery must retain the valid dialog regardless of
-        cwd scope, and name2id() must resolve its name. Snapshot each
-        file to prove that readers neither repair nor rewrite logs.
+        - Put truncated, invalid JSON and invalid UTF-8 files beside
+          one valid dialog.
+        - Decoding used to fail before JSON parsing, bypassing the
+          malformed-JSON handler and aborting discovery.
+        - Public discovery must retain the valid dialog regardless of
+          cwd scope, and name2id() must resolve its name.
+        - Snapshot each file to prove that readers neither repair nor
+          rewrite logs.
 
         '''
         folder: Path = self.oc / 'storage/session/project'
@@ -639,7 +777,10 @@ class HarnessStoresTests(unittest.TestCase):
             path: path.read_bytes() for path in folder.glob('*.json')
         }
         scope: str|None
-        for scope in (None, str(self.repo)):
+        for scope in (
+            None,
+            str(self.repo),
+        ):
             with self.subTest(scope=scope):
                 rows: list[dict] = list_dialogs(
                     path=scope, harness='oc',
@@ -657,12 +798,14 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         A corrupt byte in one log aborted all Claude discovery.
 
-        Text-stream iteration decoded before the JSON error handler,
-        so a single invalid UTF-8 record hid valid later metadata.
-        Surround a corrupt line with valid records and add another
-        dialog log. Both directory scopes must preserve their exact
-        names and IDs, including the title after the corrupt line.
-        Byte snapshots prove discovery leaves both logs unchanged.
+        - Text-stream iteration decoded before the JSON error
+          handler, so a single invalid UTF-8 record hid valid later
+          metadata.
+        - Surround a corrupt line with valid records and add another
+          dialog log.
+        - Both directory scopes must preserve their exact names and
+          IDs, including the title after the corrupt line.
+        - Byte snapshots prove discovery leaves both logs unchanged.
 
         '''
         folder: Path = self.claude / 'projects' / re.sub(
@@ -691,10 +834,16 @@ class HarnessStoresTests(unittest.TestCase):
         }), encoding='utf-8')
         path: Path
         before: dict[Path, bytes] = {
-            path: path.read_bytes() for path in (first, second)
+            path: path.read_bytes() for path in (
+                first,
+                second,
+            )
         }
         scope: str|None
-        for scope in (None, str(self.repo)):
+        for scope in (
+            None,
+            str(self.repo),
+        ):
             with self.subTest(scope=scope):
                 rows: list[dict] = list_dialogs(
                     path=scope, harness='cld',
@@ -718,9 +867,9 @@ class HarnessStoresTests(unittest.TestCase):
         Claude project directory encoding is lossy, and logs grow
         live.
 
-        Read the latest explicit title despite a partial trailing
-        JSON record, then reject a mismatching cwd even in the same
-        folder.
+        - Read the latest explicit title despite a partial trailing
+          JSON record, then reject a mismatching cwd even in the same
+          folder.
 
         '''
         path: Path = self.seed_claude('Renamed')
@@ -755,8 +904,9 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         A stale Claude index must not hide a newer session rename.
 
-        Fresh indexes provide names quickly; a later log update must
-        invalidate that fast path and recover the name from the log.
+        - Fresh indexes provide names quickly; a later log update
+          must invalidate that fast path and recover the name from
+          the log.
 
         '''
         path: Path = self.seed_claude('New name')
@@ -782,7 +932,10 @@ class HarnessStoresTests(unittest.TestCase):
             )[0]['name'],
             'Indexed name',
         )
-        os.utime(index, (0, 0))
+        os.utime(index, (
+            0,
+            0,
+        ))
         self.assertEqual(
             claude_sessions(
                 self.claude,
@@ -795,10 +948,11 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         AI titles and last-prompt metadata were ignored by discovery.
 
-        Append an AI title after an explicit rename to reproduce the
-        naming sequence recognized by ai.reply. Then replace the log
-        with two last-prompt records and verify the newest wins. Both
-        cases retain the original cwd and resumable dialog ID.
+        - Append an AI title after an explicit rename to reproduce
+          the naming sequence recognized by ai.reply.
+        - Then replace the log with two last-prompt records and
+          verify the newest wins.
+        - Both cases retain the original cwd and resumable dialog ID.
 
         '''
         path: Path = self.seed_claude('Earlier custom title')
@@ -813,9 +967,18 @@ class HarnessStoresTests(unittest.TestCase):
         )
         self.assertEqual(rows[0]['name'], 'Latest AI title')
         events: list[dict] = [
-            {'cwd': str(self.repo), 'sessionId': 'claude-id'},
-            {'type': 'last-prompt', 'lastPrompt': 'Old prompt'},
-            {'type': 'last-prompt', 'lastPrompt': 'New prompt'},
+            {
+                'cwd': str(self.repo),
+                'sessionId': 'claude-id',
+            },
+            {
+                'type': 'last-prompt',
+                'lastPrompt': 'Old prompt',
+            },
+            {
+                'type': 'last-prompt',
+                'lastPrompt': 'New prompt',
+            },
         ]
         event: dict
         path.write_text('\n'.join(
@@ -829,11 +992,12 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         Bare ai.dlogs previously hid every harness except Codex.
 
-        Seed OpenCode and Claude, with other-cwd and child OpenCode
-        records, and make os.getcwd return the fixture repository.
-        Default Python and CLI calls must include both harnesses,
-        exclude other scopes and children, and retain explicit
-        single-harness filtering. All roots are isolated by setUp.
+        - Seed OpenCode and Claude, with other-cwd and child OpenCode
+          records, and make os.getcwd return the fixture repository.
+        - Default Python and CLI calls must include both harnesses,
+          exclude other scopes and children, and retain explicit
+          single-harness filtering.
+        - All roots are isolated by setUp.
 
         '''
         self.seed_oc()
@@ -842,7 +1006,11 @@ class HarnessStoresTests(unittest.TestCase):
             names: dict[str, str] = name2id()
             self.assertEqual(
                 set(names.values()),
-                {'ses_a', 'ses_b', 'claude-id'},
+                {
+                    'ses_a',
+                    'ses_b',
+                    'claude-id',
+                },
             )
             output: StringIO = StringIO()
             with redirect_stdout(output):
@@ -852,7 +1020,11 @@ class HarnessStoresTests(unittest.TestCase):
             row: dict
             self.assertEqual(
                 {row['id'] for row in rows},
-                {'ses_a', 'ses_b', 'claude-id'},
+                {
+                    'ses_a',
+                    'ses_b',
+                    'claude-id',
+                },
             )
             self.assertEqual(
                 name2id(harness='claude'), {'Shared': 'claude-id'},
@@ -862,10 +1034,12 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         ID-only consumers need metadata without choosing a cwd.
 
-        Seed both stores and find a dialog saved outside this repo.
-        Check full metadata, alias filtering and missing-ID behavior.
-        Duplicate an ID across harnesses through mocked metadata and
-        require an ambiguity error rather than silently picking one.
+        - Seed both stores and find a dialog saved outside this repo.
+        - Check full metadata, alias filtering and missing-ID
+          behavior.
+        - Duplicate an ID across harnesses through mocked metadata
+          and require an ambiguity error rather than silently picking
+          one.
 
         '''
         self.seed_oc()
@@ -881,8 +1055,14 @@ class HarnessStoresTests(unittest.TestCase):
         with patch(
             'aiskillz.dialogs._api.list_dialogs',
             return_value=[
-                {'harness': 'codex', 'id': 'shared'},
-                {'harness': 'claude', 'id': 'shared'},
+                {
+                    'harness': 'codex',
+                    'id': 'shared',
+                },
+                {
+                    'harness': 'claude',
+                    'id': 'shared',
+                },
             ],
         ):
             with self.assertRaisesRegex(ValueError, 'ambiguous'):
@@ -896,15 +1076,19 @@ class HarnessStoresTests(unittest.TestCase):
         Duplicate names must never overwrite IDs in the public
         mapping.
 
-        all=True must ignore both supplied filters and expose records
-        from other scopes and harnesses, skipping absent stores.
+        - all=True must ignore both supplied filters and expose
+          records from other scopes and harnesses, skipping absent
+          stores.
 
         '''
         self.seed_oc()
         self.seed_claude()
         mapping: dict[str, str] = name2id(
             self.repo,
-            harness=['oc', 'claude'],
+            harness=[
+                'oc',
+                'claude',
+            ],
         )
         self.assertEqual(
             set(mapping.values()),
@@ -938,21 +1122,22 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         The packaged alias previously launched a Python subprocess.
 
-        Invoke the actual callable with help and invalid arguments
-        using separate capture streams. Both argparse exits must
-        become shell statuses, leaving the host process and global
-        streams intact. Mocked discovery proves normal JSON output
-        uses the supplied stream without accessing real stores.
-        A shell-only store override must reach Python readers and
-        leave the process environment unchanged after the call.
+        - Invoke the actual callable with help and invalid arguments
+          using separate capture streams.
+        - Both argparse exits must become shell statuses, leaving the
+          host process and global streams intact.
+        - Mocked discovery proves normal JSON output uses the
+          supplied stream without accessing real stores.
+        - A shell-only store override must reach Python readers and
+          leave the process environment unchanged after the call.
 
         '''
         from types import SimpleNamespace
         import sys
 
-        xsh: Any = SimpleNamespace(aliases={}, ctx={})
+        xsh: SimpleNamespace = SimpleNamespace(aliases={}, ctx={})
         _load_xontrib_(xsh)
-        alias: Any = xsh.aliases['ai.dlogs']
+        alias: Callable[..., int] = xsh.aliases['ai.dlogs']
         self.assertTrue(callable(alias))
         self.assertFalse(alias.__xonsh_threadable__)
         self.assertEqual(
@@ -987,7 +1172,7 @@ class HarnessStoresTests(unittest.TestCase):
         from xonsh.built_ins import XSH
 
         previous_env: dict[str, str] = dict(os.environ)
-        shell_env: Any = SimpleNamespace(detype=lambda: {
+        shell_env: SimpleNamespace = SimpleNamespace(detype=lambda: {
             'CODEX_HOME': '/synthetic/xonsh/store',
         })
 
@@ -1013,13 +1198,14 @@ class HarnessStoresTests(unittest.TestCase):
         '''
         Repeated loads used to save extension aliases as originals.
 
-        Load twice with existing user bindings, then unload: both
-        prior bindings must return. Repeat with no original aliases
-        to require their removal. If a user changes either binding
-        between loads, the latest user binding must survive unload;
-        changes made after the final load must also remain intact.
-        Exercise the actual loader and unloader with isolated shell
-        aliases and context, without launching a harness process.
+        - Load twice with existing user bindings, then unload: both
+          prior bindings must return.
+        - Repeat with no original aliases to require their removal.
+        - If a user changes either binding between loads, the latest
+          user binding must survive unload; changes made after the
+          final load must also remain intact.
+        - Exercise the actual loader and unloader with isolated shell
+          aliases and context, without launching a harness process.
 
         '''
         from types import SimpleNamespace
@@ -1064,8 +1250,9 @@ class HarnessStoresTests(unittest.TestCase):
         Loading an extension must not permanently erase a user's
         alias.
 
-        Restore the previous alias on unload, but preserve a later
-        replacement made by the user while the extension was loaded.
+        - Restore the previous alias on unload, but preserve a later
+          replacement made by the user while the extension was
+          loaded.
 
         '''
         from types import SimpleNamespace

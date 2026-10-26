@@ -3,11 +3,12 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Shell commands and terminal formatting for ai.dlogs.
+Parse shell commands and format ai.dlogs/ai.resume terminal output.
 
-The installed command, python -m aiskillz, source script and Xontrib
-all call main(). Dialog operations live in aiskillz.dialogs; this
-module parses arguments and formats their results for people or JSON.
+- Installed entry points, python -m aiskillz, source aliases and the
+  Xontrib share main()/resume_main().
+- aiskillz.dialogs owns metadata discovery and WKT operations.
+- This module owns argument parsing and human/JSON presentation.
 
 '''
 
@@ -29,7 +30,10 @@ import sys
 # when aiskillz is not installed in its interpreter. Put this tree
 # first for the relative imports below; a source invocation must not
 # silently use a different editable installation from site-packages.
-if __package__ in (None, ''):
+if __package__ in (
+    None,
+    '',
+):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = 'aiskillz'
 
@@ -46,21 +50,31 @@ from .wkt import WktLookup
 from .wkt._relations import canonical_harness
 
 
+# ANSI SGR colors used only for interactive display; reset is SGR 0.
+_ANSI_GREY: int = 90
+_ANSI_BLUE: int = 34
+_ANSI_CYAN: int = 36
+_INDEX_STATUS_WIDTH: int = 10
+
+
 def _display_text(value: object) -> str:
     '''
-    Remove terminal controls and repeated whitespace from a cell.
+    Normalize one terminal cell without altering stored metadata.
 
-    `format_dialog_table()` uses this for both rows and context
-    lines. Python and JSON callers retain the original values.
+    - `format_dialog_table()` uses this for rows and context fields.
+    - Replace terminal controls with spaces and collapse whitespace.
+    - Python/JSON callers keep the original values.
 
     '''
+    printable: list[str] = []
     char: str
-    return ' '.join(
-        ''.join(
-            char if char.isprintable() else ' '
-            for char in str(value)
-        ).split()
-    )
+    for char in str(value):
+        if char.isprintable():
+            printable.append(char)
+        else:
+            printable.append(' ')
+
+    return ' '.join(''.join(printable).split())
 
 
 def _terminal_color_enabled() -> bool:
@@ -80,7 +94,10 @@ def _grey_label(label: str, color: bool) -> str:
     Dim a preview label without coloring its value.
 
     '''
-    return f'\x1b[90m{label}\x1b[0m' if color else label
+    if color:
+        return f'\x1b[{_ANSI_GREY}m{label}\x1b[0m'
+
+    return label
 
 
 def _highlight(value: str, code: int, color: bool) -> str:
@@ -88,7 +105,10 @@ def _highlight(value: str, code: int, color: bool) -> str:
     Color one preview value while preserving plain output.
 
     '''
-    return f'\x1b[{code}m{value}\x1b[0m' if color else value
+    if color:
+        return f'\x1b[{code}m{value}\x1b[0m'
+
+    return value
 
 
 def _shell_commands(
@@ -97,21 +117,31 @@ def _shell_commands(
     xonsh_command: str,
 ) -> list[tuple[str, str]]:
     '''
-    Format a preview action for Xonsh and POSIX shell users.
+    Render Resume/Apply actions for the user's shell.
 
-    `index_main()` uses this for both Resume and Apply. Ordinary
-    `shlex.join()` output works in both shells. POSIX's apostrophe
-    quoting does not parse in Xonsh, so that case gets two commands.
+    - `index_main()` supplies argv and an explicit Xonsh expression.
+    - Use one shared command when shlex.join() parses in both shells.
+    - For apostrophes, return separate Xonsh/POSIX forms: POSIX quote
+      concatenation is not equivalent to Xonsh's parser syntax.
 
     '''
     posix_command: str = shlex.join(argv)
     arg: str
     if any("'" in arg for arg in argv):
         return [
-            (f'{action} (xonsh):', xonsh_command),
-            (f'{action} (POSIX sh):', posix_command),
+            (
+                f'{action} (xonsh):',
+                xonsh_command,
+            ),
+            (
+                f'{action} (POSIX sh):',
+                posix_command,
+            ),
         ]
-    return [(f'{action} (xonsh/POSIX sh):', posix_command)]
+    return [(
+        f'{action} (xonsh/POSIX sh):',
+        posix_command,
+    )]
 
 
 def format_dialog_table(
@@ -121,22 +151,27 @@ def format_dialog_table(
     show_did: bool = False,
 ) -> str:
     '''
-    Format dialog metadata and worktree labels for terminal display.
+    Render dialog metadata and WKT labels for terminal users.
 
-    `main()` passes newest-first `dialogs.list_dialogs()` records
-    here; caller order and input dictionaries remain unchanged.
-    Show `updated_at` as UTC minutes only when requested, leaving
-    invalid/missing times blank. Reuse one `WktLookup` instance
-    for the WKT column, which can reflect confirmed `/open-wkt` or
-    index relations even when saved cwd names the main checkout.
-    The sort rule appears above the table. Uniform CWD and harness
-    values follow it; `show_cwd=False` hides CWD in both places.
+    Inputs:
+    - `main()` supplies newest-first list_dialogs() results; preserve
+      that order and leave all input records unchanged.
+    - One WktLookup instance resolves recorded WKTs across the rows,
+      including a dialog saved in main cwd but using a linked WKT.
 
-    Show full IDs only when requested. Cap names at 36 characters
-    with an ellipsis, abbreviate home paths and neutralize control
-    characters. Return plain text; `main()` adds optional header
-    color. JSON/Python metadata bypasses this formatting and
-    contains neither shortened names nor WKT labels.
+    Presentation:
+    - Show the sort rule above the table. Move uniform CWD/HARNESS
+      values above the headers instead of repeating a whole column.
+    - `show_cwd=False` hides CWD everywhere; IDs/timestamps are
+      opt-in.
+    - Format valid timestamps as UTC minutes; leave bad/missing ones
+      blank.
+    - Shorten names using DIALOG_NAME_WIDTH, abbreviate home paths
+      and neutralize terminal controls. Keep unavailable relation
+      labels.
+    - Return plain text; `main()` colors eligible terminal headers.
+      JSON/Python metadata retains exact values and has no WKT
+      labels.
 
     '''
     displays: list[dict[str, str]] = []
@@ -170,7 +205,10 @@ def format_dialog_table(
         if show_timestamps:
             updated: object = display.get('updated_at')
             display['updated'] = ''
-            if isinstance(updated, (int, float)):
+            if isinstance(updated, (
+                int,
+                float,
+            )):
                 try:
                     display['updated'] = datetime.fromtimestamp(
                         updated, timezone.utc,
@@ -227,21 +265,39 @@ def format_dialog_table(
 
     columns: list[tuple[str, str]] = []
     if not uniform_harness:
-        columns.append(('harness', 'HARNESS'))
+        columns.append((
+            'harness',
+            'HARNESS',
+        ))
     columns.extend([
-        ('name', 'NAME'),
-        ('wkt', 'WKT'),
+        (
+            'name',
+            'NAME',
+        ),
+        (
+            'wkt',
+            'WKT',
+        ),
     ])
     if show_did:
-        columns.append(('id', 'DIALOG ID'))
+        columns.append((
+            'id',
+            'DIALOG ID',
+        ))
     if show_timestamps:
-        columns.append(('updated', 'UPDATED (UTC)'))
+        columns.append((
+            'updated',
+            'UPDATED (UTC)',
+        ))
     if (
         show_cwd
         and
         not uniform_cwd
     ):
-        columns.append(('cwd', 'CWD'))
+        columns.append((
+            'cwd',
+            'CWD',
+        ))
     key: str
     keys: list[str] = [key for key, _ in columns]
     rows: list[list[str]] = [
@@ -276,19 +332,17 @@ def format_dialog_table(
 
 def main(argv: list[str]|None = None) -> int:
     '''
-    Serve package, source-script and Xontrib dialog commands.
+    Dispatch listing, resume and indexing from every CLI entry point.
 
-    Normal invocations call `dialogs.list_dialogs()` with the CLI
-    filters and print either `format_dialog_table()` output or
-    unmodified JSON records. Color is applied only to eligible
-    terminal headers. The first token `index` delegates to
-    `index_main()` for metadata preview/apply or explicit recording;
-    spell a directory literally named index as `./index`.
-
-    The alias and `aiskillz/cli.py` share this dispatcher, so
-    `/open-wkt` can record through the canonical source without a
-    package install. Return zero on success; argument/store failures
-    exit nonzero.
+    - Installed commands, source aliases, python -m aiskillz and the
+      Xontrib use this dispatcher.
+    - `index` delegates to index_main(); `resume` to resume_main().
+      Spell a directory literally named index as ./index.
+    - Normal listing applies filters through dialogs.list_dialogs(),
+      then prints either exact JSON or format_dialog_table() output.
+    - Color only eligible terminal headers/context labels.
+    - `/open-wkt` may invoke the canonical source script without pip.
+    - Return zero on success; argparse/store errors exit nonzero.
 
     '''
     if argv is None:
@@ -312,7 +366,13 @@ def main(argv: list[str]|None = None) -> int:
     parser.add_argument(
         '-b', '--harness',
         choices=[
-            'codex', 'cx', 'opencode', 'oc', 'claude', 'cld', 'all',
+            'codex',
+            'cx',
+            'opencode',
+            'oc',
+            'claude',
+            'cld',
+            'all',
         ],
         default='all',
         help='harness to list (default: all, scoped to cwd)',
@@ -423,12 +483,21 @@ def main(argv: list[str]|None = None) -> int:
 
 def resume_main(argv: list[str]|None = None) -> int:
     '''
-    Resolve a name or ID, then run the selected dialog's harness.
+    Resolve one dialog, then preview or launch its harness command.
 
-    `ai.resume`, the Xontrib alias and the source alias all reach
-    this entrypoint. `resume_target()` performs selection and WKT
-    lookup without spawning. Dry-run prints the exact argv and cwd;
-    normal mode inherits the terminal and returns the harness status.
+    - Use resume_target() for selector/cwd resolution before probing.
+    - For Codex, probe help for --no-daemon and add it only if
+      supported.
+    - Print resolution warnings without blocking a valid saved-cwd
+      fallback merely because optional WKT metadata is unavailable.
+    - --dry-run prints exact argv/cwd and launches no dialog; it
+      still performs the capability probe needed to construct that
+      argv.
+    - Otherwise check the executable, inherit the terminal, run argv
+      directly in the resolved cwd and return the harness exit
+      status.
+    - Surface selection, store and process failures as CLI
+      diagnostics.
 
     '''
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -502,25 +571,27 @@ def resume_main(argv: list[str]|None = None) -> int:
 
 def index_main(argv: list[str]) -> int:
     '''
-    Dispatch the metadata-index CLI modes and report their outcomes.
+    Preview, apply or explicitly record dialog/WKT metadata.
 
-    Called by `cli.main()` after consuming the `index` subcommand.
-    Default mode builds and saves a preview, printing separated WKT
-    matches, exact-ID resume commands, counts, warnings and a
-    reviewed apply command. Commands shared by Xonsh and POSIX sh
-    appear once; paths or names needing different quoting get both
-    forms. The common legacy-owner evidence marker stays in the
-    saved preview but is omitted from repeated terminal rows.
-    Empty proposals omit the apply command; `--json` exposes the
-    complete proposal and its pin to tooling.
+    Preview (default):
+    - Call preview_wkt_relations(), save its proposal JSON and
+      display WKT matches, exact-ID resume commands, counts and
+      warnings.
+    - Show an apply command only when entries exist. --json exposes
+      the full proposal, saved path and digest instead of terminal
+      text.
+    - Render one shared Xonsh/POSIX command when quoting permits it;
+      hide the repetitive legacy-owner marker only in terminal rows.
 
-    `--apply` requires a digest and permits explicit ambiguous
-    choices. `--record` resolves an exact ID or unique saved name
-    within the selected harness before writing its WKT relation.
-    Lookup spans directories and includes archived sources.
-    Invalid mode combinations are CLI errors. Failures exit nonzero
-    with context; successful apply/record calls print the number of
-    WKT relations written.
+    Writes (explicit):
+    - --apply requires a digest; --choose resolves ambiguous
+      proposals.
+    - --record resolves an exact ID or unique name within one
+      harness, across directories and including archived/other source
+      records.
+    - Reject invalid mode combinations before calling the writer.
+    - Print the changed-relation count; report failures with context
+      and exit nonzero. These modes do not launch/resume a harness.
 
     '''
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -535,7 +606,10 @@ def index_main(argv: list[str]) -> int:
         '--apply', type=Path, help='apply a reviewed preview file',
     )
     modes.add_argument(
-        '--record', nargs=2, metavar=('HARNESS', 'NAME_OR_ID'),
+        '--record', nargs=2, metavar=(
+            'HARNESS',
+            'NAME_OR_ID',
+        ),
         help='record a WKT relation for a saved dialog name or ID',
     )
     parser.add_argument('--sha256')
@@ -644,9 +718,12 @@ def index_main(argv: list[str]) -> int:
                     label: str = json.dumps(
                         harness + ':' + did + ' ' + entry['name'],
                     )
+                    status_label: str = (
+                        f'{status:<{_INDEX_STATUS_WIDTH}}'
+                    )
                     print(
-                        _grey_label(f'{status:<10}', color),
-                        _highlight(label, 36, color),
+                        _grey_label(status_label, color),
+                        _highlight(label, _ANSI_CYAN, color),
                     )
                     if entry['name'] != '(metadata)':
                         name: str = entry['name']
@@ -690,13 +767,13 @@ def index_main(argv: list[str]) -> int:
                             item for item in candidate['evidence']
                             if item != hidden_evidence
                         )
-                        detail: str = (
-                            f' [{evidence}]' if evidence else ''
+                        detail: str = ''
+                        if evidence:
+                            detail = f' [{evidence}]'
+                        colored_target: str = _highlight(
+                            target, _ANSI_BLUE, color,
                         )
-                        print(
-                            '  ' + _highlight(target, 34, color)
-                            + detail,
-                        )
+                        print('  ' + colored_target + detail)
 
                     print()
 

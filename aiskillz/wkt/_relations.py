@@ -3,23 +3,19 @@
 # See LICENSE and LICENSING.md for terms and commercial licensing.
 
 '''
-Read and write the repository's dialog-to-worktree relations.
+Read and write shared dialog-to-WKT relation metadata.
 
-A relation records that a dialog uses a particular worktree.
-`owner.json` separately identifies the agent allowed to manage and
-remove that worktree under `/open-wkt` rules. These are independent:
-several dialogs can have used one worktree under different owners.
-
-`wkt._operations.record_wkt_relation()` writes a known pair.
-`apply_wkt_preview()` writes pairs reviewed through ai.dlogs
-index. Both use `update()` and the same relations.json file.
-`read()` and `list_wkt_relations()` supply Python callers and
-CLI lookup.
-
-`write.guard` is an exclusive mkdir lock. writer.json holds the
-Python writer PID; update() checks the file digest under that lock,
-then atomically replaces relations.json. See docs/aiskillz.md for
-crash recovery and the deferred KDL format migration.
+- relations.json records dialog use; owner.json separately identifies
+  the agent allowed to manage/remove a WKT under /open-wkt rules.
+  Several dialogs may use the same tree under different owners.
+- wkt._operations.record_wkt_relation() writes one known pair;
+  apply_wkt_preview() writes pairs reviewed through ai.dlogs index.
+  Both publish through update() and the same relations.json file.
+- read()/list_wkt_relations() supply Python callers and CLI lookup.
+- write.guard is an exclusive mkdir lock; writer.json holds this
+  Python writer's PID. update() checks the digest under the guard,
+  then atomically replaces relations.json.
+- docs/aiskillz.md covers crash recovery and deferred KDL migration.
 
 '''
 
@@ -29,8 +25,14 @@ import os
 from pathlib import Path
 from typing import TextIO
 
-from ..git import repository, primary_worktree
+from ..git import (
+    repository,
+    primary_worktree,
+)
 
+
+# State and writer metadata are private to the repository owner.
+PRIVATE_STATE_MODE: int = 0o700
 
 HARNESS_ALIASES: dict[str, str] = {
     'cx': 'codex',
@@ -42,33 +44,35 @@ HARNESS_ALIASES: dict[str, str] = {
 
 def canonical_harness(value: str) -> str:
     '''
-    Normalize a CLI or legacy owner spelling to a stored harness key.
+    Normalize a CLI/legacy harness spelling for relation keys.
 
-    `record_wkt_relation()`, explicit preview choices and
-    legacy-owner import call this before constructing
-    `(harness, id)` identities.
-    Resolve `HARNESS_ALIASES` here so `cx` and `codex` cannot create
-    separate relations. Unsupported spellings raise `ValueError`;
-    `identity()` validates already-canonical persisted records
-    without normalizing.
+    - Record/choice/legacy-owner callers normalize through
+      HARNESS_ALIASES before constructing `(harness, id)`.
+    - Reject unsupported input with its original spelling.
+    - `identity()` validates persisted canonical keys without
+      rewriting them; aliases must not create a second stored dialog
+      identity.
 
     '''
+    original: str = value
     value = HARNESS_ALIASES.get(value, value)
-    if value not in ('codex', 'opencode', 'claude'):
-        raise ValueError('Unsupported harness: ' + value)
+    if value not in (
+        'codex',
+        'opencode',
+        'claude',
+    ):
+        raise ValueError(f'Unsupported harness: {original!r}')
     return value
 
 
 def encode(value: object) -> bytes:
     '''
-    Produce deterministic UTF-8 JSON bytes for local metadata.
+    Encode deterministic UTF-8 JSON for previews and relation writes.
 
-    `save_wkt_preview()` hashes these exact bytes for the
-    filename and the human's apply pin. `update()` uses the same
-    encoding for relation and writer files. Sorted keys and a
-    trailing newline keep identical proposals byte-identical; this
-    helper performs no I/O and does not validate the supplied
-    object's schema.
+    - Sort keys and end with a newline so identical proposals have
+      the same bytes, filename and human-reviewed SHA-256.
+    - `save_wkt_preview()` and `update()` share this encoding.
+    - Perform no I/O or schema validation.
 
     '''
     text: str = json.dumps(value, sort_keys=True, indent=2) + '\n'
@@ -77,54 +81,63 @@ def encode(value: object) -> bytes:
 
 def relation_dir(common: Path) -> Path:
     '''
-    Locate the shared .ai/state/dialogs directory for this
-    repository.
+    Locate shared .ai/state/dialogs without creating it.
 
-    Every checkout resolves to the main checkout (or bare repo root)
-    through `git.primary_worktree()`. Removing a linked worktree
-    therefore leaves the shared relation files available.
-    This selects a path; read-only callers never create directories.
+    - Resolve the main checkout/bare root through
+      git.primary_worktree().
+    - All linked WKTs therefore read the same relations.json;
+      deleting a linked WKT leaves its relation history available.
+    - Reject symlinks in the selected state-directory components.
+    - Read-only callers select this path without creating
+      directories.
 
     '''
     root: Path = primary_worktree(common)
     directory: Path = root / '.ai/state/dialogs'
     location: Path
     for location in (
-        root / '.ai', root / '.ai/state', directory,
+        root / '.ai',
+        root / '.ai/state',
+        directory,
     ):
         if location.is_symlink():
+            location_text: str = str(location)
             raise ValueError(
-                'Relation directory is a symlink: '
-                + str(location),
+                f'Relation directory is a symlink: '
+                f'{location_text!r}',
             )
     return directory
 
 
 def read(common: Path) -> tuple[dict, str]:
     '''
-    Load validated `relations.json` records and their byte digest.
+    Read validated relations.json records and their byte digest.
 
-    `WktIndexer.suggest()` embeds this digest as `base_sha256`;
-    `update()` compares it at apply time. `WktLookup._read()`
-    consumes the same records to render confirmed relations. A
-    missing file returns an empty schema-1 document and SHA-256 of
-    empty bytes, without creating state during ordinary dialog
-    display.
-
-    Reject unknown schemas, duplicate identities and nonabsolute root
-    or Git-directory fields. JSON/read errors propagate to the
-    caller. Path existence and Git registration are checked
-    separately through `repository()`, so records for removed trees
-    can remain historical.
+    - A missing file returns an empty schema-1 document and SHA-256
+      of empty bytes; listing does not create repository state.
+    - Reject symlinks, unsupported schemas, duplicate dialog
+      identities and nonabsolute WKT/private Git-directory paths.
+    - Let JSON/read failures propagate with their metadata context.
+    - Check shape/identity here; `repository()` separately verifies
+      current Git registration, so removed WKTs can remain
+      historical.
+    - WktIndexer embeds the digest as base_sha256; `update()` checks
+      it under the writer guard before publishing changed relations.
 
     '''
     path: Path = relation_dir(common) / 'relations.json'
+    path_text: str = str(path)
     if path.is_symlink():
-        raise ValueError('Dialog relation file is a symlink')
+        raise ValueError(
+            f'Dialog relation file is a symlink: {path_text!r}'
+        )
     try:
         raw: bytes = path.read_bytes()
     except FileNotFoundError:
-        return {'schema': 1, 'records': []}, sha256(b'').hexdigest()
+        return {
+            'schema': 1,
+            'records': [],
+        }, sha256(b'').hexdigest()
     data: dict = json.loads(raw)
     if (
         not isinstance(data, dict)
@@ -133,25 +146,39 @@ def read(common: Path) -> tuple[dict, str]:
         or
         not isinstance(data.get('records'), list)
     ):
-        raise ValueError('Unsupported dialog relation file')
+        raise ValueError(
+            f'Unsupported dialog relation file: {path_text!r}'
+        )
     seen: set[tuple[str, str]] = set()
     record: dict
     for record in data['records']:
         if not isinstance(record, dict):
-            raise ValueError('Invalid dialog relation')
+            raise ValueError(
+                f'Invalid dialog relation in {path_text!r}: '
+                f'{record!r}'
+            )
         key: tuple[str, str] = identity(record)
         if key in seen:
-            raise ValueError('Duplicate dialog relation')
+            raise ValueError(
+                f'Duplicate dialog relation in {path_text!r}: '
+                f'{key!r}'
+            )
         seen.add(key)
         field: str
-        for field in ('worktree', 'git_dir'):
+        for field in (
+            'worktree',
+            'git_dir',
+        ):
             value: object = record.get(field)
             if (
                 not isinstance(value, str)
                 or
                 not Path(value).is_absolute()
             ):
-                raise ValueError('Invalid relation ' + field)
+                raise ValueError(
+                    f'Invalid relation {field}: {value!r}; '
+                    f'dialog={key!r}, file={path_text!r}'
+                )
     return data, sha256(raw).hexdigest()
 
 
@@ -161,27 +188,22 @@ def list_wkt_relations(
     dialog_id: str|None = None,
 ) -> list[dict]:
     '''
-    Read saved dialog/WKT relations from any repository checkout.
+    List saved dialog/WKT relations from any repo checkout.
 
-    Library callers can join these records to `list_dialogs()` by
-    `(harness, id)` without invoking the CLI. `path` selects a repo
-    through any existing checkout; optional filters narrow its
-    records. Harness aliases such as `cx` are accepted. This reads
-    the same file as `WktLookup`, without inferring relations
-    from legacy owners or saved cwd.
-
-    Return copies of stored records with a `git_active` boolean
-    indicating whether the registered WKT and private Git directory
-    match. Removed targets remain available for historical tooling;
-    inactive relations retain their recorded paths. Missing files
-    return an empty list; invalid repos or metadata raise instead
-    of claiming there are no relations. No harness logs are scanned
-    or written.
+    - `path` identifies the repo; optional harness/ID filters narrow
+      its saved records. Harness aliases such as cx are accepted.
+    - Join records to `list_dialogs()` by `(harness, id)`.
+    - Return copies with git_active indicating a matching registered
+      WKT and private Git directory. Removed WKTs retain their paths.
+    - Read explicit relations only; do not infer legacy-owner/cwd
+      pairs or scan harness logs. WktLookup owns those display
+      fallbacks.
+    - A missing file returns []; invalid repositories/metadata raise.
 
     '''
-    selected: str|None = (
-        canonical_harness(harness) if harness is not None else None
-    )
+    selected: str|None = None
+    if harness is not None:
+        selected = canonical_harness(harness)
     common: Path
     inventory: dict[str, str]
     common, inventory = repository(path)
@@ -206,24 +228,32 @@ def list_wkt_relations(
         git_active: bool = (
             inventory.get(item['worktree']) == item['git_dir']
         )
-        result.append({**item, 'git_active': git_active})
+        result.append({
+            **item,
+            'git_active': git_active,
+        })
     return result
 
 
 def identity(record: dict) -> tuple[str, str]:
     '''
-    Validate a relation's persisted `(harness, id)` identity.
+    Validate and return a persisted `(harness, id)` relation key.
 
-    Relation-file validation, preview grouping and display lookup
-    use this to distinguish identical IDs in different harnesses.
-    Harness names must already be canonical; CLI aliases go through
-    `canonical_harness()` first. IDs must be nonempty strings, not
-    necessarily UUIDs. Raise `ValueError` for invalid metadata.
+    - Preview grouping, relation validation and WktLookup use this to
+      distinguish the same opaque ID under different harnesses.
+    - Require canonical harness names and a nonempty string ID; IDs
+      need not be UUIDs. Normalize CLI aliases separately.
+    - Raise ValueError with the rejected field's value on invalid
+      data.
 
     '''
     harness: object = record.get('harness')
     dialog_id: object = record.get('id')
-    if harness not in ('codex', 'opencode', 'claude'):
+    if harness not in (
+        'codex',
+        'opencode',
+        'claude',
+    ):
         raise ValueError(
             f'Invalid dialog harness {harness!r}; expected '
             f'codex, opencode or claude',
@@ -231,7 +261,8 @@ def identity(record: dict) -> tuple[str, str]:
     if not isinstance(dialog_id, str):
         kind: str = type(dialog_id).__name__
         raise ValueError(
-            f'Invalid dialog id: expected str, got {kind}',
+            f'Invalid dialog id: expected str, got {kind}; '
+            f'value={dialog_id!r}, harness={harness!r}',
         )
     if not dialog_id:
         raise ValueError('Invalid dialog id: empty string')
@@ -245,35 +276,39 @@ def update(
     replace: bool = False,
 ) -> int:
     '''
-    Publish WKT relations under an exclusive writer guard.
+    Publish reviewed dialog/WKT relations under an exclusive guard.
 
-    `apply_wkt_preview()` supplies its saved `expected` digest
-    and leaves `replace=False`: history recovery cannot overwrite
-    saved relations. `record_wkt_relation()` uses `replace=True`
-    to retarget only the supplied dialog after caller verification.
-    Callers validate WKTs through `repository()` first.
+    Callers:
+    - `apply_wkt_preview()` supplies an expected relation-file
+      digest; history recovery cannot replace an existing relation.
+    - `record_wkt_relation()` passes replace=True to retarget its one
+      supplied dialog after checking Git registration.
 
-    Create `write.guard`, write its `writer.json` PID, then reread
-    `relations.json` while holding it. Identical WKT/Git-directory
-    pairs are no-ops and return zero even when an old preview is
-    replayed. An empty `additions` list still checks the preview's
-    expected digest. Otherwise reject a changed expected digest or a
-    forbidden retarget. Write and fsync a temporary file before
-    replacing `relations.json`. Return the number of changed
-    relations.
-
-    Normal exits remove this writer's guard; an existing guard raises
-    `ValueError` and is left intact. A crash can leave a guard
-    requiring operator inspection as described in `docs/aiskillz.md`.
-    This helper never acquires, transfers or rewrites worktree
-    lifecycle ownership.
+    Publication:
+    - Acquire write.guard with exclusive mkdir and write writer.json
+      with this Python writer's PID. An existing guard raises intact.
+    - Reread relations.json under that guard; reject a forbidden
+      retarget or changed expected digest before publishing changed
+      records.
+    - Identical WKT/Git pairs return zero, even for a replayed
+      preview. Empty additions still validate the expected digest.
+    - Flush/fsync a temporary file, then replace relations.json.
+      Return the number of changed relations.
+    - Normal exits remove this writer's guard; crashes may require
+      the operator recovery documented in docs/aiskillz.md.
+    - Do not acquire, transfer or rewrite open-wkt lifecycle
+      ownership.
 
     '''
     directory: Path = relation_dir(common)
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.mkdir(
+        mode=PRIVATE_STATE_MODE,
+        parents=True,
+        exist_ok=True,
+    )
     guard: Path = directory / 'write.guard'
     try:
-        guard.mkdir(mode=0o700)
+        guard.mkdir(mode=PRIVATE_STATE_MODE)
     except FileExistsError:
         raise ValueError('Dialog index is locked: ' + str(guard))
     temporary: Path = guard / 'relations.json'
@@ -304,7 +339,11 @@ def update(
                 and
                 not replace
             ):
-                raise ValueError('Saved WKT relation would change')
+                raise ValueError(
+                    f'Saved WKT relation would change: '
+                    f'dialog={key!r}; '
+                    f'old={previous!r}, proposed={record!r}'
+                )
             current[key] = record
             changed += 1
         if not changed and additions:
@@ -314,7 +353,10 @@ def update(
             and
             digest != expected
         ):
-            raise ValueError('WKT relations changed; preview again')
+            raise ValueError(
+                f'WKT relations changed; preview again: '
+                f'expected={expected!r}, actual={digest!r}'
+            )
         if not changed:
             return 0
         data['records'] = list(current.values())
