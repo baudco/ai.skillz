@@ -11,7 +11,10 @@ module parses arguments and formats their results for people or JSON.
 
 '''
 
-from datetime import datetime, timezone
+from datetime import (
+    datetime,
+    timezone,
+)
 import argparse
 import json
 import os
@@ -22,13 +25,23 @@ import sqlite3
 import subprocess
 import sys
 
-# Direct source execution supports skill deployments without pip.
+# /open-wkt can run this file from the canonical source checkout even
+# when aiskillz is not installed in its interpreter. Put this tree
+# first for the relative imports below; a source invocation must not
+# silently use a different editable installation from site-packages.
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = 'aiskillz'
 
 from . import dialogs
-from ._resume import resume_target, codex_supports_no_daemon
+from ._resume import (
+    resume_target,
+    codex_supports_no_daemon,
+)
+from ._display import (
+    DIALOG_NAME_WIDTH,
+    DIALOG_NAME_ELLIPSIS,
+)
 from .wkt import WktLookup
 from .wkt._relations import canonical_harness
 
@@ -137,10 +150,12 @@ def format_dialog_table(
         roots: set[str] = worktrees.roots(
             cwd, display.get('harness', ''), display.get('id', ''),
         )
-        display['wkt'] = (
-            '(multiple)' if len(roots) > 1
-            else Path(next(iter(roots))).name if roots else ''
-        )
+        display['wkt'] = ''
+        if len(roots) > 1:
+            display['wkt'] = '(multiple)'
+        elif roots:
+            display['wkt'] = Path(next(iter(roots))).name
+
         if not roots:
             recorded: set[str] = worktrees.recorded_roots(
                 cwd,
@@ -177,8 +192,13 @@ def format_dialog_table(
             key: _display_text(value)
             for key, value in display.items()
         }
-        if len(values.get('name', '')) > 36:
-            values['name'] = values['name'][:35] + '…'
+        if len(values.get('name', '')) > DIALOG_NAME_WIDTH:
+            prefix_width: int = (
+                DIALOG_NAME_WIDTH - len(DIALOG_NAME_ELLIPSIS)
+            )
+            values['name'] = (
+                values['name'][:prefix_width] + DIALOG_NAME_ELLIPSIS
+            )
         displays.append(values)
 
     context: list[str] = [
@@ -271,7 +291,9 @@ def main(argv: list[str]|None = None) -> int:
     exit nonzero.
 
     '''
-    argv = sys.argv[1:] if argv is None else argv
+    if argv is None:
+        argv = sys.argv[1:]
+
     if argv[:1] == ['index']:
         return index_main(argv[1:])
     if argv[:1] == ['resume']:
@@ -312,23 +334,31 @@ def main(argv: list[str]|None = None) -> int:
     )
     parser.add_argument('--json', action='store_true')
     args: argparse.Namespace = parser.parse_args(argv)
+    repo: str|None = args.repo
+    if args.all_repos:
+        repo = None
+
+    harness: str|None = args.harness
+    if harness == 'all':
+        harness = None
+
     try:
         sessions: list[dict] = dialogs.list_dialogs(
-            None if args.all_repos else args.repo,
-            None if args.harness == 'all' else args.harness,
+            repo,
+            harness,
             all=args.all,
             all_sources=args.all_sources,
         )
 
-        output: str = (
-            json.dumps(sessions, indent=2)
-            if args.json
-            else format_dialog_table(
+        output: str
+        if args.json:
+            output = json.dumps(sessions, indent=2)
+        else:
+            output = format_dialog_table(
                 sessions,
                 show_timestamps=args.timestamps,
                 show_did=args.did,
             )
-        )
 
     except (
         OSError,
@@ -368,9 +398,10 @@ def main(argv: list[str]|None = None) -> int:
                 label: str
                 separator: str
                 value: str
-                delimiter: str = (
-                    ': ' if line.startswith('sort-by: ') else '='
-                )
+                delimiter: str = '='
+                if line.startswith('sort-by: '):
+                    delimiter = ': '
+
                 (
                     label,
                     separator,
@@ -382,10 +413,9 @@ def main(argv: list[str]|None = None) -> int:
 
             context = '\n'.join(colored)
 
-        output = (
-            context + context_separator + table
-            if context_separator else table
-        )
+        output = table
+        if context_separator:
+            output = context + context_separator + table
 
     print(output)
     return 0

@@ -494,3 +494,50 @@ def test_resume_launches_exact_argv_and_cwd(
         cwd=str(tmp_path),
         check=False,
     )
+
+
+@pytest.mark.parametrize(
+    'record',
+    [
+        {
+            'name': 'Broken metadata',
+            'id': '-not-a-dialog',
+            'harness': 'codex',
+            'cwd': '/unused',
+        },
+        {
+            'name': 'Broken metadata',
+            'id': 'saved-dialog',
+            'harness': 'claude',
+            'cwd': '',
+        },
+    ],
+)
+def test_resume_errors_identify_rejected_dialog(
+    record: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    '''
+    Generic resume errors hid the record a person needed to repair.
+
+    Supply an option-shaped ID and a dialog with no saved directory.
+    Both fail before probing or launching. The public CLI diagnostic
+    must include the saved name, harness and opaque ID, so users can
+    distinguish malformed metadata from a worktree override problem.
+
+    '''
+    listing: Mock = Mock(return_value=[record])
+    monkeypatch.setattr(_resume.dialogs, 'list_dialogs', listing)
+    process: Mock = Mock()
+    monkeypatch.setattr(_resume.subprocess, 'run', process)
+
+    with pytest.raises(SystemExit) as caught:
+        resume_main(['Broken metadata', '--dry-run'])
+
+    assert caught.value.code == 1
+    diagnostic: str = capsys.readouterr().err
+    assert repr(record['name']) in diagnostic
+    assert repr(record['harness']) in diagnostic
+    assert repr(record['id']) in diagnostic
+    process.assert_not_called()

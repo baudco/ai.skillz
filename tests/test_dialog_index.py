@@ -24,9 +24,7 @@ from unittest.mock import patch
 
 from aiskillz import (
     list_wkt_relations,
-    list_worktree_associations,
     record_wkt_relation,
-    record_worktree,
 )
 from aiskillz.wkt._relations import identity
 from aiskillz.cli import _shell_commands, main
@@ -210,22 +208,6 @@ class DialogIndexTests(unittest.TestCase):
         relations: list[dict] = list_wkt_relations(str(self.repo))
         self.assertEqual(len(relations), 1)
         self.assertEqual(relations[0]['id'], self.cx_id)
-
-    def test_legacy_imports_match_relation_api(self) -> None:
-        '''
-        Existing workspace imports used the first prototype names.
-
-        The relation API is now the documented spelling, but an
-        installed client can still use the earlier function names
-        while updating its imports. Identity assertions ensure both
-        spellings call the same writer and reader, not divergent
-        implementations.
-
-        '''
-        self.assertIs(
-            list_worktree_associations, list_wkt_relations,
-        )
-        self.assertIs(record_worktree, record_wkt_relation)
 
     def test_public_relations_keep_removed(self) -> None:
         '''

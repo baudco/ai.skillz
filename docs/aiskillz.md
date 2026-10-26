@@ -332,9 +332,6 @@ directory exists. It says nothing about whether an agent is running.
 Removed worktrees remain in the result with `git_active=False`.
 Missing `relations.json` returns `[]`; invalid JSON or an invalid
 repository raises an error.
-The earlier `list_worktree_associations()` import remains an alias
-while callers move to `list_wkt_relations()`.
-
 Attach each dialog's recorded WKT using `(harness, id)`:
 
 ```python
@@ -634,7 +631,6 @@ dialogs, so skills can record a current ID before it is discoverable.
 remain intact. The separate `owner.json` token controls who may
 manage or remove a worktree under `/open-wkt`; recording a dialog's
 WKT relation does not transfer that lifecycle ownership.
-The earlier `record_worktree()` import remains an alias.
 
 ## Recover WKT relations for existing dialogs
 

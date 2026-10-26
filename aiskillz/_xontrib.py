@@ -7,10 +7,15 @@ Xonsh integration; loading never scans harness session stores.
 
 '''
 
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import (
+    redirect_stderr,
+    redirect_stdout,
+)
 import os
 import sys
-from typing import Any, TextIO
+from typing import TextIO
+
+from xonsh.built_ins import XonshSession
 
 
 def dlogs_alias(
@@ -22,26 +27,39 @@ def dlogs_alias(
     '''
     Run `ai.dlogs` inside Xonsh without spawning another Python.
 
-    `_load_xontrib_()` registers this callable. Forward Xonsh's
-    output streams for redirects and capture. Convert argparse exits
-    to shell statuses so help or invalid arguments cannot exit Xonsh.
-    `stdin` is accepted for the alias protocol; discovery does not
-    consume it. The loader marks this alias unthreadable because
-    redirecting Python's global streams must run on the shell thread.
-    Temporarily mirror Xonsh environment overrides into os.environ so
-    harness store paths behave as they did with the subprocess alias.
+    `_load_xontrib_()` installs this callable as `ai.dlogs`.
+
+    - Forward stdout/stderr so shell redirects and capture work.
+    - Turn argparse's SystemExit into an exit status, not shell exit.
+    - Accept stdin for Xonsh's alias protocol; discovery does not
+      read it.
+    - Mark the alias unthreadable: redirect_stdout/redirect_stderr
+      temporarily change process-wide streams, so use the shell
+      thread.
+    - Mirror Xonsh's environment into os.environ for the duration of
+      the call, then restore it even on failure. Shell-only
+      CODEX_HOME or OPENCODE_DATA_DIR changes must select the same
+      files as subprocess aliases do, without leaking the temporary
+      environment afterward.
 
     '''
     from xonsh.built_ins import XSH
 
     from .cli import main
 
-    output: TextIO = stdout if stdout is not None else sys.stdout
-    errors: TextIO = stderr if stderr is not None else sys.stderr
+    output: TextIO = sys.stdout
+    if stdout is not None:
+        output = stdout
+
+    errors: TextIO = sys.stderr
+    if stderr is not None:
+        errors = stderr
+
     previous: dict[str, str] = dict(os.environ)
-    environment: dict[str, str] = (
-        XSH.env.detype() if XSH.env is not None else previous
-    )
+    environment: dict[str, str] = previous
+    if XSH.env is not None:
+        environment = XSH.env.detype()
+
     try:
         os.environ.clear()
         os.environ.update(environment)
@@ -55,7 +73,7 @@ def dlogs_alias(
         os.environ.update(previous)
 
 
-def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
+def _load_xontrib_(xsh: XonshSession, **kwargs: object) -> dict:
     '''
     Register the in-process alias and remember its prior binding.
 
@@ -67,7 +85,7 @@ def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
     from xonsh.tools import unthreadable
     from ._completion import register_resume_completer
 
-    command: Any = unthreadable(dlogs_alias)
+    command: object = unthreadable(dlogs_alias)
     if (
         '_aiskillz_alias_command' not in xsh.ctx
         or
@@ -100,7 +118,7 @@ def _load_xontrib_(xsh: Any, **kwargs: Any) -> dict:
     return {}
 
 
-def _unload_xontrib_(xsh: Any, **kwargs: Any) -> None:
+def _unload_xontrib_(xsh: XonshSession, **kwargs: object) -> None:
     '''
     Restore the prior alias only if this extension still owns it.
 
@@ -108,19 +126,19 @@ def _unload_xontrib_(xsh: Any, **kwargs: Any) -> None:
     from ._completion import unregister_resume_completer
 
     unregister_resume_completer(xsh)
-    command: Any = xsh.ctx.pop(
+    command: object = xsh.ctx.pop(
         '_aiskillz_alias_command', None,
     )
-    previous: Any = xsh.ctx.pop('_aiskillz_alias_previous', None)
+    previous: object = xsh.ctx.pop('_aiskillz_alias_previous', None)
     if xsh.aliases.get('ai.dlogs') == command:
         if previous is None:
             xsh.aliases.pop('ai.dlogs', None)
         else:
             xsh.aliases['ai.dlogs'] = previous
-    resume: Any = xsh.ctx.pop(
+    resume: object = xsh.ctx.pop(
         '_aiskillz_resume_command', None,
     )
-    prior_resume: Any = xsh.ctx.pop(
+    prior_resume: object = xsh.ctx.pop(
         '_aiskillz_resume_previous', None,
     )
     if xsh.aliases.get('ai.resume') == resume:

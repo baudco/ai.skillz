@@ -22,7 +22,17 @@ import re
 import subprocess
 
 from . import dialogs
+from ._display import (
+    DIALOG_NAME_WIDTH,
+    DIALOG_NAME_ELLIPSIS,
+)
 from .wkt import WktLookup
+
+
+# Help is a local capability probe, not a model turn. Bound a stuck
+# CLI so interactive resume can fall back to its ordinary command
+# promptly.
+_CODEX_HELP_TIMEOUT_SECONDS: int = 5
 
 
 def codex_supports_no_daemon() -> bool:
@@ -45,7 +55,7 @@ def codex_supports_no_daemon() -> bool:
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=_CODEX_HELP_TIMEOUT_SECONDS,
         )
 
     except (
@@ -53,6 +63,7 @@ def codex_supports_no_daemon() -> bool:
         subprocess.TimeoutExpired,
     ):
         return False
+
     return (
         result.returncode == 0
         and re.search(
@@ -76,21 +87,33 @@ def resume_target(
     '''
     Return one dialog's harness argv and launch directory.
 
-    Interpret `name` as an exact ID first, then as a saved name.
-    Search the current directory by default; `all_repos=True`
-    widens the saved-cwd search for either selector. Also accept a
-    unique 36-character name shortened by `ai.dlogs`. Never pick
-    duplicate IDs or names by recency; `dialog_id`, `harness`, and
-    `repo` let the caller narrow them. Prefer a registered WKT
-    relation from `WktLookup.roots()`. An explicit cwd overrides it.
-    Unavailable, ambiguous or unreadable WKT metadata falls back to
-    saved cwd with diagnostic strings in the returned `warnings`.
-    No harness starts until a caller executes the returned argv.
-    `codex_no_daemon` supplies a previously observed capability;
-    resolution never probes a harness. Task-driven callers validate
-    the intended repository and pass explicit cwd to prevent WKT
-    metadata from choosing another directory.
-    `environ` selects the same harness stores as discovery APIs.
+    Selection:
+    - Match an exact ID first, then an exact saved name.
+    - Search saved cwd in `repo`; `all_repos=True` widens that scope.
+    - Also accept a unique name shortened by ai.dlogs's display
+      limit.
+    - Never break ties by recency. `harness` and `dialog_id` narrow
+      ambiguous names or cross-harness IDs.
+
+    Launch directory:
+    - Explicit `cwd`, then one available registered WKT, then saved
+      cwd.
+    - Unavailable, ambiguous or unreadable WKT metadata adds
+      warnings;
+      indexing alone never prevents resume.
+    - An unusable final directory requires an explicit `cwd`
+      override.
+    - Orchestrating callers validate and supply their intended repo;
+      an interactive fallback does not authorize another launch
+      context.
+
+    Process boundary:
+    - Return argv, saved cwd, launch cwd and optional warning
+      strings.
+    - Never probe or launch a harness. `codex_no_daemon` is a
+      capability
+      observation supplied by the caller; `environ` selects metadata
+      directories just as it does for `list_dialogs()`.
 
     '''
     if (
@@ -98,9 +121,15 @@ def resume_target(
         or
         not name
     ):
-        raise ValueError('NAME_OR_ID must be a nonempty string')
+        raise ValueError(
+            f'NAME_OR_ID must be a nonempty string; got {name!r}'
+        )
+    scope: str|None = repo
+    if all_repos:
+        scope = None
+
     records: list[dict] = dialogs.list_dialogs(
-        path=None if all_repos else repo,
+        path=scope,
         harness=harness,
         environ=environ,
     )
@@ -114,16 +143,21 @@ def resume_target(
             record for record in records
             if record['name'] == name
         ]
+
     if (
         not matches
         and
-        len(name) == 36
+        len(name) == DIALOG_NAME_WIDTH
         and
-        name.endswith('…')
+        name.endswith(DIALOG_NAME_ELLIPSIS)
     ):
+        # Listing truncates presentation, not identity. Accept a
+        # pasted table value only if the retained prefix resolves
+        # uniquely.
+        prefix: str = name[:-len(DIALOG_NAME_ELLIPSIS)]
         matches = [
             record for record in records
-            if record['name'].startswith(name[:35])
+            if record['name'].startswith(prefix)
         ]
 
     if dialog_id is not None:
@@ -131,11 +165,14 @@ def resume_target(
             record for record in matches
             if record['id'] == dialog_id
         ]
+
     if not matches:
         raise ValueError(
-            'No dialog matching ' + repr(name) +
-            ' in the selected scope'
+            f'No dialog matching {name!r} in the selected scope; '
+            f'harness={harness!r}, repo={scope!r}, '
+            f'dialog_id={dialog_id!r}'
         )
+
     if len(matches) > 1:
         row: dict
         options: list[str] = []
@@ -146,12 +183,14 @@ def resume_target(
             options.append(f'{backend}:{matched_id} @ {saved_cwd}')
         choices: str = ', '.join(options)
         raise ValueError(
-            'Dialog selector is ambiguous; use --id, -b, or --repo: '
-            + choices
+            f'Dialog selector {name!r} is ambiguous; '
+            f'use --id, -b, or --repo: {choices}'
         )
 
     selected: dict = matches[0]
     did: str = selected['id']
+    provider: str = selected['harness']
+    dialog_name: str = selected['name']
     char: str
     if (
         not isinstance(did, str)
@@ -162,9 +201,11 @@ def resume_target(
         or
         any(not char.isprintable() for char in did)
     ):
-        raise ValueError('Dialog ID is invalid for a harness CLI')
+        raise ValueError(
+            f'Dialog ID is invalid for a harness CLI: {did!r}; '
+            f'harness={provider!r}, name={dialog_name!r}'
+        )
 
-    provider: str = selected['harness']
     commands: dict[str, list[str]] = {
         'codex': [
             'codex',
@@ -182,8 +223,13 @@ def resume_target(
             did,
         ],
     }
+
     if provider not in commands:
-        raise ValueError('Unsupported harness: ' + provider)
+        raise ValueError(
+            f'Unsupported harness: {provider!r}; '
+            f'dialog={dialog_name!r}, id={did!r}'
+        )
+
     if (
         provider == 'codex'
         and
@@ -203,7 +249,9 @@ def resume_target(
         not saved
     ):
         raise ValueError(
-            'Dialog has no saved cwd; use --cwd'
+            f'Dialog has no saved cwd; use --cwd: '
+            f'name={dialog_name!r}, id={did!r}, '
+            f'harness={provider!r}, saved_cwd={saved!r}'
         )
 
     notices: list[str] = []
@@ -221,13 +269,17 @@ def resume_target(
                 if recorded_cwd.is_dir():
                     directory = recorded_cwd
                 else:
+                    recorded_path: str = str(recorded_cwd)
                     notices.append(
-                        'Recorded WKT directory is missing: '
-                        + repr(str(recorded_cwd))
+                        f'Recorded WKT directory is missing: '
+                        f'{recorded_path!r}; '
+                        f'dialog={dialog_name!r}, id={did!r}'
                     )
             elif len(roots) > 1:
                 notices.append(
-                    'Several WKTs match this dialog; using saved cwd'
+                    f'Several WKTs match this dialog; '
+                    f'using saved cwd: name={dialog_name!r}, '
+                    f'id={did!r}, roots={roots!r}'
                 )
             elif lookup.has_relation(saved, provider, did):
                 recorded: set[str] = lookup.recorded_roots(
@@ -244,15 +296,22 @@ def resume_target(
             OSError,
             ValueError,
         ) as error:
-            notices.append('Cannot read WKT metadata: ' + str(error))
+            notices.append(
+                f'Cannot read WKT metadata: {error}; '
+                f'dialog={dialog_name!r}, id={did!r}, '
+                f'harness={provider!r}'
+            )
         if notices:
             launch_cwd: str = str(directory)
             notices.append(f'Resuming in saved cwd: {launch_cwd!r}')
 
     if not directory.is_dir():
+        invalid_directory: str = str(directory)
         raise ValueError(
-            'Launch directory is missing: ' + str(directory)
-            + '\nUse --cwd to choose an existing directory.'
+            f'Launch directory is missing: {invalid_directory!r}; '
+            f'dialog={dialog_name!r}, id={did!r}, '
+            f'harness={provider!r}\n'
+            f'Use --cwd to choose an existing directory.'
         )
     target: dict = {
         'name': selected['name'],
@@ -262,6 +321,8 @@ def resume_target(
         'saved_cwd': saved,
         'argv': commands[provider],
     }
+
     if notices:
         target['warnings'] = notices
+
     return target
