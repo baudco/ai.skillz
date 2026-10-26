@@ -196,39 +196,65 @@ class CaptureTests(unittest.TestCase):
         '''
         The archived index comparison broke on an escaped newline.
 
-        Query this committed checkout twice using the shared planner
-        snapshot, with ambient Git redirection aimed at a missing
-        repository.
+        Query a disposable committed checkout using the shared
+        planner snapshot, with ambient Git redirection aimed at a
+        missing repository. Give the fixture its own named branch:
+        CI checks out detached HEADs, which the planner correctly
+        refuses, so the caller's branch must not affect this test.
         Equality includes index bytes/stat and HEAD; changed expected
         HEAD must fail without restoring or staging the actual index.
 
         '''
+        repo: Path = self.root / 'repo'
+        subprocess.run(
+            [
+                'git', 'clone', '--shared', '--no-checkout',
+                '--quiet', str(HERE.parent), str(repo),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                'git', '-C', str(repo),
+                '-c', 'core.hooksPath=/dev/null',
+                'checkout', '--quiet', '-b', 'benchmark-fixture',
+                'HEAD',
+            ],
+            check=True,
+            capture_output=True,
+        )
         request = {'mode': 'index', 'env': {
             'GIT_DIR': str(self.root / 'missing'),
             'GIT_INDEX_FILE': str(self.root / 'missing-index'),
         }}
-        # Only the disposable archive lives under self.root.
-        original = self.root
+        original: Path = self.root
+        name: str
         for name in ('before', 'after', 'changed'):
-            request_file = original / 'index-request.json'
+            request_file: Path = original / 'index-request.json'
             request_file.write_text(json.dumps(request))
-            result = subprocess.run(
-                [sys.executable, '-B', str(HELPER), '--cwd',
-                 str(HERE.parent), '--output', str(original / name),
-                 '--request', str(request_file)],
-                capture_output=True, timeout=15,
+            result: subprocess.CompletedProcess[bytes] = (
+                subprocess.run(
+                    [
+                        sys.executable, '-B', str(HELPER),
+                        '--cwd', str(repo),
+                        '--output', str(original / name),
+                        '--request', str(request_file),
+                    ],
+                    capture_output=True, timeout=15,
+                )
             )
             self.assertEqual(
                 result.returncode, int(name == 'changed'),
                 (original / name / 'stderr').read_bytes(),
             )
             if name == 'before':
-                expected = original / name / 'stdout'
+                expected: Path = original / name / 'stdout'
                 request['expected'] = str(expected)
             elif name == 'after':
-                data = json.loads(expected.read_bytes())
+                data: dict = json.loads(expected.read_bytes())
                 data['head'] = 'changed'
-                changed = original / 'expected.json'
+                changed: Path = original / 'expected.json'
                 changed.write_text(json.dumps(data))
                 request['expected'] = str(changed)
 

@@ -5,6 +5,10 @@ logic there so harnesses share one implementation. Harness-specific
 commands belong under `providers/`; optional Codex skill metadata lives
 in each skill's `agents/openai.yaml`.
 
+For substantial subsystem design or refactors, use the shared
+`layered-design` skill to establish the user workflow, public
+contract, vocabulary, and module boundaries before adding helpers.
+
 Use `scripts/deploy.sh` and `deploy-manifest.conf` for deployment.
 `.agents/skills/` is a discovery tree, and `.ai/ai.skillz` is the
 consumer source anchor. Skill metadata does not configure model
