@@ -138,6 +138,15 @@ For each comment triaged as `fix`:
   suggestion.
 - Follow all project code-style rules (see
   `py-codestyle` skill if applicable).
+- For Python/Xonsh changes, perform an explicit rule-by-rule style and
+  human-readability pass before handing changes back. Apply the selected
+  rules to the complete touched function, not just newly inserted lines.
+  Check sequence layout, branches, scope spacing, concrete types, named
+  limits, input-bearing errors and explanations of non-obvious behavior.
+  External parser/completer hooks need their calling contract and reason
+  documented. A formatter/linter pass does not replace this inspection.
+  Report its actual coverage and remaining gaps; do not label unfinished
+  style work clean because the behavior tests passed.
 
 ### Cross-repo symlink fixes
 
@@ -257,10 +266,22 @@ all pass. Only proceed to step 6 once green.
 
 - Tell the user what files changed and why.
 - Show the diff summary.
-- Suggest they review the worktree state, stage
-  files manually, and use `/commit-msg` (inline
-  or in a separate session) to generate commit
-  content.
+- Leave review adjustments unstaged and preserve the starting index.
+  Show the review-only diff against the recorded pre-edit baseline.
+- Default next step: review the diff, then invoke `/commit-plan`.
+  Planning accepts staged, unstaged and untracked changes; it owns
+  commit boundaries, checks, messages and eventual staging commands.
+  Do not recommend staging the whole review before planning: a staged
+  combined tree can conflict with the first of several boundaries.
+- Staging is an optional separate route only when the user explicitly
+  chooses it, for example for a single-commit `/commit-msg` flow.
+  Then show exact scoped paths and warn about mixed unrelated hunks.
+  Do not unstage existing human changes to make planning easier.
+- Local `-r` replies do not authorize staging. Reply-mirror cleanup
+  follows actual staging, not the completion of review remediation.
+- Source or message-context changes invalidate affected pending plan
+  boundaries. Request a fresh `/commit-plan`; do not reuse stale
+  archived messages or execution commands.
 - **Do NOT push** - the user must push manually
   (no SSH key access assumed).
 
@@ -471,7 +492,7 @@ footer), omit `reply_ids` from the file.
 After all comments are addressed, present:
 
 - Worktree path + list of modified files
-- Reminder to review, stage, commit, and push
+- Reminder to review, run `/commit-plan`, commit, and push
 - Count of comments addressed by type
   (fix/ack/style/wontfix)
 - Any regressions introduced (and fixed) by

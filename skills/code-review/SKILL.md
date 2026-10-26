@@ -134,9 +134,42 @@ For Python changes, prioritize:
 - performance problems that are concrete at the changed call frequency or
   data size.
 
-Do not report a preference as a defect. Formatting, naming, comment style,
-and speculative refactors are findings only when they violate an applicable
-project rule and create a concrete maintenance or behavioral risk.
+Do not report an unrequested preference as a defect. Explicit project style
+and readability requirements are review criteria in their own right; do not
+discard a violation merely because it does not change runtime behavior.
+
+### Python style and human-readability pass
+
+For every changed Python/Xonsh module, read the selected `py-codestyle`
+rules and review lessons, then inspect the actual code against them.
+Automatic skill discovery and a clean formatter/linter are not evidence
+that this pass occurred. Report the inspected scope and any uncovered
+paths; do not claim a clean style review without inspecting them.
+
+Check both implementation and reader-facing explanations:
+
+- Sequence/import layout, branch grouping, line width and visual separation
+  at scope boundaries follow the selected project's rules.
+- Types describe concrete inputs, callbacks and records. Explain any
+  unavoidable dynamic boundary; do not use `Any` to skip understanding it.
+- Constants name policy limits and units. Explain non-obvious algorithms,
+  failure boundaries and external parser/completer/lifecycle hooks.
+- Docstrings open with one sentence naming the operation and its role.
+  For several behaviors, use compact bullets grouped by purpose:
+  inputs/selection, outputs, side effects, failures and caller contracts.
+  Keep one behavior per bullet; name the actual fields and functions.
+  Explain non-obvious implementation reasons beside the relevant code.
+  A simple function may need only the opening sentence. Review for a
+  quick high-level scan, not merely complete information in dense prose.
+- Error messages identify the rejected values and relevant operation,
+  harness or dialog, while respecting secrets and terminal-control safety.
+- Compatibility branches have an evidenced consumer or supported format;
+  distinguish upstream data support from obsolete project API aliases.
+
+For a subtle hook or state transition, explain why the obvious approach
+fails and what invariant the implementation preserves. Do not replace
+that explanation with more helpers or generic prose. Record style findings
+separately from behavioral findings so neither hides the other.
 
 Anchor findings to changed lines whenever possible. Report an unchanged line
 only when the patch makes its defect newly reachable or materially worsens
