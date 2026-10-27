@@ -313,6 +313,165 @@ instruction. Implementation/test completion does not imply acceptance.
 - [ ] Verify formatting/style changes preserve behavior with relevant
   tests and repository checks; leave task acceptance to the human.
 
+*** TODO Distill human-readable code review from Trio and Tractor
+:PROPERTIES:
+:ID: aiskillz-humanize-code-20261025
+:CREATED: [2026-10-25]
+:CARRIED: 0
+:REPO: ai.skillz/
+:PR: https://github.com/baudco/ai.skillz/pull/18
+:END:
+
+Objective: make project Python style and human grokability an explicit
+pre-human-review gate, then distill the final PR18 lessons into a
+provider-neutral =/unslop= skill with the companion
+=/learn-to-unslop-from= learning workflow.
+Next action: collect the complete final human review and reconcile it
+with the existing full-style task before designing the new skill.
+Do not treat the partial PR18 pass or formatter output as acceptance.
+
+**** Current concerns
+- Repeated passes left terse but hard-to-understand code: compressed
+  branches/sequences, crowded scope endings, unexplained constants,
+  opaque Any values, obsolete project API aliases and generic errors.
+- Comments/docstrings must explain user operation, inputs, ownership,
+  invariants and reasons for non-obvious machinery. Use behavior
+  groups/bullets for independent rules instead of dense paragraphs.
+- External parser/completer hooks need an explanation of the host
+  contract, why ordinary use fails and the supported replacement span
+  or lifecycle. Humans should not need to read the host's full source.
+- Distinguish actual dynamic/opaque boundaries from a blanket Any.
+  Compatibility needs an evidenced consumer or upstream data format.
+- Coordinate the existing
+  [[id:dc775e3f-1bd6-48af-bc67-f652b6023a8d][full Python style review]]
+  and [[id:aiskillz-pm-20261007-reviews][review handoff enforcement]].
+
+**** Research and execution
+- [ ] Review at least two complex codebases in depth: Trio and Tractor.
+  Pin studied revisions and name the exact examples behind each rule.
+  Initial inspection used Trio =0ed3c164eec65175d7524fa79ea0827b1c4ffcb5=
+  and Tractor =b64c89f05a9fc8ac2878551eb5eda36574ebef6a=.
+- [ ] Trace Trio scheduling/parking and cancellation ownership through
+  =src/trio/_core/_parking_lot.py=, =_run.py= and relevant tests.
+  Study how short operations explain safety, fairness and interleaving;
+  do not mistake the initial inspection for a completed corpus study.
+- [ ] Trace Tractor's broadcast/context/portal paths and their tests.
+  Inspect =tractor/trionics/_broadcast.py=, =tractor/_context.py= and
+  =tractor/runtime/_portal.py= for Tyler's composition and rationale.
+  Treat older code as evidence to assess, not automatically ideal style.
+- [ ] Compare positive and negative PR18 examples with both corpora.
+  Explain why an example helps a human reconstruct the operation,
+  rather than counting comments or requiring prose on obvious lines.
+- [ ] Separate mechanically checkable layout rules from semantic review:
+  callback typing, invariants, necessary compatibility, input-bearing
+  diagnostics, comments and operational docstrings need judgment.
+- [ ] Design the new skill after the final review is complete. Keep
+  py-codestyle authoritative for Python rules; compose rather than
+  duplicate it. Add explicit integration to review/remediation paths.
+- [ ] Exercise the draft on unseen complex functions from both corpora
+  and one project change; assess reviewability, behavior preservation,
+  redundant explanation and false positives before proposing rollout.
+
+**** Verification and handback
+Return the studied revisions/locations, extracted principles and
+counterexamples, representative before/after changes, check coverage,
+limits and a reviewable skill proposal. Run skill/deployment validation
+for any integration. Leave task states and adoption/default decisions
+to the human; no repository-wide rewrite or publication implicitly.
+
+**** TODO Pilot unslop learning and concurrent review gates
+:PROPERTIES:
+:ID: aiskillz-deslop-pilot-20261026
+:CREATED: [2026-10-26]
+:CARRIED: 0
+:REPO: ai.skillz/
+:END:
+
+Objective: make code, comments, docstrings and diagnostics conform to
+the user's grokable preferences before a substantive handback, with a
+fast, traceable, cross-harness review pipeline and corpus-based learning.
+Next action: a dedicated implementation dialog should read this complete
+task, its parent and the design proposal; inspect current Git state and
+ownership, then return the smallest public-contract/pilot boundary.
+
+***** Current human direction and design
+Human-selected names (2026-10-27): =/unslop= and
+=/learn-to-unslop-from=. Use this pair consistently. Existing
+worktree paths and task IDs remain stable. This settles the names,
+not implementation or adoption; no enforcement is deployed yet.
+
+The initial complaints are not a complete specification. Accept
+user-selected codebases/revisions and positive/negative examples;
+derive language-specific rules and tools where justified. Keep
+py-codestyle authoritative for Python and preserve human acceptance.
+
+[[file:/home/goodboy/repos/ai.skillz/wkts/deslop_design/ai/plans/deslop-review-gate.md][Unslop learning, concurrent review and delivery-gate proposal]]
+
+Implementation worktree: =/home/goodboy/repos/ai.skillz/wkts/deslop_design=,
+branch =wkt/deslop_design=, opened from the main checkout's
+=store_native_handoffs= tip =bb448b2=. This is not the branch named main.
+PM currently holds its lifecycle ownership; a new dialog must explicitly
+take over after inspecting the exact owner record. A label is not a
+verified dialog ID. No new implementation dialog has been created here.
+
+Related amendment =7a50643= on =followup/review_readability= commits the
+explicit readability pass and plan-first remediation rules. Inspect it
+before implementation. That worktree has a separately staged executor
+edit; preserve it. The base and review branch had diverged by 15/4
+commits, so integration needs a fresh relationship/scope check. The
+human permits rebasing this work over relevant amendments, not taking
+over other writers, publishing or rewriting their branches.
+
+***** Bounded execution
+- [ ] Define operation/profile/result contracts before helpers. Separate
+  normative language rules, learned candidate rules, independent review,
+  repairs, runtime orchestration and human acceptance.
+- [ ] Design corpus inputs with pinned sources, attribution, rationale,
+  counterexamples, exceptions and held-out evaluation. Statistical
+  observations suggest rules; frequency/comment density do not establish
+  readability or silently authorize mandatory policy. Learning is
+  read-only by default, not permission to execute corpus code.
+- [ ] Classify rules as deterministic, static-semantic or judgment-based;
+  disclose unavailable validation. Exercise existing Python rules first,
+  then incorporate the complete PR18 human review and deeper corpus
+  study. Preserve original notes and source context.
+- [ ] Build one shared coordinator with immutable edit checkpoints,
+  independent read-only reviewer requests, result identity/freshness
+  checks, bounded/coalesced queues and cancellation. Review generation N
+  while the producer works on N+1; stale results never approve new bytes.
+- [ ] Reuse unchanged evidence only with valid scope/read dependencies,
+  task requirements and policy. Correlate the final source and handback
+  with actual checks and reviewer results. Keep detailed evidence ignored
+  and show a compact progress/coverage trace. Avoid recursive reviewers.
+- [ ] Distinguish advisory, handoff-blocking and fully buffered delivery.
+  Strict pre-first-draft display requires control over all code-bearing
+  output channels, including tool diffs. Stop hooks may be post-stream;
+  the documented OpenCode plugin is advisory. Verify adapter capabilities
+  and refuse silent downgrade rather than promise universal enforcement.
+- [ ] Pilot a managed/headless buffered handback and one real reviewer
+  before attempting all native interactive adapters. Keep producer fixes
+  separately authorized and bounded. Existing test/build authority and
+  process-isolation rules remain applicable.
+
+***** Verification and handback
+- [ ] Use fake adapters and small fixtures for stale/out-of-order replies,
+  changed policy/context, missing/untracked input, unsupported checks,
+  incorrect reviewer identity, cancellation, timeouts, repair exhaustion,
+  capability downgrade and recursive-trigger refusal.
+- [ ] Compare sequential and overlapped review on the same representative
+  change: total cost, final blocking wait, stale work, confirmed findings,
+  false positives and escaped violations. Do not claim speedup or quality
+  improvements without measurement and equal coverage.
+- [ ] Return the scoped design, exact reviewed/tested revision, actual
+  adapter capabilities, rules/examples, validation and remaining decisions
+  to this task. Link detailed evidence and a complete commit plan.
+
+Keep the authoritative store at its registered location. Preserve
+existing task/checklist states, unrelated work and live ownership.
+Do not commit, push, install global hooks or publish implicitly. The
+dialog label, corpus scope, review budget and strict delivery
+requirements remain explicit human decisions.
+
 *** TODO Prepend license headers to project-owned Python
 :PROPERTIES:
 :ID: 89e286d3-fb4a-4856-af06-e4dfaf74408c
@@ -609,6 +768,132 @@ that every consumer's workflow and local references are usable.
 - [[file:../plans/opencode/portable-cross-provider-deployment-plan.md][Deployment and consumer rollout plan]]
 - [[file:/home/goodboy/repos/ai.skillz/plans/codex/cross-harness-support-plan.md][Cross-harness adoption and remaining rollout notes]]
 
+*** TODO Qualify dulwich for Git discovery and WKT operations
+:PROPERTIES:
+:ID: aiskillz-dulwich-qualification-20261025
+:CREATED: [2026-10-25]
+:CARRIED: 0
+:REPO: ai.skillz/
+:END:
+
+Objective: evaluate replacing aiskillz's Git subprocess adapter with
+=dulwich= without changing public dialog/WKT behavior or adding eager
+runtime cost to unrelated imports. Next action: inspect the package
+handoff in =docs/aiskillz.md= and inventory git._commands callers.
+
+**** Scope and evidence
+- PR18 deliberately isolates Git subprocess calls in =aiskillz.git=.
+  Its README's replaceable adapter is a follow-up boundary, not an
+  assertion that the library migration has already been implemented.
+- Library source: [[https://github.com/jelmer/dulwich][dulwich]].
+- Coordinate [[id:aiskillz-stack-extraction-20261015][stack extraction]]:
+  read-only discovery and history mutation have different timeout,
+  environment and ownership contracts. Do not combine them silently.
+- KDL relation serialization is a separate qualification; this task
+  owns Git operations and dependency policy only.
+
+**** Execution and verification
+- [ ] Map discovery, linked/bare worktree and common-dir operations to
+  supported library APIs; record gaps rather than emulate Git broadly.
+- [ ] Compare CLI/library behavior against disposable main, linked,
+  bare-backed, removed, symlinked and malformed Git layouts, including
+  ambient Git environment isolation and diagnostic context.
+- [ ] Measure cold imports and repeated discovery on the same workload;
+  report timings and environment instead of assuming subprocess cost.
+- [ ] Propose dependency/optional-extra and lazy-import policy, a narrow
+  implementation boundary and a CLI fallback only for evidenced gaps.
+- [ ] Preserve the public API and meaningful regression coverage; return
+  the comparison, measured tradeoffs and proposed diff for review.
+
+*** TODO Integrate full PR review snapshots with native Neovim
+:PROPERTIES:
+:ID: aiskillz-pr-review-20261019
+:CREATED: [2026-10-19]
+:CARRIED: 0
+:REPO: ai.skillz/
+:PR: https://github.com/baudco/ai.skillz/pull/18
+:END:
+
+Objective: replace the forge-facing part of =tcr pr URL= while
+keeping the native editor independent of forge internals.
+Next action: inspect current gish and ai.reply review contracts and
+agree a minimal pinned PR-snapshot exchange before implementing it.
+This is follow-up work; do not expand or block PR18 for it.
+
+**** Context
+- The local review core belongs to
+  [[id:aireply-native-review-20261019][ai.reply native review]].
+  [[id:dotrc-native-review-20261019][Dotrc rollout]] owns editor wiring.
+- Read ai.reply's native-Neovim architecture and local-patch review
+  plans, plus =skills/gish/references/review-publication.md= and the
+  existing [[id:aiskillz-pm-20261007-reviews][review handoff task]].
+- Coordinate [[id:aiskillz-tuicr-adapter-20261015][portable Tuicr
+  adapter extraction]]; its no-build adapter remains a fallback,
+  not a competing owner of review storage or forge semantics.
+
+**** Concerns
+- PR18 at =61bbf37= had 47 changed files. Tuicr retained all files
+  but a saved =[1, 12]= commit selection displayed only nine.
+  Distinguish a complete PR snapshot from a deliberate commit slice.
+- Fresh PR review must show the full aggregate diff by default.
+  Reused filters require an explicit visible indication and an easy
+  full-diff reset; never silently substitute a later commit range.
+- Logical review identity, source snapshot identity and navigation
+  locations are distinct. File counts alone do not prove completeness.
+- Keep local findings separate from published provider comments;
+  reading, exporting or testing must never submit a review implicitly.
+
+**** Execution
+- [ ] Define provider-neutral PR identity, exact head/base evidence,
+  diff-base semantics, file inventory and immutable snapshot inputs
+  consumable by ai.reply without importing a forge backend.
+- [ ] Report incomplete pagination, truncated or absent patches,
+  renames, binaries and unavailable source contents explicitly.
+- [ ] Add read-only PR discovery and snapshot acquisition using gish
+  adapters; show any commit/range filter and visible/total inventory.
+- [ ] Map stable local findings to provider anchors and remote thread
+  identities; preserve unresolved, resolved and outdated distinctions.
+- [ ] Keep publication separate, digest-bound and human-authorized;
+  verify fresh PR head evidence and retain receipts and error details.
+- [ ] Define safe reload/rebase handling and recovery for partially
+  published reviews without losing local drafts or duplicating writes.
+
+**** Verification and handback
+Use fake forge responses and disposable repositories, not real review
+stores. Cover a 47-file PR with a nine-file selected subset, changed
+base/head, pagination/truncation, stale comments, explicit reset,
+publication refusal on drift, retries and cancellation. Run skill
+validation and focused adapter tests. Hand back the public exchange,
+small commit boundaries, actual checks, limitations and integration
+example against this task. Leave existing review acceptance states
+and PR18's landing authority with the human.
+
+**** Candidate dialog and handoff
+
+Candidate discovered through =ai.dlogs= on 2026-10-19:
+- Harness: =opencode=; dialog name: =gish_refinery (#72)=.
+- Dialog ID: =ses_022f79f45ffeM1mQ55Nbpd1U2J=.
+- Saved cwd: =/home/goodboy/repos/modden=.
+- Match is based on saved name and repository, not a verified full
+  history or current assignment. Treat this as a contact hint, not
+  ownership, execution authorization or an active-agent claim.
+
+Resume from Xonsh:
+#+begin_src xonsh
+ai.resume 'gish_refinery (#72)' -a -b oc --id ses_022f79f45ffeM1mQ55Nbpd1U2J
+#+end_src
+
+Suggested prompt: Read Taken source =ai.skillz=, task
+=id:aiskillz-pr-review-20261019=, including the complete subtree and linked
+prerequisites. Reconcile current source state and ownership before
+proposing the first small implementation boundary. Preserve existing
+work, review data and task states. Return findings and next actions
+to this task; do not commit, publish, deploy or change the default
+review backend implicitly. Keep this work separate from PR18 landing.
+
+This is an older Modden dialog. Verify current gish ownership
+and interfaces before treating its historical context as current.
+
 *** TODO Reconcile Tuicr review handoffs and response enforcement
 :PROPERTIES:
 :ID: aiskillz-pm-20261007-reviews
@@ -848,6 +1133,44 @@ decisions to this task through a guarded update. Include a small
 consumer example and migration/deployment scope, with stable task/source
 locators. Distinguish implemented behavior from proposed CLI spellings.
 Do not mark this assignment accepted or expand other workers' scopes.
+
+**** Local-intake pilot result / 2026-10-26
+:PROPERTIES:
+:ID: aiskillz-taken-sync-20261023-piker-pilot-result
+:CREATED: [2026-10-26]
+:CARRIED: 0
+:REPO: ai.skillz/
+:TAKEN_APPEND_OP: aiskillz-taken-sync-20261023-piker-pilot-result-20261026
+:TAKEN_APPEND_REQUEST: 4689c4d28013290a8050bd952632055cee5444086a3463d92e51c283e06986f4
+:END:
+Implemented preview-first local intake as an orchestration skill over
+native Taken export/append/write, taken-export, task-state-ownership,
+git-mgmt and runtime-state. The ai.skillz PM/orger remains coordination
+owner. No acceptance markers changed; no commit or publication.
+
+Implementation: wkt/taken_sync_piker_pilot, pinned federation base
+=e145be1068dcf66b3b988daf1c8b8547cbf10251=. Prepared boundary tree
+=400624b788366660d05dd8495a5507e0b26d995d=; 10 files, +700/-4.
+[[file:/home/goodboy/repos/ai.skillz/wkts/taken_sync_piker_pilot/skills/taken-sync/SKILL.md][Canonical workflow and explicit inputs]]
+[[file:/home/goodboy/repos/ai.skillz/wkts/taken_sync_piker_pilot/ai/plans/taken-sync-piker-pilot.summary.md][Actual checks, Piker proposal, deduplication and coverage]]
+[[file:/home/goodboy/repos/ai.skillz/wkts/taken_sync_piker_pilot/skills/taken-sync/DEPLOY.md][Supported loading, deployment and invocation]]
+
+Verification: native disposable transaction fixture passes, including
+existing-note reuse, new-note append retry, stale-write rejection and
+byte-exact unknown-field/marker/sibling preservation. Skill validation:
+zero errors, five inherited length warnings. All 48 deployment cases
+pass with exit 0; checkout deployment validation and diff checks pass.
+
+Piker remains read-only: one proposed order-intersection zoom spec,
+updates to existing cross-harness and E2E tasks, no live application or
+store writes. The IB note's old uncommitted-patch wording is historical;
+those patches are committed locally, not ancestors of inspected main.
+Original notes remain in place; preview includes original-source links.
+
+Next small slice: human review of the three proposed edits, then one
+explicitly scoped guarded Piker prose update and a second no-op intake.
+Forge sync, broad comment extraction, pruning automation and monitoring
+remain the existing parent task's follow-ups. Do not infer acceptance.
 
 *** TODO Settle Taken-dialog-Modden integration contracts
 :PROPERTIES:
