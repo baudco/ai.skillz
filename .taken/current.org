@@ -490,6 +490,63 @@ requirements remain explicit human decisions.
   future-import ordering; verify headers do not affect CLI/deployment
   behavior or source-preservation checks.
 
+*** TODO Audit project-reference ownership and commit-message quality
+:PROPERTIES:
+:ID: aiskillz-project-guidance-ownership-20261030
+:CREATED: [2026-10-30]
+:CARRIED: 0
+:REPO: ai.skillz/
+:END:
+
+Priority: P1, bounded investigation before proposing relocation.
+Objective: prevent cross-repository guidance leakage and improve causal,
+subsystem-specific commit messages without assuming a selection bug.
+Next action: inventory project-specific references bundled with shared
+skills; trace their history, incoming links, deployment and consumers.
+
+**** Context and sources
+Human-forwarded Piker-agent handoff, 2026-10-30, reporting a Tractor
+session where the correct Tractor guide was selected but terminology
+and causal explanation were poor. Guide selection alone does not explain
+that failure; retain the distinction between routing and message quality.
+
+The shared entry point already selects the target worktree's commit_style
+through the runtime resolver. A local filename listing confirms Piker,
+Tractor and Modden material in commit-msg references; the complete
+inventory, intended roles and reasons for placement remain unverified.
+
+- [[file:../skills/commit-msg/SKILL.md][Shared commit-message workflow]]
+- [[file:../skills/commit-msg/references/piker-SKILL.md][Bundled Piker skill reference]]
+- [[file:../skills/commit-msg/references/piker-style-guide.md][Bundled Piker style guide]]
+- [[file:../skills/commit-msg/references/tractor-style-guide.md][Bundled Tractor style guide]]
+- [[file:../skills/commit-msg/references/modden-style-guide.md][Bundled Modden style guide]]
+
+**** Execution
+- [ ] Classify each reference as shared instruction, project-owned guide,
+  historical example, template or fallback, using provenance and actual
+  consumers. Propose ownership/placement before moving anything.
+- [ ] Trace invocation cwd, target repository/worktree and shared-skill
+  checkout separately. Resolver-selected target guidance must remain
+  explicit; bundled examples must not silently override it. Cover direct
+  skills, composed workflows and linked worktrees.
+- [ ] Evaluate stronger guidance for subtle runtime changes: explain the
+  contract violation first, changed behavior and precedence next, then
+  implementation details. Use established subsystem vocabulary and keep
+  downstream reproduction context distinct from the affected contract.
+
+**** Verification and handback
+Return a compact reference inventory, provenance/consumer map, explanation
+of the existing layout and demonstrated selection gaps, plus a proposed
+layout/migration and narrow instruction changes. Use cross-repository
+invocation fixtures to prove correct target selection, and review actual
+message examples for terminology and causal accuracy. Passing deployment
+tests does not establish message quality. Request the original failing
+message/diff if needed rather than inventing missing failure evidence.
+
+Preserve existing guidance, archives, project overrides and task states.
+This intake authorizes investigation/proposal, not reference deletion,
+relocation, global deployment or broad repository rewrites.
+
 ** Product management / 2026-10-07
 :PROPERTIES:
 :ID: aiskillz-pm-20261007
