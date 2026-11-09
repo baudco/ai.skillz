@@ -1,6 +1,8 @@
+import io
 import importlib.util
 import sys
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 
 
@@ -203,6 +205,27 @@ class OpenCodeCleaningTests(unittest.TestCase):
         self.assertFalse(MODULE.valid_age(float('inf')))
         self.assertFalse(MODULE.valid_age(-1))
         self.assertTrue(MODULE.valid_age(0))
+
+    def test_non_finite_age_reports_the_complete_constraint(self):
+        '''
+        Non-finite values previously produced an incomplete error.
+
+        The validator rejected NaN and infinity, but the CLI claimed
+        only that values must be non-negative. These invocations stop
+        before discovery and prove the diagnostic names both limits.
+
+        '''
+        for value in ('nan', 'inf', '-inf'):
+            with self.subTest(value=value):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    option = f'--older-than-days={value}'
+                    result = MODULE.main([option])
+                self.assertEqual(result, 2)
+                self.assertIn(
+                    'must be finite and non-negative',
+                    stderr.getvalue(),
+                )
 
 
 if __name__ == '__main__':

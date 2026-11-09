@@ -58,7 +58,14 @@ Merge `session-stash.hook.json` into your `settings.json` — project
 runs:
 
 ```
-jq -r .session_id > "$CLAUDE_PROJECT_DIR/.claude/.current_session"
+mkdir -p "$CLAUDE_PROJECT_DIR/.claude" && \
+  stash="$CLAUDE_PROJECT_DIR/.claude/.current_session" && \
+  rm -f "$stash" && \
+  session_id="$(jq -er \
+    '.session_id | select(type == "string" and length > 0)')" && \
+  tmp="$(mktemp "$stash.XXXXXX")" && \
+  printf '%s\n' "$session_id" > "$tmp" && \
+  mv "$tmp" "$stash"
 ```
 
 on every session start/resume. Requires `jq`. `$CLAUDE_PROJECT_DIR`

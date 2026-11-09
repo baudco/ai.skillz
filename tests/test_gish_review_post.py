@@ -26,6 +26,7 @@ if SPEC is None or SPEC.loader is None:
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+HEAD = 'a' * 40
 
 
 class GishReviewPostTests(unittest.TestCase):
@@ -34,7 +35,7 @@ class GishReviewPostTests(unittest.TestCase):
             'backend': 'gh',
             'repository': 'owner/repo',
             'pr': 7,
-            'head': 'abc123',
+            'head': HEAD,
             'event': 'comment',
             'actor': 'reviewer',
         }
@@ -108,6 +109,24 @@ class GishReviewPostTests(unittest.TestCase):
                     self.target(**changes)
                 )
 
+    def test_review_head_requires_a_full_lowercase_oid(self):
+        '''
+        An abbreviated or malformed head previously reached GitHub.
+
+        It failed later as apparent head drift, hiding that the
+        approved target was invalid. These cases exercise validation
+        and prove only a full lowercase OID proceeds.
+
+        '''
+        for head in ('', 'abc123', 'A' * 40, 'g' * 40):
+            with self.subTest(head=head):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'full lowercase OID',
+                ):
+                    MODULE.validate_target(self.target(head=head))
+        MODULE.validate_target(self.target())
+
     def test_head_drift_refuses_post(self):
         response = subprocess.CompletedProcess(
             args=[],
@@ -170,7 +189,7 @@ class GishReviewPostTests(unittest.TestCase):
                 returncode=0,
                 stdout=json.dumps(
                     {
-                        'headRefOid': 'abc123',
+                        'headRefOid': HEAD,
                         'state': 'OPEN',
                         'url': 'https://example.invalid/pr/7',
                     }
@@ -205,7 +224,7 @@ class GishReviewPostTests(unittest.TestCase):
         self.assertEqual(result['id'], 9)
         post = run.call_args_list[3].args[0]
         self.assertIn('event=COMMENT', post)
-        self.assertIn('commit_id=abc123', post)
+        self.assertIn(f'commit_id={HEAD}', post)
         self.assertIn(f'body=@{body}', post)
 
     def test_validated_body_bytes_are_preserved(self):
@@ -261,7 +280,7 @@ class GishReviewPostTests(unittest.TestCase):
                         '--pr', '7',
                         '--body-file', str(path),
                         '--sha256', digest,
-                        '--head', 'abc123',
+                        '--head', HEAD,
                         '--event', 'comment',
                         '--actor', 'reviewer',
                         '--worktree', str(root),

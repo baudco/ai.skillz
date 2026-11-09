@@ -277,7 +277,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if not valid_age(args.older_than_days):
         print(
-            '--older-than-days must be non-negative',
+            '--older-than-days must be finite and non-negative',
             file=sys.stderr,
         )
         return 2

@@ -44,7 +44,8 @@ def _pr_linkify(args):
     if not args:
         print('usage: pr-linkify <pr-num> [base-branch]')
         return 1
-    num, base = args[0], (args[1] if len(args) > 1 else 'main')
+    num = args[0]
+    base = args[1] if len(args) > 1 else 'main'
     skill = _prmsg_skill_dir()
     if skill is None:
         print('pr-linkify: no deployed pr-msg skill found '
@@ -62,7 +63,7 @@ def _pr_linkify(args):
               'skipping (edit the body manually to regenerate)')
         return 0
     index = _sp.check_output(
-        ['python', script, f'{base}..{head}'], text=True)
+        ['python3', script, f'{base}..{head}'], text=True)
     with _tmp.NamedTemporaryFile(
         'w', suffix='.md', delete=False) as f:
         f.write(body.rstrip('\n') + '\n\n' + index)
@@ -77,10 +78,13 @@ def _pr_merge(args):
     if not args:
         print('usage: pr-merge <pr-num> [base-branch] [gh merge flags…]')
         return 1
-    rc = _pr_linkify(args[:2])
+    linkify_args = [args[0]]
+    extra = list(args[1:])
+    if extra and not extra[0].startswith('-'):
+        linkify_args.append(extra.pop(0))
+    rc = _pr_linkify(linkify_args)
     if rc != 0:
         return rc
-    extra = args[2:] if len(args) > 1 else []
     return _sp.call(['gh', 'pr', 'merge', args[0], *extra])
 
 aliases['pr-linkify'] = _pr_linkify

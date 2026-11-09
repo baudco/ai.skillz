@@ -14,6 +14,7 @@ from typing import Any, Sequence
 
 
 DIGEST = re.compile(r'^[0-9a-f]{64}$')
+COMMIT = re.compile(r'^[0-9a-f]{40}$')
 REPOSITORY = re.compile(
     r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
 )
@@ -88,8 +89,10 @@ def validate_target(target: ReviewTarget) -> None:
         raise ValueError('repository must use owner/name form')
     if target.pr <= 0:
         raise ValueError('PR number must be positive')
-    if not target.head:
-        raise ValueError('reviewed head commit is empty')
+    if not COMMIT.fullmatch(target.head):
+        raise ValueError(
+            'reviewed head commit must be a full lowercase OID'
+        )
     if target.event != 'comment':
         raise ValueError(
             'only the comment review event is supported'

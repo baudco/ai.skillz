@@ -13,6 +13,7 @@ metadata:
   author: goodboy
   version: "0.1"
 argument-hint: "[skill-names or skill-paths]"
+disable-model-invocation: true
 allowed-tools:
   - Read
   - Grep
