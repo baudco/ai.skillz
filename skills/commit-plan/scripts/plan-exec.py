@@ -22,7 +22,11 @@ import sys
 import tempfile
 import termios
 from pathlib import Path
-from typing import Any, Iterator, TextIO
+from typing import (
+    Any,
+    Iterator,
+    TextIO,
+)
 
 
 GIT_REDIRECT_VARS = (
@@ -79,13 +83,16 @@ def render_command(arguments: list[str]) -> str:
 
 def trace_prefix(phase: str, stream: TextIO) -> str:
     '''
-    Color the executor phase label only on an interactive stream.
+    Color a phase label only on an interactive stream.
 
-    This keeps captured plan logs byte-stable and respects the same
-    terminal opt-out used by `ai.dlogs`.
+    - Keep captured logs byte-stable for parsers and review
+      artifacts.
+    - Honor NO_COLOR and TERM=dumb, as ai.dlogs does.
+    - Return the label only; trace_start()/trace_result() own
+      printing.
 
     '''
-    label = f'[{phase}]'
+    label: str = f'[{phase}]'
     if (
         stream.isatty()
         and not os.environ.get('NO_COLOR')
@@ -138,7 +145,11 @@ def trace_start(
     root: Path,
 ) -> None:
     '''
-    Announce one user-visible executor operation.
+    Announce the cwd and argv before one executor operation.
+
+    - Render terminal-safe command text through render_command().
+    - Use trace_prefix() so color follows stdout's terminal policy.
+    - Flush before execution; failed operations retain their context.
 
     '''
     rendered = render_command(arguments)
@@ -159,7 +170,15 @@ def trace_result(
     secrets: tuple[str, ...] = (),
 ) -> None:
     '''
-    Report one subprocess outcome and captured failure detail.
+    Report a subprocess result with safely rendered captured output.
+
+    - PASS goes to stdout; a failed phase goes to stderr with its
+      exit.
+    - When captured=True, include stdout/stderr via append_output(),
+      escaping controls and redacting supplied secret values.
+    - Color labels only on interactive streams; do not change
+      captured command output or interpret it as terminal control
+      sequences.
 
     '''
     if not result.returncode:
@@ -1631,7 +1650,23 @@ def run_project_checks(
     parent_oid: str,
 ) -> int:
     '''
-    Run every project check in its own exact-tree repository.
+    Run each pending check in an independent exact-tree repository.
+
+    - Reuse authenticated prior PASS evidence without creating a
+      clone.
+    - Otherwise create one isolated_tree() per description; close the
+      preceding clone before entering the next check.
+    - Validate argv/probe executables and declared prerequisites
+      using that check's environment overlay before starting
+      subprocesses.
+    - Require the resolution probe to print one source path inside
+      the isolated boundary. A live editable import cannot satisfy
+      it.
+    - Run the check, report its output and stop at the first failure.
+    - ensure_isolated_tree() rejects changes to the authenticated
+      tree before/after subprocess execution; ExitStack owns cleanup.
+    - spec/boundary hold heterogeneous JSON fields whose schema
+      validate_spec() checks before execution.
 
     '''
     descriptions = boundary['project_checks']
@@ -1650,7 +1685,11 @@ def run_project_checks(
                     flush=True,
                 )
                 continue
-            root, environment, commit_oid = stack.enter_context(
+            (
+                root,
+                environment,
+                commit_oid,
+            ) = stack.enter_context(
                 isolated_tree(spec, boundary['tree'], parent_oid)
             )
             ensure_isolated_tree(
@@ -1733,7 +1772,10 @@ def run_project_checks(
                 source.resolve(
                     strict=True
                 ).relative_to(root)
-            except (OSError, ValueError) as error:
+            except (
+                OSError,
+                ValueError,
+            ) as error:
                 raise validation_error(
                     resolve_phase,
                     resolution,
@@ -2406,11 +2448,17 @@ def environment_lines(description: dict) -> list[str]:
 
 def overview(spec: dict[str, Any], completed: int = 0) -> str:
     '''
-    Summarize the checkout and verified progress before shared notes.
+    Summarize a plan's checkout and verified commit progress.
 
-    The caller supplies `classify()`'s completed prefix after
-    identity validation. Newly finalized plans have zero completed.
-    Git supplies checkout context, including the current branch.
+    - Accept classify()'s completed prefix after identity validation;
+      newly finalized plans start with zero completed boundaries.
+    - Read checkout/main-worktree/current-branch context from Git.
+    - Pair every exact commit subject/status with its --execute
+      number.
+    - Render shared execution rules outside the shell command block.
+    - Escape Markdown structure and terminal controls while
+      preserving intentional subject code spans. Do not run checks or
+      commit.
 
     '''
     root = Path(spec['repo_root'])
@@ -2434,11 +2482,15 @@ def overview(spec: dict[str, Any], completed: int = 0) -> str:
 
     def escape(value: str) -> str:
         '''
-        Escape Markdown structure and terminal controls in text.
+        Escape overview structure while preserving readable inline
+        text.
 
-        Parentheses and underscores are ordinary inline text here.
-        Preserve backticks so subjects can retain intentional code
-        spans, as in ``Update `codex` to 0.156.1``.
+        - Parentheses and branch underscores stay ordinary inline
+          text.
+        - Keep backticks for intentional subject code spans.
+        - Escape structural punctuation and render terminal controls
+          through visible_text(); subjects cannot inject extra
+          overview lines.
 
         '''
         return re.sub(
