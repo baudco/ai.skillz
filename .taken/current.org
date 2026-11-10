@@ -825,6 +825,94 @@ that every consumer's workflow and local references are usable.
 - [[file:../plans/opencode/portable-cross-provider-deployment-plan.md][Deployment and consumer rollout plan]]
 - [[file:/home/goodboy/repos/ai.skillz/plans/codex/cross-harness-support-plan.md][Cross-harness adoption and remaining rollout notes]]
 
+*** TODO Support Pi across ai.skillz and ai.reply workflows
+:PROPERTIES:
+:ID: aiskillz-pi-harness-support-20261110
+:CREATED: [2026-11-10]
+:CARRIED: 0
+:REPO: ai.skillz/
+:END:
+
+Priority: P1, coordinated cross-repository backend integration.
+Objective: support the newly installed Pi coding harness throughout
+shared workflows and relevant ai.reply editor integration. The human
+expects Pi to be the likely final planned core harness backend.
+Next action: identify the installed distribution, executable and version;
+map actual Pi capabilities to existing contracts, then propose the first
+end-to-end slice and repository-specific ownership before implementing.
+
+**** Context and ownership
+Installation is human-reported; exact runtime capabilities have not been
+verified by this intake. Separate Pi harness identity from its selectable
+model/provider. Do not assume optional extensions are installed or that
+another harness's CLI, session formats or hook behavior applies.
+
+ai.skillz owns shared skill/deployment and dialog-adapter contracts;
+ai.reply owns editor-facing prompt/reply/session integration. Coordinate
+Modden workspace launch and Taken task bindings through their existing
+owners. Keep bounded cross-repository work linked to this coordination
+task rather than duplicating harness discovery or creating another store.
+
+[[file:/home/goodboy/repos/ai.skillz/bigB/pi-extensions-install.md][Historical Pi installation and extension notes]]
+These notes are background evidence; confirm the installed setup rather
+than repeating installation commands or treating recommendations as facts.
+
+Related: [[id:aiskillz-pm-20261007-deployment][consumer deployment]],
+[[id:aiskillz-pm-20261007-dialogs][dialog/resume APIs]],
+[[id:aiskillz-pm-20261007-integration][Taken-dialog-Modden contracts]],
+[[id:aiskillz-deslop-pilot-20261026][Unslop review gates]], and
+[[id:aiskillz-project-guidance-ownership-20261030][target guidance ownership]].
+
+**** Scope and implementation slices
+- [ ] Inventory Pi skill/instruction loading, configuration scope, native
+  session IDs/storage, interactive and supported headless/RPC modes,
+  extensions, tool permissions, progress/cancellation and delivery hooks.
+  Record supported, unavailable and unverified capabilities explicitly.
+- [ ] Add minimal Pi deployment/command adapters around canonical shared
+  skills. Preserve project-specific references, relative resources and
+  target-worktree resolution in standalone and composed workflows. Cover
+  new/remove/redeploy behavior without changing provider credentials or
+  silently treating deployment as tool/sandbox authorization.
+- [ ] Extend aiskillz's harness identity, dialog discovery/indexing,
+  selection/completion, cwd/WKT associations and exact-dialog resume as
+  supported by Pi. Preserve the distinction between verified native IDs,
+  display names, saved metadata and current runtime activity. Metadata
+  reads must not launch a model or start an unnecessary daemon.
+- [ ] Define the ai.reply adapter with its owner: harness selection,
+  prompt/context dispatch, supported output/streaming representation,
+  session selection/resume and reply insertion or navigation where
+  applicable. Handle errors, cancellation, reconnect/reload and identity
+  continuity through supported Pi interfaces; preserve existing backends.
+- [ ] Carry verified Pi identities and launch intent through Taken and
+  Modden without conflating task provenance, bindings and live execution.
+  Keep task-state acceptance human-owned and runtime write-back guarded.
+- [ ] Audit harness assumptions in commit-plan, review/remediation,
+  run-tests, prompt-io, worktree lifecycle, taken-sync and Unslop. Preserve
+  full inline commit previews, selected shell syntax, no-auto-commit and
+  publication boundaries. Record the real harness/provider/model when
+  independently known; do not infer one from another.
+- [ ] Assess Pi's independent-review and first-draft delivery capabilities
+  for Unslop. Keep advisory, handoff-blocking and buffered modes distinct;
+  unsupported hooks must not be presented as enforced review gates.
+
+**** Verification and handback
+Start with fixtures and a small vertical slice: load a shared skill in
+Pi, discover/resume an exact dialog, exchange a prompt/reply through
+ai.reply, and return a source-linked result to Taken. Identify which parts
+are fixture-proven versus exercised against the installed Pi; obtain
+appropriate authority for live model calls or consumer deployment.
+
+Cover absent/malformed/renamed session data, duplicate labels, paths with
+spaces, missing worktrees, correct project guidance, cancellation and
+graceful unsupported-capability behavior. Run relevant existing-backend,
+skill/deployment and ai.reply tests; preserve fresh-process boundaries.
+
+Return the verified version/capability matrix, shared API decisions,
+linked repository handoffs, small commit boundaries, actual tests and
+demo results, rollout instructions and remaining gaps. Preserve existing
+configuration, sessions, indexes, task markers and unrelated work. This
+intake does not claim Pi support is already implemented or deployed.
+
 *** TODO Qualify dulwich for Git discovery and WKT operations
 :PROPERTIES:
 :ID: aiskillz-dulwich-qualification-20261025
