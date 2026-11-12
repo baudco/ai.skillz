@@ -46,7 +46,7 @@ class HarnessStoresTests(unittest.TestCase):
 
     def setUp(self) -> None:
         '''
-        Isolate all three harness roots from the user's own sessions.
+        Isolate all harness roots from the user's own sessions.
 
         '''
         self.temp: tempfile.TemporaryDirectory = (
@@ -65,6 +65,7 @@ class HarnessStoresTests(unittest.TestCase):
                 'CODEX_HOME': str(self.root / 'absent-codex'),
                 'OPENCODE_DATA_DIR': str(self.oc),
                 'CLAUDE_CONFIG_DIR': str(self.claude),
+                'PI_CODING_AGENT_SESSION_DIR': str(self.root / 'pi'),
             },
         ))
 

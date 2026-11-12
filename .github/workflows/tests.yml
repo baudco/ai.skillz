@@ -44,6 +44,7 @@ jobs:
             tests/test_harness_stores.py \
             tests/test_worktree_dialogs.py \
             tests/test_resume.py \
+            tests/test_pi_dialogs.py \
             tests/test_resume_completion.py \
             tests/test_dialog_timestamps.py \
             tests/test_git_discovery.py \

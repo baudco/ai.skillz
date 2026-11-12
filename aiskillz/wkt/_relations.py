@@ -60,6 +60,7 @@ def canonical_harness(value: str) -> str:
         'codex',
         'opencode',
         'claude',
+        'pi',
     ):
         raise ValueError(f'Unsupported harness: {original!r}')
     return value
@@ -253,10 +254,11 @@ def identity(record: dict) -> tuple[str, str]:
         'codex',
         'opencode',
         'claude',
+        'pi',
     ):
         raise ValueError(
             f'Invalid dialog harness {harness!r}; expected '
-            f'codex, opencode or claude',
+            f'codex, opencode, claude or pi',
         )
     if not isinstance(dialog_id, str):
         kind: str = type(dialog_id).__name__

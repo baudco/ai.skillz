@@ -15,6 +15,7 @@ Discover dialogs and coordinate the public WKT indexing workflow.
 '''
 
 from collections import Counter
+from functools import partial
 import os
 from collections.abc import Mapping
 from typing import Protocol
@@ -24,6 +25,7 @@ import sqlite3
 from ..wkt import WktIndexer
 from ..wkt._indexer import HistoryReader
 from ._inspect import observations
+from ._pi import pi_sessions
 from ._readers import (
     codex_sessions,
     opencode_sessions,
@@ -79,6 +81,7 @@ def list_dialogs(
 
     Results:
     - Deduplicate by `(harness, id)`, retaining the newest record.
+      Pi rejects duplicate native IDs before this normalization.
     - Return newest first, with harness/ID tie-breakers.
     - Keep exact names. Unknown provider/model/archive fields stay
       None.
@@ -103,6 +106,7 @@ def list_dialogs(
             'codex',
             'opencode',
             'claude',
+            'pi',
         ]
     elif isinstance(harness, str):
         names = [harness]
@@ -123,6 +127,7 @@ def list_dialogs(
         'codex',
         'opencode',
         'claude',
+        'pi',
     }
     if unknown:
         invalid_names: list[str] = sorted(unknown)
@@ -141,6 +146,15 @@ def list_dialogs(
         )
     ).expanduser()
     homes: dict[str, Path] = {
+        'pi': Path(
+            environment.get('PI_CODING_AGENT_SESSION_DIR')
+            or
+            str(Path(
+                environment.get('PI_CODING_AGENT_DIR')
+                or
+                str(Path.home() / '.pi/agent')
+            ) / 'sessions')
+        ),
         'codex': Path(
             environment.get(
                 'CODEX_HOME',
@@ -163,10 +177,15 @@ def list_dialogs(
     # All readers share the same positional and archive arguments.
     # Reader records contain heterogeneous JSON/SQLite fields.
     # Normalization below fills the public optional metadata fields.
+    pi_layout: str = 'bucketed'
+    if environment.get('PI_CODING_AGENT_SESSION_DIR'):
+        pi_layout = 'flat'
+
     readers: dict[str, _SessionReader] = {
         'codex': codex_sessions,
         'opencode': opencode_sessions,
         'claude': claude_sessions,
+        'pi': partial(pi_sessions, session_layout=pi_layout),
     }
     records: list[dict] = []
     name: str
@@ -332,6 +351,7 @@ def preview_wkt_relations(
         'codex',
         'opencode',
         'claude',
+        'pi',
     ):
         try:
             dialogs.extend(list_dialogs(path=None, harness=harness))

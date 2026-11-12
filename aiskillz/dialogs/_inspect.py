@@ -133,8 +133,10 @@ def observations(
 
     - `WktIndexer.suggest()` supplies selected metadata and a mutable
       `warnings` list. Return `{(harness, id): set(observed_paths)}`.
-    - Select Codex rollouts and top-level Claude logs by dialog ID;
-      query OpenCode message rows read-only for the selected IDs.
+    - Select Codex rollouts and top-level Claude logs by dialog ID.
+    - Inspect contained Pi files from `pi_sessions()` through
+      `jsonl_paths()`, not shell-command text.
+    - Query OpenCode message rows read-only for the selected IDs.
     - Honor CODEX_HOME, CLAUDE_CONFIG_DIR and OPENCODE_DATA_DIR/XDG.
     - Missing/pruned logs and missing message tables add no evidence.
       File/SQLite failures append warnings about partial coverage.
@@ -201,6 +203,30 @@ def observations(
                     f'Could not read transcript: {path_text!r}; '
                     f'{error}',
                 )
+    # `pi_sessions()` pins `row['session_file']` within its store.
+    # `jsonl_paths()` reads structured cwd fields, never shell text.
+    row: dict
+    for row in dialogs:
+        if row['harness'] != 'pi':
+            continue
+
+        pi_id: str = row['id']
+        pi_file: Path = Path(row['session_file'])
+        try:
+            result.setdefault(('pi', pi_id), set()).update(
+                jsonl_paths(pi_file, pi_id),
+            )
+
+        except (
+            OSError,
+            UnicodeError,
+        ) as error:
+            pi_file_text: str = str(pi_file)
+            warnings.append(
+                f'Could not read Pi cwd: dialog={pi_id!r}, '
+                f'file={pi_file_text!r}; {error!r}',
+            )
+
     data: Path = Path(os.environ.get(
         'XDG_DATA_HOME', str(Path.home() / '.local/share'),
     )).expanduser()

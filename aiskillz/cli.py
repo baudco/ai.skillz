@@ -372,6 +372,7 @@ def main(argv: list[str]|None = None) -> int:
             'oc',
             'claude',
             'cld',
+            'pi',
             'all',
         ],
         default='all',
@@ -518,6 +519,7 @@ def resume_main(argv: list[str]|None = None) -> int:
             'oc',
             'claude',
             'cld',
+            'pi',
         ],
         help='narrow duplicate names or IDs to one harness',
     )

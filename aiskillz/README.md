@@ -1,6 +1,7 @@
 # `aiskillz` package layout
 
-The public package lists saved Codex, OpenCode, and Claude dialogs.
+The public package lists saved Codex, OpenCode, Claude, and Pi
+dialogs.
 `ai.dlogs index` also helps relate those dialogs to Git worktrees.
 `ai.resume` resolves a name, then starts the chosen harness with its
 dialog ID and selected launch directory.
@@ -12,8 +13,8 @@ for the distinction between CLI commands, aliases and completion.
 
 For `ai.dlogs index`, the flow is:
 
-1. `dialogs._readers` reads dialog metadata and `dialogs._inspect`
-   reads directories recorded in harness logs.
+1. `dialogs._readers` and `dialogs._pi` read dialog metadata;
+   `dialogs._inspect` reads directories recorded in harness logs.
 2. `wkt.WktIndexer.suggest()` compares those directories with Git
    worktrees found by `git._discovery` and returns possible
    dialog/WKT pairs.
@@ -29,7 +30,9 @@ the dialog API and WKT lookup; neither package layer imports the
 CLI. Git subprocess calls are isolated in `git._commands`, making
 their replacement with a library a separate change.
 `_resume.resume_target()` joins dialog metadata and WKT lookup;
-`cli.resume_main()` alone starts the harness child process.
+`cli.resume_main()` starts the harness child process directly.
+Pi resumes its saved cwd; a WKT relation cannot move it under the
+same dialog identity. No editor identity handoff is supplied.
 
 A WKT relation records a dialog's use of a worktree. The
 `owner.json` token controls `/open-wkt` lifecycle management and

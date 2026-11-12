@@ -451,13 +451,20 @@ relations must not prevent launch in an existing saved cwd or an
 explicit `--cwd`. Warnings explain fallback; they do not require
 you to repair the index before continuing your dialog.
 
-When one active WKT is recorded for that dialog, the harness starts
-there. Otherwise it starts in the dialog's saved cwd. If several
-WKTs match, resume warns and uses the saved cwd. Use `--cwd PATH`
-to choose a launch directory explicitly. The wrapper
-passes an argv list directly to `codex resume ID`,
-`opencode --session ID`, or `claude --resume ID`; it does not
-interpret the dialog name as a shell command.
+Except for Pi (see below), when one active WKT is recorded for
+that dialog, the harness starts there. Otherwise it starts in the
+dialog's saved cwd. If several WKTs match, resume warns and uses the
+saved cwd. Use `--cwd PATH` to choose a launch directory explicitly.
+The wrapper passes an argv list directly to `codex resume ID`,
+`opencode --session ID`, `claude --resume ID`, or
+`pi --session ID --session-dir DIRECTORY`; it does not interpret the
+dialog name as a shell command.
+
+Pi resumes its saved cwd rather than honoring another launch cwd.
+A different recorded WKT warns and falls back to saved cwd; an
+incompatible explicit `--cwd` is rejected. A missing saved directory
+cannot be repaired by claiming a different worktree under the same
+identity. This wrapper never silently forks a Pi session.
 
 When a recorded WKT is removed or unregistered, its relation remains
 in `relations.json`. The WKT column shows `NAME (unavailable)`.
@@ -505,11 +512,11 @@ Illustrative output, with an existing explicit launch directory:
 - `argv`: argument list to execute directly, not shell source text.
 - `warnings`: optional diagnostic strings when WKT lookup falls back.
 
-Directory precedence is explicit `cwd`, one verified existing WKT,
-then saved cwd. Calling applications that require a particular repo
-must validate and pass an explicit directory; interactive fallback
-is not permission to launch work elsewhere. `environ` selects the
-same harness stores as the discovery APIs.
+Except for Pi's saved-cwd restriction, directory precedence is
+explicit `cwd`, one verified existing WKT, then saved cwd. Calling
+applications that require a particular repo must validate and pass an
+explicit directory. Interactive fallback is not permission to launch
+work elsewhere. `environ` selects the same stores as discovery.
 
 ## Harness notes
 
@@ -566,6 +573,42 @@ same harness stores as the discovery APIs.
 - Missing or empty storage: no records returned.
 - Scope: subagent logs are excluded; their IDs are not independent
   interactive resume targets. Archive status is unknown (`None`).
+
+### Pi
+
+- Storage: `PI_CODING_AGENT_DIR/sessions`, default
+  `~/.pi/agent/sessions`; read cwd buckets (`*/*.jsonl`).
+  `PI_CODING_AGENT_SESSION_DIR` selects a custom flat root
+  (`*.jsonl`). For a store normally selected by Pi's `--session-dir`
+  or `sessionDir` setting, set that environment variable explicitly
+  for these CLI tools. Discovery does not evaluate Pi project/global
+  settings.
+- Discover native JSONL header IDs and saved cwd, not filename IDs
+  or directory-name decoding. Session versions 1–3 are supported;
+  unsupported/malformed headers are skipped, as are corrupt events.
+- Display name: last explicit `session_info.name`, then a bounded
+  first-user-text fallback, then `(untitled)`. Renames do not change
+  identity. Saved `model_change` fields are observations, not live
+  model/provider claims.
+- Duplicate native IDs anywhere in the configured root are errors,
+  even under a narrower cwd filter. Never choose the newest file.
+  Names and ID prefixes do not authorize a first-match selection.
+- Forks have independently resumable IDs and remain visible. Archive
+  state is unknown; no separate Pi child/archive filter is invented.
+- Resume uses full `--session ID`, never `-s`. Explicit internal
+  `--session-dir` pins exact lookup to the selected file's containing
+  directory, avoiding global lookup's interactive fork offer.
+- A resumed Pi keeps its saved cwd. Different explicit cwd overrides
+  are rejected; different recorded WKTs warn without rewriting the
+  relation or silently creating another dialog.
+- Listing, exact lookup, name mapping, shell completion, index
+  previews, reviewed apply and explicit WKT recording accept `pi`.
+  Index evidence uses structured cwd fields, never shell strings.
+- Launch runs the resolved argv directly in saved cwd. There is no
+  identity shim, custom environment payload or automatic editor
+  association; editors retain their chooser/manual selection.
+- No live publisher, deployment adapter, model call or task-state
+  transition is implied.
 
 ### Lookup errors and limitations
 

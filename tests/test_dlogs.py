@@ -49,6 +49,9 @@ class DlogsTests(unittest.TestCase):
         )
         self.addCleanup(self.temporary.cleanup)
         self.home: Path = Path(self.temporary.name)
+        self.enterContext(patch.dict(os.environ, {
+            'PI_CODING_AGENT_SESSION_DIR': str(self.home / 'pi'),
+        }))
         self.repo: Path = self.home / "repo with ' spaces"
         self.repo.mkdir()
         self.database: Path = self.home / 'state_5.sqlite'

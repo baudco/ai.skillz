@@ -100,8 +100,11 @@ def resume_target(
       cwd.
     - Unavailable, ambiguous or unreadable WKT metadata adds
       warnings; indexing alone never prevents resume.
-    - An unusable final directory requires an explicit `cwd`
-      override.
+    - For non-Pi resumes, repair an unusable final directory with an
+      explicit `cwd` override.
+    - Pi rejects explicit `cwd` values different from its saved cwd.
+    - Pi warns and ignores a registered WKT that differs from saved
+      cwd, rather than silently forking the native dialog.
     - Orchestrating callers validate and supply their intended repo;
       an interactive fallback does not authorize another launch
       context.
@@ -109,6 +112,8 @@ def resume_target(
     Process boundary:
     - Return argv, saved cwd, launch cwd and optional warning
       strings.
+    - Pi argv pins the exact file's parent with `--session-dir`;
+      this lookup pin does not override its saved launch cwd.
     - Never probe or launch a harness. `codex_no_daemon` is a
       capability observation supplied by the caller; `environ`
       selects metadata directories just as it does for
@@ -205,7 +210,27 @@ def resume_target(
             f'harness={provider!r}, name={dialog_name!r}'
         )
 
+    if (
+        provider == 'pi'
+        and
+        (
+            '/' in did
+            or
+            '\\' in did
+            or
+            did.endswith('.jsonl')
+        )
+    ):
+        raise ValueError(
+            f'Pi dialog ID looks like a path: {did!r}'
+        )
+
     commands: dict[str, list[str]] = {
+        'pi': [
+            'pi',
+            '--session',
+            did,
+        ],
         'codex': [
             'codex',
             'resume',
@@ -254,6 +279,20 @@ def resume_target(
         )
 
     notices: list[str] = []
+    if (
+        provider == 'pi'
+        and
+        cwd is not None
+        and
+        Path(cwd).expanduser().resolve()
+        != Path(saved).expanduser().resolve()
+    ):
+        raise ValueError(
+            f'Pi dialog {did!r} resumes in saved cwd {saved!r}; '
+            f'incompatible --cwd {cwd!r} would require a different '
+            f'dialog (fork).'
+        )
+
     if cwd is not None:
         directory: Path = Path(cwd).expanduser().resolve()
     else:
@@ -304,13 +343,39 @@ def resume_target(
             launch_cwd: str = str(directory)
             notices.append(f'Resuming in saved cwd: {launch_cwd!r}')
 
+    if provider == 'pi':
+        pi_saved: Path = Path(saved).expanduser().resolve()
+        if directory != pi_saved:
+            pi_recorded_cwd: str = str(directory)
+            pi_saved_cwd: str = str(pi_saved)
+            notices.append(
+                f'Pi dialog {did!r} cannot resume in recorded WKT '
+                f'{pi_recorded_cwd!r}; using saved cwd '
+                f'{pi_saved_cwd!r}, not forking.'
+            )
+            directory = pi_saved
+
+        session_file: Path = Path(selected['session_file'])
+        # Pin exact lookup to the containing directory. This avoids
+        # global lookup's interactive fork offer and settings drift.
+        commands['pi'].extend([
+            '--session-dir', str(session_file.parent),
+        ])
+
     if not directory.is_dir():
         invalid_directory: str = str(directory)
+        remedy: str = 'Use --cwd to choose an existing directory.'
+        if provider == 'pi':
+            remedy = (
+                'Restore the saved directory. Pi cannot honor a '
+                'different --cwd under this dialog identity.'
+            )
+
         raise ValueError(
             f'Launch directory is missing: {invalid_directory!r}; '
             f'dialog={dialog_name!r}, id={did!r}, '
             f'harness={provider!r}\n'
-            f'Use --cwd to choose an existing directory.'
+            f'{remedy}'
         )
     target: dict = {
         'name': selected['name'],
