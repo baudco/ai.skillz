@@ -140,31 +140,22 @@ discard a violation merely because it does not change runtime behavior.
 
 ### Python style and human-readability pass
 
-For every changed Python/Xonsh module, read the selected `py-codestyle`
-rules and review lessons, then inspect the actual code against them.
-Automatic skill discovery and a clean formatter/linter are not evidence
-that this pass occurred. Report the inspected scope and any uncovered
-paths; do not claim a clean style review without inspecting them.
+For every changed Python/Xonsh module, read the selected
+`py-codestyle` rules and any review lessons they explicitly reference,
+then inspect the actual code against them. Automatic skill discovery
+and a clean formatter/linter are not evidence that this pass occurred.
+Report the inspected scope and any uncovered paths; do not claim a
+clean style review without inspecting them.
 
-Check both implementation and reader-facing explanations:
-
-- Sequence/import layout, branch grouping, line width and visual separation
-  at scope boundaries follow the selected project's rules.
-- Types describe concrete inputs, callbacks and records. Explain any
-  unavoidable dynamic boundary; do not use `Any` to skip understanding it.
-- Constants name policy limits and units. Explain non-obvious algorithms,
-  failure boundaries and external parser/completer/lifecycle hooks.
-- Docstrings open with one sentence naming the operation and its role.
-  For several behaviors, use compact bullets grouped by purpose:
-  inputs/selection, outputs, side effects, failures and caller contracts.
-  Keep one behavior per bullet; name the actual fields and functions.
-  Explain non-obvious implementation reasons beside the relevant code.
-  A simple function may need only the opening sentence. Review for a
-  quick high-level scan, not merely complete information in dense prose.
-- Error messages identify the rejected values and relevant operation,
-  harness or dialog, while respecting secrets and terminal-control safety.
-- Compatibility branches have an evidenced consumer or supported format;
-  distinguish upstream data support from obsolete project API aliases.
+Check both implementation and reader-facing explanations against
+that selected guide's authoring rules. The canonical `py-codestyle`
+owns concrete contracts/policy, docstrings, regression proof, layout
+and scope spacing; this review verifies them rather than maintaining
+another authoring checklist. Inspect whether the contract and proof
+can be scanned quickly, and report the source/version used when
+claiming a completed style pass. Respect target-local selection;
+disclose missing or divergent guidance instead of silently importing
+a different global version.
 
 For a subtle hook or state transition, explain why the obvious approach
 fails and what invariant the implementation preserves. Do not replace

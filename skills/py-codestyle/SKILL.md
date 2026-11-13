@@ -1,19 +1,36 @@
 ---
 name: py-codestyle
 description: >
-  Python coding style conventions. Auto-applied when
-  writing or editing Python code.
+  Required Python and Xonsh authoring conventions. Use before writing,
+  editing or proposing Python/Xonsh code, including tests and snippets,
+  and when checking those changes for readability.
 compatibility: >
   Language-agnostic agent. No external tools needed.
 metadata:
   author: goodboy
   version: "0.1"
-disable-model-invocation: true
 ---
 
 # Python code style guide
 
 These rules apply globally to ALL python projects.
+
+## Required authoring and handoff gate
+
+- Read this skill in full before writing, editing or proposing Python
+  or Xonsh code. Apply it to implementation, helpers, tests, comments,
+  docstrings and newly authored review snippets; no separate review
+  invocation is required. Preserve verbatim quotations of evidence.
+- Before handoff, inspect every new or changed Python/Xonsh scope
+  against the complete guide. Review the actual source, not merely
+  formatter/linter output or the fact that a skill was discovered.
+- Check contract/proof bullets, symbol references, concrete types,
+  named policy bounds, contextual errors, multiline/boolean shapes,
+  occupied-column scope gaps and preserved maintainer context.
+- Correct violations in authorized edits before calling them ready.
+  A read-only review instead reports them without modifying files.
+  Disclose uninspected scope, unresolved violations and unavailable
+  checks; never equate passing tests with a completed style pass.
 
 ## Preserve maintainer context
 
@@ -59,6 +76,20 @@ These rules apply globally to ALL python projects.
   another plausible table or owner. Optimize comments and
   regression docstrings for editor symbol lookup, not only for a
   reader who already holds the full runtime model in memory.
+
+## Concrete contracts and policy
+
+- Type concrete inputs, callbacks and records. Explain unavoidable
+  dynamic boundaries, including raw external data; do not use `Any`
+  as a substitute for understanding and validating consumed fields.
+- Name constants for policy limits and include their units. Explain
+  non-obvious algorithms, failure boundaries and external parser,
+  completer or lifecycle hooks beside the relevant implementation.
+- Error messages identify the rejected values and operation, harness
+  or dialog. Quote or escape untrusted values so diagnostics remain
+  unambiguous and terminal-safe; do not expose secrets.
+- Compatibility branches need an evidenced consumer or supported
+  data format. Do not invent obsolete project aliases defensively.
 
 ## Line length
 
@@ -182,8 +213,8 @@ These rules apply globally to ALL python projects.
       '''
       Summary line here.
 
-      Extended description if needed following
-      standard PEP guidelines.
+      - Inputs/selection: describe accepted values and scope.
+      - Outputs: describe the caller-visible result.
 
       '''
   ```
@@ -192,6 +223,20 @@ These rules apply globally to ALL python projects.
   * first line contains ONLY `'''` + newline
   * content follows std PEP guidelines
   * final 2 lines: a blank line, then closing `'''`
+
+- Open with one sentence naming the operation and its role.
+- A simple function may need only that opening sentence.
+- For several behaviors, follow the summary with compact bullets
+  grouped by purpose: inputs/selection, outputs, side effects,
+  failures and caller contracts. Include only relevant groups.
+- Keep one behavior per bullet and name the actual fields and
+  functions. Prefer a quick high-level scan over dense prose that
+  merely contains all the information.
+- Explain non-obvious implementation reasons beside the relevant
+  code, rather than burying them in a contract summary.
+- Regression bullets must retain the failure mechanism, triggering
+  conditions and proof required by the next section; bullet layout
+  does not replace that explanation.
 
 ## Regression test documentation
 
@@ -395,3 +440,46 @@ These rules apply globally to ALL python projects.
 
 - Never write lines containing only whitespace;
   use a bare carriage return (empty line) instead.
+
+### Vertical space at scope boundaries
+
+Apply the following rules in order at a genuine scope exit.
+A standalone closing delimiter is a line containing only `)`, `]`
+or `}`, apart from indentation/trailing whitespace. Combined closers,
+inline comments and code ending in a delimiter do not qualify.
+A single-line body has one nonblank physical source line, including
+comments; one statement wrapped across lines is not single-line.
+
+1. **Matching `except`/`finally`:** omit the gap iff the preceding
+   clause body is single-line or ends with a standalone closing
+   delimiter. Otherwise, insert one blank line. This rule applies
+   only when the next nonblank source line is itself the matching
+   clause header; do not skip comments to find a later header.
+2. **Standalone closing delimiter before other source:** insert one
+   blank line when the next line has the same indentation or is one
+   indentation level shallower than the delimiter line. A deeper
+   dedent does not itself force a gap; apply rule 3 instead.
+3. **Otherwise:** insert one blank line iff the terminating line and
+   the next dedented nonblank source line occupy any common
+   non-whitespace column. No overlap means no additional gap.
+- Include comment text in the occupied columns; do not skip comments
+  when finding the following source line. If a comment introduces
+  the next statement, put the separating gap before that comment,
+  keeping the comment attached to the statement it explains.
+
+  ```python
+      except ValueError:
+          continue
+
+      # JS treats [] and {} as truthy, unlike Python.
+      if isinstance(value, dict):
+          consume_record(value)
+  ```
+
+- Apply the ordinary overlap rule before other following clauses,
+  including `elif` and `else`. Do not infer gaps from exit statements
+  or body density beyond the explicit exceptions above.
+- One blank line can delimit several scopes ending together. Do not
+  treat wrapped expressions as scopes or add a gap after a block
+  header. Retain normal spacing between function/class definitions;
+  no following code means no additional end-of-file blank line.

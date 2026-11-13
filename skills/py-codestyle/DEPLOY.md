@@ -1,7 +1,7 @@
 # Deploying `/py-codestyle`
 
-This whole-directory skill is auto-applied when writing or editing
-Python. It has no per-repo state or customization.
+This whole-directory skill is intended for every Python/Xonsh
+writing task. It has no per-repo state or customization.
 
 ## Deployment
 
@@ -27,6 +27,29 @@ unless `--stage` is explicitly supplied.
 Quit and restart OpenCode after deployment or update. Its default
 `.opencode/skills/` discovery requires no `opencode.json` or
 `opencode.jsonc` mutation.
+
+## Agent activation
+
+Keep the skill available for automatic selection. Do not set
+`disable-model-invocation: true`: Pi hides such skills from automatic
+model selection even when their descriptions say they auto-apply.
+Discovery advertises a description, not the complete instructions.
+
+In the consumer's agent entry instructions, require every Python
+writer to load the selected skill before editing. For example:
+
+> Before writing, editing or proposing Python/Xonsh code, read the
+> project-selected `py-codestyle` skill in full and follow its
+> authoring and handoff gate, including helpers, tests, comments and
+> docstrings. Formatter/linter success does not replace source review.
+
+Keep policy in the skill; the entry instruction only ensures it is
+loaded. An unavailable or divergent deployment must be reported,
+not replaced silently with another version. Reload/restart the
+consumer after an approved source/deployment update as its harness
+requires. These instructions do not install a blocking checker or
+guarantee compliance in agents that do not load the skill; enforce
+machine-checkable rules in the consumer's supported CI when needed.
 
 ## Maintenance
 
