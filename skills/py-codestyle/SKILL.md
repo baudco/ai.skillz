@@ -443,6 +443,19 @@ These rules apply globally to ALL python projects.
 
 ### Vertical space at scope boundaries
 
+Apply these rules to exits from every indented block:
+
+- `if` / `elif` / `else` branches;
+- `for` / `async for` and `while` loops, including loop `else`;
+- `with` / `async with` context-manager bodies;
+- `try` / `except` / `else` / `finally` clause bodies;
+- `match` / `case` bodies;
+- nested/embedded `def` / `async def` and `class` bodies, only where
+  normal definition-spacing rules do not already decide the gap.
+
+Normal definition spacing takes precedence: two blank lines at
+module level, and one between methods.
+
 Apply the following rules in order at a genuine scope exit.
 A standalone closing delimiter is a line containing only `)`, `]`
 or `}`, apart from indentation/trailing whitespace. Combined closers,
@@ -462,6 +475,7 @@ comments; one statement wrapped across lines is not single-line.
 3. **Otherwise:** insert one blank line iff the terminating line and
    the next dedented nonblank source line occupy any common
    non-whitespace column. No overlap means no additional gap.
+
 - Include comment text in the occupied columns; do not skip comments
   when finding the following source line. If a comment introduces
   the next statement, put the separating gap before that comment,
