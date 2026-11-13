@@ -21,7 +21,8 @@ generalized for cross-repo deployment.
 
 | Skill | Description |
 |-------|-------------|
-| `py-codestyle` | Python code style conventions |
+| `py-codestyle` | Python and Xonsh authoring/readability conventions |
+| `lua-codestyle` | Lua table, argument and contract readability |
 | `layered-design` | Design public APIs, vocabulary, and module boundaries |
 | `commit-msg` | Git commit message generation |
 | `commit-plan` | Multi-commit orchestration using `commit-msg` messages |
@@ -198,8 +199,8 @@ OpenCode command shims are provided for user-invoked workflows: code review
 and remediation, commit/PR messages, worktree lifecycle, Git management,
 conflict resolution, forge operations, dependency supersedence scans, test
 runs, harness diagnostics, OpenCode cleanup, Taken export, and YouTube URL
-lookup. Support skills such as `plan-io`, `prompt-io`, `py-codestyle`, and
-`inter-skill-review` remain skill-only.
+lookup. Support skills such as `plan-io`, `prompt-io`, `py-codestyle`,
+`lua-codestyle`, and `inter-skill-review` remain skill-only.
 
 ### Maintenance and migration
 

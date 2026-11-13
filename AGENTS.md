@@ -5,6 +5,14 @@ logic there so harnesses share one implementation. Harness-specific
 commands belong under `providers/`; optional Codex skill metadata lives
 in each skill's `agents/openai.yaml`.
 
+Before writing, editing or proposing Python/Xonsh code, read
+`skills/py-codestyle/SKILL.md` in full and follow its authoring and
+handoff gate. This includes helpers, tests, comments and docstrings;
+a clean formatter/linter is not a substitute for source review.
+For Lua, read `skills/lua-codestyle/SKILL.md` in full before authoring
+and follow its corresponding gate. Keep language-specific rules in
+those skills rather than copying Python syntax rules into Lua.
+
 For substantial subsystem design or refactors, use the shared
 `layered-design` skill to establish the user workflow, public
 contract, vocabulary, and module boundaries before adding helpers.

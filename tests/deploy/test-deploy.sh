@@ -123,6 +123,8 @@ prepare_source_repo() {
     cp -R "$ROOT/skills/git-mgmt" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/harness-perf" "$SOURCE_WORK/skills/"
     cp -R "$ROOT/skills/opencode-cleaning" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/py-codestyle" "$SOURCE_WORK/skills/"
+    cp -R "$ROOT/skills/lua-codestyle" "$SOURCE_WORK/skills/"
     cp "$ROOT/deploy-manifest.conf" "$SOURCE_WORK/deploy-manifest.conf"
     cp "$ROOT/gitignore-patterns.conf" "$SOURCE_WORK/gitignore-patterns.conf"
     cp "$ROOT/.gitignore" "$SOURCE_WORK/.gitignore"
@@ -154,7 +156,8 @@ prepare_source_repo() {
         skills/code-review skills/commit-plan \
         skills/gish skills/git-mgmt \
         skills/harness-perf \
-        skills/opencode-cleaning \
+        skills/opencode-cleaning skills/py-codestyle \
+        skills/lua-codestyle \
         skills/commit-msg/SKILL.md skills/run-tests/SKILL.md \
         .opencode/commands
     git -C "$SOURCE_WORK" commit --allow-empty -qm 'fixture deployment source'
@@ -166,6 +169,33 @@ prepare_source_repo() {
             || fail "committed runtime fixture differs: $runtime_path"
     done
     SOURCE_URL="file://$SOURCE_WORK"
+}
+
+test_lua_codestyle_generic_deployment() {
+    new_repo lua-codestyle
+    local before_index target
+    before_index="$(index_tree "$REPO")"
+    bash "$DEPLOY" init "$REPO" --method symlink >/dev/null
+    bash "$DEPLOY" lua-codestyle "$REPO" --harness agents >/dev/null
+    bash "$DEPLOY" lua-codestyle "$REPO" --harness all >/dev/null
+    for target in .agents .claude .opencode; do
+        [ -L "$REPO/$target/skills/lua-codestyle" ] \
+            || fail "Lua skill missing whole-directory link: $target"
+        assert_eq \
+            "$(readlink -f "$REPO/$target/skills/lua-codestyle/SKILL.md")" \
+            "$ROOT/skills/lua-codestyle/SKILL.md"
+        assert_file_contains \
+            "$REPO/$target/skills/lua-codestyle/SKILL.md" \
+            '## Expanded tables: one entry per line'
+    done
+    [ ! -e "$REPO/.opencode/commands/lua-codestyle.md" ] \
+        || fail 'Lua support skill unexpectedly created a command shim'
+    if grep -q '^disable-model-invocation: true' \
+        "$REPO/.agents/skills/lua-codestyle/SKILL.md"; then
+        fail 'Lua authoring skill is hidden from automatic selection'
+    fi
+    assert_eq "$(index_tree "$REPO")" "$before_index"
+    pass 'Lua codestyle deploys as an automatically selectable generic skill'
 }
 
 test_local_anchor_and_anchor_authority() {
@@ -2189,6 +2219,7 @@ test_opencode_debug_if_available() {
 
 source "$ROOT/tests/deploy/shared-cases.sh"
 prepare_source_repo
+test_lua_codestyle_generic_deployment
 if [ "${1:-}" = --shared-only ]; then
     run_shared_cases
     printf '1..%d\n' "$PASS"
